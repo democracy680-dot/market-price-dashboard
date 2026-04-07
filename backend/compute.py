@@ -5,20 +5,40 @@ All functions operate on a DataFrame that has columns:
     symbol, date, close
 
 sorted by (symbol, date) ascending.
+
+Return methodology: calendar-day lookback (matches screener.in).
+For each window we find the last available trading day on or before
+(latest_date - N calendar days), then compute (latest / that_close) - 1.
+This gives numbers consistent with screener.in and moneycontrol.
 """
 
 import pandas as pd
+from datetime import timedelta
 
 
-# Trading-day offsets for return windows
+# Calendar-day lookback windows (matches screener.in methodology)
 RETURN_WINDOWS = {
     "ret_1d":   1,
-    "ret_1w":   5,
-    "ret_30d":  22,
-    "ret_60d":  44,
-    "ret_180d": 132,
-    "ret_365d": 252,
+    "ret_1w":   7,
+    "ret_30d":  30,
+    "ret_60d":  60,
+    "ret_180d": 180,
+    "ret_365d": 365,
 }
+
+
+def _past_close(dates: pd.Series, closes: pd.Series, latest_date, days: int):
+    """
+    Find the close price of the last available trading day that is
+    at least `days` calendar days before `latest_date`.
+    Returns (price, date) or (None, None) if not enough history.
+    """
+    cutoff = latest_date - timedelta(days=days)
+    mask = dates <= cutoff
+    if not mask.any():
+        return None, None
+    idx = mask[mask].index[-1]
+    return closes.loc[idx], dates.loc[idx]
 
 
 def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
@@ -33,12 +53,13 @@ def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
     Stocks with insufficient history get NaN for the metrics they can't compute.
     """
     prices = prices.sort_values(["symbol", "date"]).copy()
-    prices["date"] = pd.to_datetime(prices["date"])
+    prices["date"] = pd.to_datetime(prices["date"]).dt.normalize()
 
     results = []
 
     for symbol, grp in prices.groupby("symbol", sort=False):
         grp = grp.sort_values("date").reset_index(drop=True)
+        dates  = grp["date"]
         closes = grp["close"]
         n = len(closes)
 
@@ -46,26 +67,23 @@ def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
             continue
 
         latest_close = closes.iloc[-1]
-        latest_date = grp["date"].iloc[-1].date()
+        latest_date  = dates.iloc[-1]
 
         row = {
             "symbol": symbol,
-            "date":   latest_date,
+            "date":   latest_date.date(),
             "cmp":    round(float(latest_close), 2),
         }
 
-        # Returns
-        for col, offset in RETURN_WINDOWS.items():
-            if n > offset:
-                past_close = closes.iloc[-(offset + 1)]
-                if past_close and past_close != 0:
-                    row[col] = round((latest_close / past_close) - 1, 6)
-                else:
-                    row[col] = None
+        # Returns — calendar-day lookback
+        for col, cal_days in RETURN_WINDOWS.items():
+            past, _ = _past_close(dates, closes, latest_date, cal_days)
+            if past is not None and float(past) != 0:
+                row[col] = round((float(latest_close) / float(past)) - 1, 6)
             else:
                 row[col] = None
 
-        # DMAs
+        # DMAs (use last 50/200 trading days of data)
         row["dma_50"]  = round(float(closes.tail(50).mean()),  2) if n >= 50  else None
         row["dma_200"] = round(float(closes.tail(200).mean()), 2) if n >= 200 else None
 
