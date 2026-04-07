@@ -17,6 +17,7 @@ Run from the repo root. Requires SUPABASE_DB_URL in .env or environment.
 
 import sys
 import uuid
+import math
 import logging
 from datetime import datetime, timezone
 
@@ -81,6 +82,13 @@ def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict):
     return len(rows)
 
 
+def _clean(v):
+    """Convert float NaN to None so psycopg2 sends NULL, not 'nan'."""
+    if isinstance(v, float) and math.isnan(v):
+        return None
+    return v
+
+
 def upsert_snapshots(snapshots_df: pd.DataFrame):
     if snapshots_df.empty:
         return 0
@@ -94,8 +102,8 @@ def upsert_snapshots(snapshots_df: pd.DataFrame):
         if c not in snapshots_df.columns:
             snapshots_df[c] = None
 
-    df = snapshots_df[cols].where(pd.notnull(snapshots_df[cols]), None)
-    rows = list(df.itertuples(index=False, name=None))
+    df = snapshots_df[cols]
+    rows = [tuple(_clean(v) for v in row) for row in df.itertuples(index=False, name=None)]
 
     sql = """
         INSERT INTO snapshots_daily
