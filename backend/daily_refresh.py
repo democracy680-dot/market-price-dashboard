@@ -26,7 +26,7 @@ from psycopg2.extras import execute_values
 from sqlalchemy import text
 
 from db import get_engine, get_psycopg2_conn
-from fetcher import fetch_prices
+from fetcher import fetch_prices, fetch_fundamentals
 from compute import compute_snapshots, compute_sector_performance
 
 # ── logging ───────────────────────────────────────────────────────────────────
@@ -97,6 +97,7 @@ def upsert_snapshots(snapshots_df: pd.DataFrame):
         "symbol", "date", "cmp",
         "ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d",
         "dma_50", "dma_200", "status_50dma", "status_200dma",
+        "market_cap_cr", "pe_ratio",
     ]
     for c in cols:
         if c not in snapshots_df.columns:
@@ -109,7 +110,8 @@ def upsert_snapshots(snapshots_df: pd.DataFrame):
         INSERT INTO snapshots_daily
             (symbol, date, cmp,
              ret_1d, ret_1w, ret_30d, ret_60d, ret_180d, ret_365d,
-             dma_50, dma_200, status_50dma, status_200dma)
+             dma_50, dma_200, status_50dma, status_200dma,
+             market_cap_cr, pe_ratio)
         VALUES %s
         ON CONFLICT (symbol, date) DO UPDATE SET
             cmp           = EXCLUDED.cmp,
@@ -122,7 +124,9 @@ def upsert_snapshots(snapshots_df: pd.DataFrame):
             dma_50        = EXCLUDED.dma_50,
             dma_200       = EXCLUDED.dma_200,
             status_50dma  = EXCLUDED.status_50dma,
-            status_200dma = EXCLUDED.status_200dma
+            status_200dma = EXCLUDED.status_200dma,
+            market_cap_cr = EXCLUDED.market_cap_cr,
+            pe_ratio      = EXCLUDED.pe_ratio
     """
     conn = get_psycopg2_conn()
     try:
@@ -247,7 +251,7 @@ def run():
     n_prices = upsert_prices(prices_df, symbol_map)
     logger.info(f"  {n_prices} rows upserted into prices_daily")
 
-    # ── 4. Compute + upsert snapshots ────────────────────────────────────────
+    # ── 4. Compute snapshots ─────────────────────────────────────────────────
     logger.info("Computing snapshots...")
     prices_nse = prices_df.copy()
     prices_nse["symbol"] = prices_nse["yahoo_symbol"].map(symbol_map)
@@ -255,6 +259,18 @@ def run():
 
     snapshots = compute_snapshots(prices_nse[["symbol", "date", "close"]])
     logger.info(f"  Computed {len(snapshots)} snapshot rows")
+
+    # ── 4b. Fetch fundamentals (market cap, PE) ──────────────────────────────
+    logger.info("Fetching fundamentals...")
+    fundamentals = fetch_fundamentals(yahoo_symbols)
+    # Map yahoo_symbol → symbol, then merge into snapshots
+    fundamentals["symbol"] = fundamentals["yahoo_symbol"].map(symbol_map)
+    fundamentals = fundamentals.dropna(subset=["symbol"])
+    snapshots = snapshots.merge(
+        fundamentals[["symbol", "market_cap_cr", "pe_ratio"]],
+        on="symbol",
+        how="left",
+    )
 
     n_snaps = upsert_snapshots(snapshots)
     logger.info(f"  {n_snaps} rows upserted into snapshots_daily")

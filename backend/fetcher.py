@@ -7,14 +7,15 @@ bad ticker — logs and continues.
 
 import time
 import logging
+import concurrent.futures
 import pandas as pd
 import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 50
-LOOKBACK_DAYS = 250   # enough for 200 DMA + returns
 SLEEP_BETWEEN_BATCHES = 2  # seconds, to be polite to yfinance
+FUNDAMENTALS_WORKERS = 10  # threads for parallel fast_info fetches
 
 
 def _chunks(lst: list, n: int):
@@ -24,12 +25,11 @@ def _chunks(lst: list, n: int):
 
 def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
     """
-    Fetch up to LOOKBACK_DAYS of daily OHLCV for all yahoo_symbols.
+    Fetch 2 years of daily OHLCV for all yahoo_symbols.
+    Uses unadjusted Close prices so returns match NSE / screener.in.
 
     Returns a DataFrame with columns:
         yahoo_symbol, date, open, high, low, close, volume
-
-    Stocks that fail are logged and excluded — never raises.
     """
     all_frames = []
     batches = list(_chunks(yahoo_symbols, BATCH_SIZE))
@@ -40,9 +40,9 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
         try:
             raw = yf.download(
                 tickers=batch,
-                period=f"{LOOKBACK_DAYS}d",
+                period="2y",          # 2 years → ~500 trading days, enough for 200DMA + 365D return
                 interval="1d",
-                auto_adjust=True,
+                auto_adjust=False,    # unadjusted Close matches NSE/screener prices
                 progress=False,
                 threads=True,
             )
@@ -54,12 +54,10 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
             logger.warning(f"  Batch {i} returned empty data")
             continue
 
-        # yfinance 1.x returns MultiIndex columns (Price, Ticker) for multi-ticker downloads
+        # yfinance returns MultiIndex columns (Price, Ticker) for multi-ticker downloads
         if isinstance(raw.columns, pd.MultiIndex):
-            # Stack ticker level into rows
             raw = raw.stack(level="Ticker", future_stack=True).reset_index()
             raw.columns.name = None
-            # After stack+reset_index: columns are Date, Ticker, Close, Open, ...
             raw = raw.rename(columns={"Date": "date", "Ticker": "yahoo_symbol"})
         else:
             raw = raw.reset_index().rename(columns={"Date": "date"})
@@ -67,6 +65,12 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
 
         # Normalise column names to lowercase
         raw.columns = [c.lower() for c in raw.columns]
+
+        # With auto_adjust=False yfinance gives both 'close' and 'adj close'
+        # Rename 'adj close' if present, we use raw 'close'
+        if "adj close" in raw.columns:
+            raw = raw.drop(columns=["adj close"])
+
         needed = {"yahoo_symbol", "date", "open", "high", "low", "close", "volume"}
         missing = needed - set(raw.columns)
         if missing:
@@ -86,4 +90,47 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
     df = pd.concat(all_frames, ignore_index=True)
     df["date"] = pd.to_datetime(df["date"]).dt.date
     logger.info(f"Fetched {len(df)} rows across {df['yahoo_symbol'].nunique()} symbols")
+    return df
+
+
+def _fetch_one_fundamental(yahoo_symbol: str) -> dict:
+    """Fetch market_cap and pe_ratio for a single ticker. Never raises."""
+    result = {"yahoo_symbol": yahoo_symbol, "market_cap_cr": None, "pe_ratio": None}
+    try:
+        t = yf.Ticker(yahoo_symbol)
+        fi = t.fast_info
+
+        market_cap = getattr(fi, "market_cap", None)
+        if market_cap and market_cap > 0:
+            result["market_cap_cr"] = round(market_cap / 1e7, 2)  # USD→INR via price, stored in Cr
+
+        # PE from info (slower but only called once per ticker per day)
+        info = t.info
+        pe = info.get("trailingPE") or info.get("forwardPE")
+        if pe and pe > 0:
+            result["pe_ratio"] = round(float(pe), 2)
+    except Exception as e:
+        logger.debug(f"  fundamentals failed for {yahoo_symbol}: {e}")
+    return result
+
+
+def fetch_fundamentals(yahoo_symbols: list[str]) -> pd.DataFrame:
+    """
+    Fetch market_cap_cr and pe_ratio for all symbols using parallel threads.
+
+    Returns a DataFrame with columns:
+        yahoo_symbol, market_cap_cr, pe_ratio
+    """
+    logger.info(f"Fetching fundamentals for {len(yahoo_symbols)} symbols...")
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=FUNDAMENTALS_WORKERS) as pool:
+        futures = {pool.submit(_fetch_one_fundamental, sym): sym for sym in yahoo_symbols}
+        for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+            results.append(future.result())
+            if i % 50 == 0:
+                logger.info(f"  fundamentals: {i}/{len(yahoo_symbols)} done")
+
+    df = pd.DataFrame(results)
+    filled = df["market_cap_cr"].notna().sum()
+    logger.info(f"  fundamentals fetched: {filled}/{len(yahoo_symbols)} with market cap")
     return df
