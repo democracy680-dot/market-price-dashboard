@@ -1,0 +1,33 @@
+name: Daily Refresh
+
+on:
+  schedule:
+    # 11:00 UTC = 4:30 PM IST, Monday–Friday
+    - cron: "0 11 * * 1-5"
+  workflow_dispatch:
+    # Manual trigger button in GitHub UI (for ad-hoc runs)
+
+jobs:
+  refresh:
+    name: Fetch prices & compute snapshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily refresh
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        working-directory: backend
+        run: python daily_refresh.py
