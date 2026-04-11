@@ -344,79 +344,116 @@ def _check_password():
     st.markdown("""
     <style>
         [data-testid="stSidebar"] { display: none !important; }
-        .login-wrap {
-            display: flex; flex-direction: column;
-            align-items: center; justify-content: center;
-            min-height: 80vh; padding: 2rem 1rem;
+
+        /* hide "Press Enter to apply" hint on password field */
+        .stTextInput div[data-baseweb="input"] ~ div small,
+        .stTextInput [class*="InputInstructions"],
+        .stTextInput ~ div > small { display: none !important; }
+
+        .lp-page {
+            display: flex; align-items: center; justify-content: center;
+            min-height: 88vh; padding: 2rem 1rem;
         }
-        .login-card {
-            background: linear-gradient(145deg, #0d1525 0%, #0b0f1a 100%);
-            border: 1px solid #1e2d45; border-radius: 20px;
-            padding: 48px 52px 36px; width: 100%; max-width: 480px;
-            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+        .lp-card {
+            background: #0c1220;
+            border: 1px solid #1e2d45;
+            border-radius: 24px;
+            padding: 52px 56px 48px;
+            width: 100%; max-width: 500px;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(59,130,246,0.06);
         }
-        .login-badge {
-            display: inline-block;
-            background: rgba(59,130,246,0.12);
-            border: 1px solid rgba(59,130,246,0.25);
-            border-radius: 20px; padding: 4px 14px;
-            font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
-            color: #60a5fa; text-transform: uppercase; margin-bottom: 18px;
+        .lp-logo {
+            display: flex; align-items: center; gap: 12px; margin-bottom: 32px;
         }
-        .login-title {
-            font-size: 30px; font-weight: 700; color: #f1f5f9;
-            letter-spacing: -0.03em; line-height: 1.2; margin: 0 0 10px;
+        .lp-logo-icon {
+            width: 42px; height: 42px; border-radius: 10px;
+            background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; flex-shrink: 0;
         }
-        .login-sub {
-            font-size: 13.5px; color: #64748b; line-height: 1.65; margin: 0 0 28px;
+        .lp-logo-name {
+            font-size: 22px; font-weight: 800; color: #f1f5f9;
+            letter-spacing: -0.04em;
         }
-        .login-features { display: flex; flex-direction: column; gap: 11px; margin-bottom: 32px; }
-        .login-feature-row { display: flex; align-items: flex-start; gap: 10px; }
-        .login-feature-dot {
-            width: 6px; height: 6px; border-radius: 50%;
-            background: #3b82f6; flex-shrink: 0; margin-top: 6px;
+        .lp-logo-name span { color: #3b82f6; }
+        .lp-headline {
+            font-size: 15px; font-weight: 500; color: #94a3b8;
+            line-height: 1.65; margin: 0 0 32px;
+            border-left: 2px solid #1e3a5f; padding-left: 14px;
         }
-        .login-feature-text { font-size: 13px; color: #94a3b8; line-height: 1.5; }
-        .login-divider { border: none; border-top: 1px solid #1e2d45; margin: 0 0 24px; }
-        .login-footer { text-align: center; font-size: 11px; color: #334155; margin-top: 16px; }
+        .lp-features {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px; margin-bottom: 36px;
+        }
+        .lp-feat {
+            background: #0f1929; border: 1px solid #1e2d45;
+            border-radius: 12px; padding: 14px 16px;
+        }
+        .lp-feat-icon { font-size: 16px; margin-bottom: 6px; }
+        .lp-feat-title { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 3px; }
+        .lp-feat-desc { font-size: 11px; color: #475569; line-height: 1.5; }
+        .lp-divider { border: none; border-top: 1px solid #1a2740; margin: 0 0 28px; }
+        .lp-input-label {
+            font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+            color: #475569; text-transform: uppercase; margin-bottom: 8px;
+        }
+        .lp-footer {
+            text-align: center; font-size: 11px; color: #2d3f57; margin-top: 20px;
+            letter-spacing: 0.02em;
+        }
     </style>
-    <div class="login-wrap">
-      <div class="login-card">
-        <div class="login-badge">NSE · India</div>
-        <div class="login-title">Indian Equity<br>Dashboard</div>
-        <div class="login-sub">
-          A real-time market intelligence platform tracking Nifty 50, Nifty 500,
-          Nifty Bank, F&amp;O, and key sector indices — built for serious investors.
+    <div class="lp-page">
+      <div class="lp-card">
+        <div class="lp-logo">
+          <div class="lp-logo-icon">📈</div>
+          <div class="lp-logo-name">Stock<span>Stack</span></div>
         </div>
-        <div class="login-features">
-          <div class="login-feature-row"><div class="login-feature-dot"></div>
-            <div class="login-feature-text">Live price snapshots with 1D, 1W, 30D and 1Y returns across every index</div></div>
-          <div class="login-feature-row"><div class="login-feature-dot"></div>
-            <div class="login-feature-text">Market breadth — Advance / Decline counts and 50 / 200 DMA filters</div></div>
-          <div class="login-feature-row"><div class="login-feature-dot"></div>
-            <div class="login-feature-text">Sector &amp; theme performance heatmaps with return rankings</div></div>
-          <div class="login-feature-row"><div class="login-feature-dot"></div>
-            <div class="login-feature-text">Global markets overview spanning 7 trading sessions worldwide</div></div>
+        <div class="lp-headline">
+          Real-time market intelligence for Indian equities — tracking indices,
+          sectors, themes and global markets in one unified dashboard.
         </div>
-        <hr class="login-divider">
+        <div class="lp-features">
+          <div class="lp-feat">
+            <div class="lp-feat-icon">⚡</div>
+            <div class="lp-feat-title">Live Returns</div>
+            <div class="lp-feat-desc">1D, 1M and 1Y index returns updated in real-time</div>
+          </div>
+          <div class="lp-feat">
+            <div class="lp-feat-icon">📊</div>
+            <div class="lp-feat-title">Market Breadth</div>
+            <div class="lp-feat-desc">Adv / Dec counts and 50 / 200 DMA breakdowns</div>
+          </div>
+          <div class="lp-feat">
+            <div class="lp-feat-icon">🗺️</div>
+            <div class="lp-feat-title">Sector Heatmaps</div>
+            <div class="lp-feat-desc">Sector and theme performance ranked by returns</div>
+          </div>
+          <div class="lp-feat">
+            <div class="lp-feat-icon">🌐</div>
+            <div class="lp-feat-title">Global Markets</div>
+            <div class="lp-feat-desc">7 trading sessions — Asia, Europe and Americas</div>
+          </div>
+        </div>
+        <hr class="lp-divider">
+        <div class="lp-input-label">Access Password</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1, 1.5, 1])
+    _, col, _ = st.columns([1, 1.6, 1])
     with col:
-        st.markdown("<div style='margin-top:-224px'>", unsafe_allow_html=True)
-        pw = st.text_input("", type="password", placeholder="Enter password…",
+        st.markdown("<div style='margin-top:-196px'>", unsafe_allow_html=True)
+        pw = st.text_input("", type="password", placeholder="Enter your password…",
                            label_visibility="collapsed")
-        if st.button("Sign In", use_container_width=True, type="primary"):
+        if st.button("Sign In →", use_container_width=True, type="primary"):
             if pw == correct:
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
-                st.error("Incorrect password.")
+                st.error("Incorrect password. Please try again.")
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown(
-            "<div class='login-footer'>Restricted access · Authorised users only</div>",
+            "<div class='lp-footer'>Restricted access · Authorised users only</div>",
             unsafe_allow_html=True,
         )
     st.stop()
