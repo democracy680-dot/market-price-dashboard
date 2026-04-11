@@ -73,33 +73,33 @@ st.markdown("""
 
     /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 2px;
+        gap: 4px;
         background: transparent;
         border-bottom: 1px solid #1e2d45;
-        padding: 0;
+        padding: 0 0 8px 0;
+        align-items: flex-end;
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 9px 18px;
+        padding: 7px 16px;
         font-size: 11.5px;
         font-weight: 600;
         color: #475569;
-        border-radius: 0;
+        border-radius: 4px;
         background: transparent;
-        border-bottom: 2px solid transparent;
-        margin-bottom: -1px;
+        border: none;
         letter-spacing: 0.07em;
         text-transform: uppercase;
-        transition: color 0.15s, border-color 0.15s;
+        transition: color 0.15s, background 0.15s;
     }
     .stTabs [data-baseweb="tab"]:hover {
         color: #cbd5e1;
         background: transparent;
-        border-bottom: 2px solid #334155;
     }
     .stTabs [aria-selected="true"] {
         color: #e2e8f0 !important;
-        border-bottom: 2px solid #3b82f6 !important;
-        background: transparent !important;
+        background: #1e3a5f !important;
+        border: 1px solid #2d5a9e !important;
+        border-radius: 4px !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
         padding-top: 1.25rem;
