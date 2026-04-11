@@ -1700,14 +1700,13 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload, tab_tt = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
     "Custom Upload",
-    "Time Travel",
 ])
 
 def _page_header(title: str, date=None):
@@ -1837,98 +1836,6 @@ with tab_upload:
                         render_sort_and_table(custom_df, key="custom")
         except Exception as e:
             st.error(f"Error reading CSV: {e}")
-
-# ── Tab 6: Time Travel ────────────────────────────────────────────────────────
-with tab_tt:
-    _page_header("Time-Travel Comparison")
-    st.caption("Compare two snapshot dates — find DMA flips and return changes.")
-
-    dates_list = load_available_dates()
-    if len(dates_list) < 2:
-        st.info("Need at least 2 snapshot dates. Check back after a few daily refreshes.")
-    else:
-        col_a, col_b, col_u = st.columns([2, 2, 2])
-        with col_a:
-            date_a = st.selectbox(
-                "Date A (earlier)", options=dates_list,
-                index=min(len(dates_list) - 1, 30),
-                format_func=lambda d: pd.Timestamp(d).strftime("%d %b %Y"),
-                key="tt_date_a",
-            )
-        with col_b:
-            date_b = st.selectbox(
-                "Date B (later)", options=dates_list, index=0,
-                format_func=lambda d: pd.Timestamp(d).strftime("%d %b %Y"),
-                key="tt_date_b",
-            )
-        with col_u:
-            tt_index = st.selectbox(
-                "Universe",
-                options=list(ALL_UNIVERSES.keys()),
-                format_func=lambda x: ALL_UNIVERSES.get(x, x),
-                key="tt_index",
-            )
-
-        if st.button("Compare →", type="primary"):
-            df_a = load_snapshot(date_a, index_name=tt_index)
-            df_b = load_snapshot(date_b, index_name=tt_index)
-
-            if df_a.empty or df_b.empty:
-                st.warning("No data for one or both dates.")
-            else:
-                merged = df_a[["symbol", "name", "cmp", "status_200dma", "ret_30d"]].merge(
-                    df_b[["symbol", "cmp", "status_200dma", "ret_30d"]],
-                    on="symbol", suffixes=("_a", "_b"),
-                )
-                merged["cmp_chg"] = (
-                    (merged["cmp_b"] - merged["cmp_a"]) / merged["cmp_a"]
-                ).map(_fmt_pct)
-                merged["cmp_a"] = merged["cmp_a"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-                merged["cmp_b"] = merged["cmp_b"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-                merged["200DMA flip"] = merged.apply(
-                    lambda r:
-                        "🟢 Below → Above" if r["status_200dma_a"] == "Below 200DMA" and r["status_200dma_b"] == "Above 200DMA"
-                        else ("🔴 Above → Below" if r["status_200dma_a"] == "Above 200DMA" and r["status_200dma_b"] == "Below 200DMA"
-                        else ""),
-                    axis=1,
-                )
-                flipped = merged[merged["200DMA flip"] != ""].sort_values("200DMA flip")
-
-                fa, fb = st.columns(2)
-                with fa:
-                    st.metric("Stocks compared", len(merged))
-                with fb:
-                    st.metric("200DMA flips", len(flipped))
-
-                st.divider()
-                st.markdown(f"#### 200DMA Status Flips — {len(flipped)} stocks")
-                if not flipped.empty:
-                    st.dataframe(
-                        flipped[["symbol", "name", "cmp_a", "cmp_b", "cmp_chg", "200DMA flip"]].rename(columns={
-                            "cmp_a": f"CMP {pd.Timestamp(date_a).strftime('%d %b')}",
-                            "cmp_b": f"CMP {pd.Timestamp(date_b).strftime('%d %b')}",
-                            "cmp_chg": "Change",
-                        }),
-                        use_container_width=True, hide_index=True,
-                    )
-                else:
-                    st.info("No stocks changed 200DMA status between these two dates.")
-
-                st.divider()
-                st.markdown("#### Full Comparison")
-                st.dataframe(
-                    merged[[
-                        "symbol", "name", "cmp_a", "cmp_b", "cmp_chg",
-                        "status_200dma_a", "status_200dma_b", "200DMA flip",
-                    ]].rename(columns={
-                        "cmp_a": f"CMP {pd.Timestamp(date_a).strftime('%d %b')}",
-                        "cmp_b": f"CMP {pd.Timestamp(date_b).strftime('%d %b')}",
-                        "cmp_chg": "Change",
-                        "status_200dma_a": f"200DMA {pd.Timestamp(date_a).strftime('%d %b')}",
-                        "status_200dma_b": f"200DMA {pd.Timestamp(date_b).strftime('%d %b')}",
-                    }),
-                    use_container_width=True, hide_index=True,
-                )
 
 # ── Tab 7: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
