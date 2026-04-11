@@ -523,10 +523,26 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_sector_performance(snap_date) -> pd.DataFrame:
+    """Aggregate all sectors live from snapshots_daily so every sector is included."""
     sql = text("""
-        SELECT * FROM sector_performance_daily
-        WHERE date = :date
-        ORDER BY month_chg_pct DESC
+        SELECT
+            s.sector,
+            COUNT(*)                                                         AS num_companies,
+            SUM(CASE WHEN sd.ret_1d > 0 THEN 1 ELSE 0 END)                 AS advances,
+            SUM(CASE WHEN sd.ret_1d < 0 THEN 1 ELSE 0 END)                 AS declines,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1d)          AS day_change_pct,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1w)          AS week_chg_pct,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_30d)         AS month_chg_pct,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_60d)         AS qtr_chg_pct,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_180d)        AS half_yr_chg_pct,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_365d)        AS year_chg_pct
+        FROM snapshots_daily sd
+        JOIN stocks s ON s.symbol = sd.symbol
+        WHERE sd.date = :date
+          AND s.sector IS NOT NULL
+          AND s.is_active = TRUE
+        GROUP BY s.sector
+        ORDER BY month_chg_pct DESC NULLS LAST
     """)
     with engine.connect() as conn:
         df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
@@ -1687,7 +1703,7 @@ with st.sidebar:
 tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload, tab_tt, tab_gm = st.tabs([
     "Indexes",
     "Sectors",
-    "Sector Analysis",
+    "Sector Performance",
     "Themes",
     "Custom Upload",
     "Time Travel",
@@ -1728,7 +1744,7 @@ with tab_sec:
     with sub_tabs2[-1]:
         render_breadth_tab(selected_date, SECTOR_TABS, "sectors")
 
-# ── Tab 3: Sector Analysis ───────────────────────────────────────────────────
+# ── Tab 3: Sector Performance ────────────────────────────────────────────────
 with tab_analysis:
     _page_header("Sector Performance", selected_date)
 
