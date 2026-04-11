@@ -200,6 +200,15 @@ st.markdown("""
         border-color: #3b82f6;
         box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
     }
+    /* pointer cursor on all selectbox triggers */
+    .stSelectbox div[data-baseweb="select"],
+    .stSelectbox div[data-baseweb="select"] * {
+        cursor: pointer !important;
+    }
+    .stMultiSelect div[data-baseweb="select"],
+    .stMultiSelect div[data-baseweb="select"] * {
+        cursor: pointer !important;
+    }
 
     /* ── Radio toggle ── */
     .stRadio > div {
@@ -330,16 +339,86 @@ def _check_password():
         st.stop()
     if st.session_state.get("authenticated"):
         return
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.markdown("## 📊 Indian Equity Dashboard")
-        pw = st.text_input("Password", type="password", placeholder="Enter password...")
-        if st.button("Login", use_container_width=True, type="primary"):
+
+    # ── Login page ───────────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { display: none !important; }
+        .login-wrap {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            min-height: 80vh; padding: 2rem 1rem;
+        }
+        .login-card {
+            background: linear-gradient(145deg, #0d1525 0%, #0b0f1a 100%);
+            border: 1px solid #1e2d45; border-radius: 20px;
+            padding: 48px 52px 36px; width: 100%; max-width: 480px;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+        }
+        .login-badge {
+            display: inline-block;
+            background: rgba(59,130,246,0.12);
+            border: 1px solid rgba(59,130,246,0.25);
+            border-radius: 20px; padding: 4px 14px;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+            color: #60a5fa; text-transform: uppercase; margin-bottom: 18px;
+        }
+        .login-title {
+            font-size: 30px; font-weight: 700; color: #f1f5f9;
+            letter-spacing: -0.03em; line-height: 1.2; margin: 0 0 10px;
+        }
+        .login-sub {
+            font-size: 13.5px; color: #64748b; line-height: 1.65; margin: 0 0 28px;
+        }
+        .login-features { display: flex; flex-direction: column; gap: 11px; margin-bottom: 32px; }
+        .login-feature-row { display: flex; align-items: flex-start; gap: 10px; }
+        .login-feature-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: #3b82f6; flex-shrink: 0; margin-top: 6px;
+        }
+        .login-feature-text { font-size: 13px; color: #94a3b8; line-height: 1.5; }
+        .login-divider { border: none; border-top: 1px solid #1e2d45; margin: 0 0 24px; }
+        .login-footer { text-align: center; font-size: 11px; color: #334155; margin-top: 16px; }
+    </style>
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-badge">NSE · India</div>
+        <div class="login-title">Indian Equity<br>Dashboard</div>
+        <div class="login-sub">
+          A real-time market intelligence platform tracking Nifty 50, Nifty 500,
+          Nifty Bank, F&amp;O, and key sector indices — built for serious investors.
+        </div>
+        <div class="login-features">
+          <div class="login-feature-row"><div class="login-feature-dot"></div>
+            <div class="login-feature-text">Live price snapshots with 1D, 1W, 30D and 1Y returns across every index</div></div>
+          <div class="login-feature-row"><div class="login-feature-dot"></div>
+            <div class="login-feature-text">Market breadth — Advance / Decline counts and 50 / 200 DMA filters</div></div>
+          <div class="login-feature-row"><div class="login-feature-dot"></div>
+            <div class="login-feature-text">Sector &amp; theme performance heatmaps with return rankings</div></div>
+          <div class="login-feature-row"><div class="login-feature-dot"></div>
+            <div class="login-feature-text">Global markets overview spanning 7 trading sessions worldwide</div></div>
+        </div>
+        <hr class="login-divider">
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    _, col, _ = st.columns([1, 1.5, 1])
+    with col:
+        st.markdown("<div style='margin-top:-224px'>", unsafe_allow_html=True)
+        pw = st.text_input("", type="password", placeholder="Enter password…",
+                           label_visibility="collapsed")
+        if st.button("Sign In", use_container_width=True, type="primary"):
             if pw == correct:
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
                 st.error("Incorrect password.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='login-footer'>Restricted access · Authorised users only</div>",
+            unsafe_allow_html=True,
+        )
     st.stop()
 
 
