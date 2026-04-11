@@ -94,8 +94,8 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
 
 
 def _fetch_one_fundamental(yahoo_symbol: str) -> dict:
-    """Fetch market_cap and pe_ratio for a single ticker. Never raises."""
-    result = {"yahoo_symbol": yahoo_symbol, "market_cap_cr": None, "pe_ratio": None}
+    """Fetch market_cap, pe_ratio, and sector for a single ticker. Never raises."""
+    result = {"yahoo_symbol": yahoo_symbol, "market_cap_cr": None, "pe_ratio": None, "sector": None}
     try:
         t = yf.Ticker(yahoo_symbol)
         fi = t.fast_info
@@ -104,11 +104,15 @@ def _fetch_one_fundamental(yahoo_symbol: str) -> dict:
         if market_cap and market_cap > 0:
             result["market_cap_cr"] = round(market_cap / 1e7, 2)  # USD→INR via price, stored in Cr
 
-        # PE from info (slower but only called once per ticker per day)
+        # PE and sector from info (slower but only called once per ticker per day)
         info = t.info
         pe = info.get("trailingPE") or info.get("forwardPE")
         if pe and pe > 0:
             result["pe_ratio"] = round(float(pe), 2)
+
+        sector = info.get("sector")
+        if sector:
+            result["sector"] = sector
     except Exception as e:
         logger.debug(f"  fundamentals failed for {yahoo_symbol}: {e}")
     return result

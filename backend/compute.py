@@ -6,38 +6,51 @@ All functions operate on a DataFrame that has columns:
 
 sorted by (symbol, date) ascending.
 
-Return methodology: calendar-day lookback (matches screener.in).
-For each window we find the last available trading day on or before
-(latest_date - N calendar days), then compute (latest / that_close) - 1.
-This gives numbers consistent with screener.in and moneycontrol.
+Return methodology: matches Google Finance exactly.
+- 1D, 1W, 30D, 365D : subtract fixed calendar days (TODAY()-N)
+- 60D               : subtract exactly 2 months  (EDATE(TODAY(), -2))
+- 180D              : subtract exactly 6 months  (EDATE(TODAY(), -6))
+
+For all periods: if the cutoff falls on a weekend/holiday, snap FORWARD to
+the next available trading day (matches GOOGLEFINANCE sheet formula behaviour).
 """
 
 import pandas as pd
 from datetime import timedelta
+from dateutil.relativedelta import relativedelta
 
 
-# Calendar-day lookback windows (matches screener.in methodology)
+# Return window definitions — "days" uses timedelta, "months" uses relativedelta
 RETURN_WINDOWS = {
-    "ret_1d":   1,
-    "ret_1w":   7,
-    "ret_30d":  30,
-    "ret_60d":  60,
-    "ret_180d": 180,
-    "ret_365d": 365,
+    "ret_1d":   {"type": "days",   "n": 1},
+    "ret_1w":   {"type": "days",   "n": 7},
+    "ret_30d":  {"type": "days",   "n": 30},
+    "ret_60d":  {"type": "months", "n": 2},   # EDATE(today, -2)
+    "ret_180d": {"type": "months", "n": 6},   # EDATE(today, -6)
+    "ret_365d": {"type": "days",   "n": 365},
 }
 
 
-def _past_close(dates: pd.Series, closes: pd.Series, latest_date, days: int):
+def _cutoff_date(latest_date, spec: dict):
+    """Compute the target/cutoff date for a given window spec."""
+    if spec["type"] == "days":
+        return latest_date - timedelta(days=spec["n"])
+    else:
+        return latest_date - relativedelta(months=spec["n"])
+
+
+def _past_close(dates: pd.Series, closes: pd.Series, latest_date, spec: dict):
     """
-    Find the close price of the last available trading day that is
-    at least `days` calendar days before `latest_date`.
+    Find the close price of the first available trading day on or after
+    the cutoff date, excluding latest_date itself.
+    Matches Google Finance: snaps forward when cutoff is a weekend/holiday.
     Returns (price, date) or (None, None) if not enough history.
     """
-    cutoff = latest_date - timedelta(days=days)
-    mask = dates <= cutoff
+    cutoff = _cutoff_date(latest_date, spec)
+    mask = (dates >= cutoff) & (dates < latest_date)
     if not mask.any():
         return None, None
-    idx = mask[mask].index[-1]
+    idx = mask[mask].index[0]
     return closes.loc[idx], dates.loc[idx]
 
 
@@ -75,9 +88,9 @@ def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
             "cmp":    round(float(latest_close), 2),
         }
 
-        # Returns — calendar-day lookback
-        for col, cal_days in RETURN_WINDOWS.items():
-            past, _ = _past_close(dates, closes, latest_date, cal_days)
+        # Returns — Google Finance methodology
+        for col, spec in RETURN_WINDOWS.items():
+            past, _ = _past_close(dates, closes, latest_date, spec)
             if past is not None and float(past) != 0:
                 row[col] = round((float(latest_close) / float(past)) - 1, 6)
             else:

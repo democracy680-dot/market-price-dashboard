@@ -260,7 +260,7 @@ def run():
     snapshots = compute_snapshots(prices_nse[["symbol", "date", "close"]])
     logger.info(f"  Computed {len(snapshots)} snapshot rows")
 
-    # ── 4b. Fetch fundamentals (market cap, PE) ──────────────────────────────
+    # ── 4b. Fetch fundamentals (market cap, PE, sector) ─────────────────────
     logger.info("Fetching fundamentals...")
     fundamentals = fetch_fundamentals(yahoo_symbols)
     # Map yahoo_symbol → symbol, then merge into snapshots
@@ -271,6 +271,18 @@ def run():
         on="symbol",
         how="left",
     )
+
+    # ── 4c. Backfill sectors into stocks table ───────────────────────────────
+    sectors_to_update = fundamentals[fundamentals["sector"].notna()][["symbol", "sector"]]
+    if not sectors_to_update.empty:
+        logger.info(f"Updating sectors for {len(sectors_to_update)} stocks...")
+        with engine.begin() as conn:
+            for _, row in sectors_to_update.iterrows():
+                conn.execute(
+                    text("UPDATE stocks SET sector = :sector WHERE symbol = :symbol AND (sector IS NULL OR sector != :sector)"),
+                    {"symbol": row["symbol"], "sector": row["sector"]},
+                )
+        logger.info("  Sectors updated.")
 
     n_snaps = upsert_snapshots(snapshots)
     logger.info(f"  {n_snaps} rows upserted into snapshots_daily")
