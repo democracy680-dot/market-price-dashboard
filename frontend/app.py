@@ -556,9 +556,7 @@ def _fmt_pct(val):
 
 def _fmt_mcap(val):
     if pd.isna(val): return "—"
-    if val >= 1_00_000: return f"₹{val/1_00_000:.1f}L Cr"
-    if val >= 1_000:    return f"₹{val/1_000:.1f}K Cr"
-    return f"₹{val:.0f} Cr"
+    return f"₹{val:,.2f} Cr"
 
 
 def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
@@ -567,6 +565,7 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     for raw, pretty in DISPLAY_COLS.items():
         if raw in PCT_COLS:
             d[pretty] = df[raw].map(_fmt_pct)
+    d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     d["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
     return d
@@ -881,7 +880,7 @@ def _prepare_theme_display(df: pd.DataFrame) -> pd.DataFrame:
             d[pretty] = df[raw].map(_fmt_pct)
     d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     d["Market Cap (₹ Cr)"] = df["market_cap_cr"].map(
-        lambda v: f"{int(v):,}" if pd.notna(v) else "—"
+        lambda v: f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
     )
     d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "N/A")
     return d
@@ -1746,6 +1745,8 @@ with tab_tt:
                 merged["cmp_chg"] = (
                     (merged["cmp_b"] - merged["cmp_a"]) / merged["cmp_a"]
                 ).map(_fmt_pct)
+                merged["cmp_a"] = merged["cmp_a"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+                merged["cmp_b"] = merged["cmp_b"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
                 merged["200DMA flip"] = merged.apply(
                     lambda r:
                         "🟢 Below → Above" if r["status_200dma_a"] == "Below 200DMA" and r["status_200dma_b"] == "Above 200DMA"
