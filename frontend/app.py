@@ -1521,7 +1521,7 @@ def render_universe_view(index_name: str, snap_date):
         return
 
     # Inline filters
-    fc1, fc2 = st.columns([1, 2])
+    fc1, fc2, fc3 = st.columns([1, 1, 1])
     with fc1:
         sectors = sorted(df["sector"].dropna().unique().tolist())
         sel_sectors = st.multiselect(
@@ -1529,26 +1529,27 @@ def render_universe_view(index_name: str, snap_date):
             key=f"sf_{index_name}", placeholder="All sectors",
         )
     with fc2:
-        mcap_min = float(df["market_cap_cr"].min(skipna=True) or 0)
-        mcap_max = float(df["market_cap_cr"].max(skipna=True) or 1e6)
-        if mcap_min < mcap_max:
-            mcap_r = st.slider(
-                "MCap range (Cr)", mcap_min, mcap_max, (mcap_min, mcap_max),
-                format="%.0f", key=f"mc_{index_name}",
-            )
-            st.caption(
-                f"₹{mcap_r[0]:,.0f} Cr — ₹{mcap_r[1]:,.0f} Cr"
-            )
-        else:
-            mcap_r = (mcap_min, mcap_max)
+        sel_200dma = st.selectbox(
+            "200 DMA",
+            options=["All", "Above 200DMA", "Below 200DMA"],
+            index=0,
+            key=f"dma200_{index_name}",
+        )
+    with fc3:
+        sel_50dma = st.selectbox(
+            "50 DMA",
+            options=["All", "Above 50DMA", "Below 50DMA"],
+            index=0,
+            key=f"dma50_{index_name}",
+        )
 
     # Apply filters
     if sel_sectors:
         df = df[df["sector"].isin(sel_sectors)]
-    df = df[
-        df["market_cap_cr"].isna() |
-        ((df["market_cap_cr"] >= mcap_r[0]) & (df["market_cap_cr"] <= mcap_r[1]))
-    ]
+    if sel_200dma != "All":
+        df = df[df["status_200dma"] == sel_200dma]
+    if sel_50dma != "All":
+        df = df[df["status_50dma"] == sel_50dma]
 
     if df.empty:
         st.warning("No stocks match the current filters.")
