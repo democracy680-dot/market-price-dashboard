@@ -1,8 +1,8 @@
 """
 app.py — Indian Equity Dashboard (Streamlit)
 
-Reads exclusively from Supabase. No yfinance calls here.
-All heavy computation happens in the daily refresh job.
+Reads primarily from Supabase. yfinance is used for live benchmark index returns.
+All heavy stock computation happens in the daily refresh job.
 """
 
 import os
@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+import yfinance as yf
 
 load_dotenv()
 
@@ -370,6 +371,18 @@ SECTOR_TABS  = [("BANKS", "Banks"), ("NBFCS", "NBFCs"),
                 ("PHARMA", "Pharma"), ("DEFENCE", "Defence")]
 ALL_UNIVERSES = {k: v for k, v in INDEX_TABS + SECTOR_TABS}
 
+# yfinance ticker symbol for each universe (None = no benchmark index)
+INDEX_YF_SYMBOL = {
+    "NIFTY_50":   "^NSEI",
+    "NIFTY_500":  "^CRSLDX",
+    "NIFTY_BANK": "^NSEBANK",
+    "FNO":        None,
+    "BANKS":      "^NSEBANK",
+    "NBFCS":      None,
+    "PHARMA":     "NIFTYPHARMA.NS",
+    "DEFENCE":    None,
+}
+
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
@@ -380,6 +393,31 @@ def load_available_dates() -> list:
             text("SELECT DISTINCT date FROM snapshots_daily ORDER BY date DESC LIMIT 90")
         ).fetchall()
     return [r[0] for r in rows]
+
+
+@st.cache_data(ttl=300)
+def fetch_index_returns(yf_symbol: str) -> dict:
+    """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance."""
+    try:
+        ticker = yf.Ticker(yf_symbol)
+        hist = ticker.history(period="2y")
+        if hist.empty or len(hist) < 2:
+            return {}
+        closes = hist["Close"].dropna()
+        last   = closes.iloc[-1]
+        prev   = closes.iloc[-2]
+        ret_1d = (last / prev - 1) if prev else None
+        # ~21 trading days ≈ 1 month
+        idx_1m = max(0, len(closes) - 22)
+        close_1m = closes.iloc[idx_1m]
+        ret_1m = (last / close_1m - 1) if close_1m else None
+        # ~252 trading days ≈ 1 year
+        idx_1y = max(0, len(closes) - 253)
+        close_1y = closes.iloc[idx_1y]
+        ret_1y = (last / close_1y - 1) if close_1y else None
+        return {"1D": ret_1d, "1M": ret_1m, "1Y": ret_1y}
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=300)
@@ -733,21 +771,30 @@ def _show_chart_dialog(symbol: str, name: str):
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
-def render_summary_cards(df: pd.DataFrame):
-    med_1d    = df["ret_1d"].median()
-    med_1w    = df["ret_1w"].median()
-    med_30d   = df["ret_30d"].median()
+def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
     adv       = int((df["ret_1d"] > 0).sum())
     dec       = int((df["ret_1d"] < 0).sum())
     above_200 = int((df["status_200dma"] == "Above 200DMA").sum())
     total     = len(df)
 
+    # Fetch index-level returns if a benchmark symbol is mapped
+    idx_rets: dict = {}
+    yf_sym = INDEX_YF_SYMBOL.get(index_name) if index_name else None
+    if yf_sym:
+        idx_rets = fetch_index_returns(yf_sym)
+
+    def _idx_val(key):
+        v = idx_rets.get(key)
+        return _fmt_pct(v) if v is not None else "—"
+
+    label_prefix = ALL_UNIVERSES.get(index_name, "Index") if index_name else "Index"
+
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: st.metric("Median 1D Return",  _fmt_pct(med_1d),  delta=None)
-    with c2: st.metric("Median 1W Return",  _fmt_pct(med_1w),  delta=None)
-    with c3: st.metric("Median 30D Return", _fmt_pct(med_30d), delta=None)
-    with c4: st.metric("Adv / Dec",         f"{adv} / {dec}")
-    with c5: st.metric("Above 200 DMA",     f"{above_200} / {total}")
+    with c1: st.metric(f"{label_prefix} 1D",  _idx_val("1D"),  delta=None)
+    with c2: st.metric(f"{label_prefix} 1M",  _idx_val("1M"),  delta=None)
+    with c3: st.metric(f"{label_prefix} 1Y",  _idx_val("1Y"),  delta=None)
+    with c4: st.metric("Adv / Dec",            f"{adv} / {dec}")
+    with c5: st.metric("Above 200 DMA",        f"{above_200} / {total}")
 
 
 def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
@@ -1487,7 +1534,10 @@ def render_universe_view(index_name: str, snap_date):
         if mcap_min < mcap_max:
             mcap_r = st.slider(
                 "MCap range (Cr)", mcap_min, mcap_max, (mcap_min, mcap_max),
-                format="₹%.0f", key=f"mc_{index_name}",
+                format="%.0f", key=f"mc_{index_name}",
+            )
+            st.caption(
+                f"₹{mcap_r[0]:,.0f} Cr — ₹{mcap_r[1]:,.0f} Cr"
             )
         else:
             mcap_r = (mcap_min, mcap_max)
@@ -1505,7 +1555,7 @@ def render_universe_view(index_name: str, snap_date):
         return
 
     st.divider()
-    render_summary_cards(df)
+    render_summary_cards(df, index_name=index_name)
     st.divider()
     render_sort_and_table(df, key=index_name)
 
