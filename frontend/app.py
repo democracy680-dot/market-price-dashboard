@@ -1700,14 +1700,14 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload, tab_tt, tab_gm = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload, tab_tt = st.tabs([
+    "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
     "Custom Upload",
     "Time Travel",
-    "Global Markets",
 ])
 
 def _page_header(title: str, date=None):
