@@ -73,29 +73,31 @@ st.markdown("""
 
     /* ── Tabs ── */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 0;
+        gap: 2px;
         background: transparent;
-        border-bottom: 1px solid #1a2236;
-        padding: 0 4px;
+        border-bottom: 1px solid #1e2d45;
+        padding: 0;
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 10px 20px;
-        font-size: 13px;
-        font-weight: 500;
-        color: #4a5568;
+        padding: 9px 18px;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: #475569;
         border-radius: 0;
         background: transparent;
         border-bottom: 2px solid transparent;
         margin-bottom: -1px;
-        letter-spacing: 0.01em;
-        transition: color 0.15s;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        transition: color 0.15s, border-color 0.15s;
     }
     .stTabs [data-baseweb="tab"]:hover {
-        color: #94a3b8;
+        color: #cbd5e1;
         background: transparent;
+        border-bottom: 2px solid #334155;
     }
     .stTabs [aria-selected="true"] {
-        color: #f1f5f9 !important;
+        color: #e2e8f0 !important;
         border-bottom: 2px solid #3b82f6 !important;
         background: transparent !important;
     }
@@ -1569,7 +1571,7 @@ tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload, tab_tt, tab_gm = st.tabs
     "Themes",
     "Custom Upload",
     "Time Travel",
-    "🌍 Global Markets",
+    "Global Markets",
 ])
 
 def _page_header(title: str, date=None):
