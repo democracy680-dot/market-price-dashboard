@@ -30,7 +30,7 @@ except Exception as _gm_err:  # noqa: BLE001
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Indian Equity Dashboard",
+    page_title="StockStack",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -352,105 +352,59 @@ def _check_password():
 
         .lp-page {
             display: flex; align-items: center; justify-content: center;
-            min-height: 88vh; padding: 2rem 1rem;
+            min-height: 90vh;
         }
         .lp-card {
             background: #0c1220;
             border: 1px solid #1e2d45;
             border-radius: 24px;
             padding: 52px 56px 48px;
-            width: 100%; max-width: 500px;
-            box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(59,130,246,0.06);
-        }
-        .lp-logo {
-            display: flex; align-items: center; gap: 12px; margin-bottom: 32px;
+            width: 100%; max-width: 420px;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+            text-align: center;
         }
         .lp-logo-icon {
-            width: 42px; height: 42px; border-radius: 10px;
+            width: 56px; height: 56px; border-radius: 14px;
             background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 20px; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 26px; margin-bottom: 18px;
         }
-        .lp-logo-name {
-            font-size: 22px; font-weight: 800; color: #f1f5f9;
-            letter-spacing: -0.04em;
+        .lp-name {
+            font-size: 32px; font-weight: 800; color: #f1f5f9;
+            letter-spacing: -0.05em; margin: 0 0 6px;
         }
-        .lp-logo-name span { color: #3b82f6; }
-        .lp-headline {
-            font-size: 15px; font-weight: 500; color: #94a3b8;
-            line-height: 1.65; margin: 0 0 32px;
-            border-left: 2px solid #1e3a5f; padding-left: 14px;
+        .lp-name span { color: #3b82f6; }
+        .lp-tagline {
+            font-size: 12px; color: #334155; letter-spacing: 0.08em;
+            text-transform: uppercase; font-weight: 500; margin-bottom: 36px;
         }
-        .lp-features {
-            display: grid; grid-template-columns: 1fr 1fr;
-            gap: 12px; margin-bottom: 36px;
-        }
-        .lp-feat {
-            background: #0f1929; border: 1px solid #1e2d45;
-            border-radius: 12px; padding: 14px 16px;
-        }
-        .lp-feat-icon { font-size: 16px; margin-bottom: 6px; }
-        .lp-feat-title { font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 3px; }
-        .lp-feat-desc { font-size: 11px; color: #475569; line-height: 1.5; }
         .lp-divider { border: none; border-top: 1px solid #1a2740; margin: 0 0 28px; }
-        .lp-input-label {
-            font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
-            color: #475569; text-transform: uppercase; margin-bottom: 8px;
-        }
         .lp-footer {
-            text-align: center; font-size: 11px; color: #2d3f57; margin-top: 20px;
-            letter-spacing: 0.02em;
+            text-align: center; font-size: 11px; color: #2d3f57;
+            margin-top: 18px; letter-spacing: 0.02em;
         }
     </style>
     <div class="lp-page">
       <div class="lp-card">
-        <div class="lp-logo">
-          <div class="lp-logo-icon">📈</div>
-          <div class="lp-logo-name">Stock<span>Stack</span></div>
-        </div>
-        <div class="lp-headline">
-          Real-time market intelligence for Indian equities — tracking indices,
-          sectors, themes and global markets in one unified dashboard.
-        </div>
-        <div class="lp-features">
-          <div class="lp-feat">
-            <div class="lp-feat-icon">⚡</div>
-            <div class="lp-feat-title">Live Returns</div>
-            <div class="lp-feat-desc">1D, 1M and 1Y index returns updated in real-time</div>
-          </div>
-          <div class="lp-feat">
-            <div class="lp-feat-icon">📊</div>
-            <div class="lp-feat-title">Market Breadth</div>
-            <div class="lp-feat-desc">Adv / Dec counts and 50 / 200 DMA breakdowns</div>
-          </div>
-          <div class="lp-feat">
-            <div class="lp-feat-icon">🗺️</div>
-            <div class="lp-feat-title">Sector Heatmaps</div>
-            <div class="lp-feat-desc">Sector and theme performance ranked by returns</div>
-          </div>
-          <div class="lp-feat">
-            <div class="lp-feat-icon">🌐</div>
-            <div class="lp-feat-title">Global Markets</div>
-            <div class="lp-feat-desc">7 trading sessions — Asia, Europe and Americas</div>
-          </div>
-        </div>
+        <div class="lp-logo-icon">📈</div>
+        <div class="lp-name">Stock<span>Stack</span></div>
+        <div class="lp-tagline">Indian Equity Intelligence</div>
         <hr class="lp-divider">
-        <div class="lp-input-label">Access Password</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-    _, col, _ = st.columns([1, 1.6, 1])
+    _, col, _ = st.columns([1, 1.4, 1])
     with col:
-        st.markdown("<div style='margin-top:-196px'>", unsafe_allow_html=True)
-        pw = st.text_input("", type="password", placeholder="Enter your password…",
+        st.markdown("<div style='margin-top:-148px'>", unsafe_allow_html=True)
+        pw = st.text_input("", type="password", placeholder="Enter password…",
                            label_visibility="collapsed")
         if st.button("Sign In →", use_container_width=True, type="primary"):
             if pw == correct:
                 st.session_state["authenticated"] = True
                 st.rerun()
             else:
-                st.error("Incorrect password. Please try again.")
+                st.error("Incorrect password.")
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown(
             "<div class='lp-footer'>Restricted access · Authorised users only</div>",
@@ -1681,14 +1635,13 @@ def render_universe_view(index_name: str, snap_date):
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("""
-        <div style="padding: 8px 0 16px 0;">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.15em;
-                        color:#3b82f6;text-transform:uppercase;margin-bottom:6px;">
-                NSE · India
-            </div>
-            <div style="font-size:22px;font-weight:700;color:#f1f5f9;
-                        letter-spacing:-0.03em;line-height:1.2;">
-                Equity<br>Dashboard
+        <div style="padding: 8px 0 16px 0; display:flex; align-items:center; gap:10px;">
+            <div style="width:34px;height:34px;border-radius:8px;
+                        background:linear-gradient(135deg,#1d4ed8 0%,#3b82f6 100%);
+                        display:flex;align-items:center;justify-content:center;
+                        font-size:16px;flex-shrink:0;">📈</div>
+            <div style="font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;">
+                Stock<span style="color:#3b82f6;">Stack</span>
             </div>
         </div>
     """, unsafe_allow_html=True)
