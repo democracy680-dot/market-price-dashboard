@@ -15,8 +15,30 @@ from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import yfinance as yf
+from PIL import Image, ImageDraw
 
 load_dotenv()
+
+
+def _make_favicon() -> Image.Image:
+    """Generate a favicon matching the login screen logo: blue rounded square + white trend arrow."""
+    size = 64
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=14, fill=(59, 130, 246, 255))
+    # Scale SVG 24×24 coords to 64×64
+    s = size / 24
+    # Trend line: "22 7 13.5 15.5 8.5 10.5 2 17"
+    draw.line(
+        [(22 * s, 7 * s), (13.5 * s, 15.5 * s), (8.5 * s, 10.5 * s), (2 * s, 17 * s)],
+        fill=(255, 255, 255, 255), width=3,
+    )
+    # Arrow head: "16 7 22 7 22 13"
+    draw.line(
+        [(16 * s, 7 * s), (22 * s, 7 * s), (22 * s, 13 * s)],
+        fill=(255, 255, 255, 255), width=3,
+    )
+    return img
 
 # Global Markets tab (live data via yfinance — imported from sibling module)
 try:
@@ -31,7 +53,7 @@ except Exception as _gm_err:  # noqa: BLE001
 # ---------------------------------------------------------------------------
 st.set_page_config(
     page_title="StockStack",
-    page_icon="📊",
+    page_icon=_make_favicon(),
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -1003,35 +1025,23 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
 
     # Add link columns directly into the display df
     display["Screener"] = chunk["screener_url"].where(chunk["screener_url"].notna(), other=None)
-    display["TradingView"] = chunk["tradingview_url"].where(chunk["tradingview_url"].notna(), other=None)
+    display["Chart"] = chunk["tradingview_url"].where(chunk["tradingview_url"].notna(), other=None)
 
     styled = display.style
     for raw, pretty in DISPLAY_COLS.items():
         if raw in PCT_COLS:
             styled = styled.map(_color_return, subset=[pretty])
 
-    st.caption("💡 Click any row to open its candlestick chart")
-
-    event = st.dataframe(
+    st.dataframe(
         styled,
         use_container_width=True,
         hide_index=True,
         height=700,
-        selection_mode="single-row",
-        on_select="rerun",
         column_config={
-            "Screener":     st.column_config.LinkColumn("Screener",     display_text="Screener ↗"),
-            "TradingView":  st.column_config.LinkColumn("TradingView",  display_text="TV ↗"),
+            "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
+            "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
         },
     )
-
-    if event.selection and event.selection.rows:
-        selected_idx = event.selection.rows[0]
-        selected_row = chunk.iloc[selected_idx]
-        _show_chart_dialog(
-            symbol=selected_row["symbol"],
-            name=selected_row["name"] if "name" in selected_row.index else selected_row["symbol"],
-        )
 
     csv_bytes = df[list(DISPLAY_COLS.keys())].to_csv(index=False).encode()
     _dl_sp, _dl_col = st.columns([5, 1])
@@ -1255,34 +1265,24 @@ def render_themes_view():
             return
 
         display = _prepare_theme_display(stocks_df)
-        display["Screener"]     = stocks_df["screener_url"].where(stocks_df["screener_url"].notna(), other=None)
-        display["TradingView"]  = stocks_df["tradingview_url"].where(stocks_df["tradingview_url"].notna(), other=None)
+        display["Screener"] = stocks_df["screener_url"].where(stocks_df["screener_url"].notna(), other=None)
+        display["Chart"]    = stocks_df["tradingview_url"].where(stocks_df["tradingview_url"].notna(), other=None)
 
         styled = display.style
         for raw, pretty in THEME_DISPLAY_COLS.items():
             if raw in THEME_PCT_COLS:
                 styled = styled.map(_color_return, subset=[pretty])
 
-        event = st.dataframe(
+        st.dataframe(
             styled,
             use_container_width=True,
             hide_index=True,
             height=650,
-            selection_mode="single-row",
-            on_select="rerun",
             column_config={
-                "Screener":    st.column_config.LinkColumn("Screener",    display_text="Screener ↗"),
-                "TradingView": st.column_config.LinkColumn("TradingView", display_text="TV ↗"),
+                "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
             },
         )
-
-        if event.selection and event.selection.rows:
-            selected_idx = event.selection.rows[0]
-            selected_row = stocks_df.iloc[selected_idx]
-            _show_chart_dialog(
-                symbol=selected_row["symbol"],
-                name=selected_row["name"],
-            )
 
         csv_bytes = stocks_df[list(THEME_DISPLAY_COLS.keys())].to_csv(index=False).encode()
         _dl_sp2, _dl_col2 = st.columns([5, 1])
