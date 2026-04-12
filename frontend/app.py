@@ -1993,6 +1993,11 @@ def _frag_themes():
 
 
 @st.fragment
+def _frag_volspike(snap_date):
+    render_volspike_view(snap_date)
+
+
+@st.fragment
 def _frag_sector_performance(snap_date):
     sector_df = load_sector_performance(snap_date)
     if sector_df.empty:
@@ -2055,6 +2060,119 @@ def _frag_sector_performance(snap_date):
 
 
 # ---------------------------------------------------------------------------
+# Volume Spike screener — all stocks sorted by vol spike desc
+# ---------------------------------------------------------------------------
+_VS_COLS = {
+    "symbol":        "Symbol",
+    "name":          "Name",
+    "sector":        "Sector",
+    "cmp":           "CMP",
+    "vol_spike":     "Vol Spike",
+    "ret_1d":        "1D%",
+    "ret_1w":        "1W%",
+    "ret_30d":       "30D%",
+    "ret_365d":      "1Y%",
+    "market_cap_cr": "MCap (Cr)",
+    "pe_ratio":      "P/E",
+    "pct_from_52wh": "52W High%",
+}
+_VS_PCT_COLS = {"ret_1d", "ret_1w", "ret_30d", "ret_365d", "pct_from_52wh"}
+
+
+def render_volspike_view(snap_date):
+    df = _load_all_snapshots(snap_date)
+
+    if "vol_spike" not in df.columns or df["vol_spike"].isna().all():
+        st.info(
+            "Volume spike data isn't available yet — it requires `prices_daily` "
+            "data for this date. Try a more recent date or wait for the next refresh."
+        )
+        return
+
+    df = df[df["vol_spike"].notna() & (df["vol_spike"] > 0)].copy()
+
+    # ── Filters ─────────────────────────────────────────────────────────────
+    fc1, fc2, fc3 = st.columns([1, 1, 2])
+    with fc1:
+        spike_options = {"Any (all)": 0.0, "1.5×+": 1.5, "2×+": 2.0, "3×+": 3.0, "5×+": 5.0}
+        min_label = st.selectbox("Min spike", list(spike_options.keys()), index=2, key="vs_min")
+        min_val   = spike_options[min_label]
+    with fc2:
+        sectors    = sorted(df["sector"].dropna().unique().tolist())
+        sel_sector = st.multiselect("Sector", sectors, default=[], key="vs_sector",
+                                    placeholder="All sectors")
+    with fc3:
+        st.markdown(
+            "<div style='font-size:11px;color:#374151;padding-top:28px;'>"
+            "Stocks where today's volume significantly exceeds the 30-day average — "
+            "often signals unusual activity, breakouts, or news-driven moves.</div>",
+            unsafe_allow_html=True,
+        )
+
+    if min_val > 0:
+        df = df[df["vol_spike"] >= min_val]
+    if sel_sector:
+        df = df[df["sector"].isin(sel_sector)]
+
+    df = df.sort_values("vol_spike", ascending=False).reset_index(drop=True)
+
+    total = len(df)
+    if total == 0:
+        st.warning("No stocks match the current filters.")
+        return
+
+    st.markdown(
+        f"<div style='font-size:11.5px;color:#4a5568;margin:4px 0 8px;'>"
+        f"{total} stocks · sorted highest Vol Spike first"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Build display df ────────────────────────────────────────────────────
+    available = {k: v for k, v in _VS_COLS.items() if k in df.columns}
+    disp = df[list(available.keys())].copy().rename(columns=available)
+
+    for raw, pretty in available.items():
+        if raw in _VS_PCT_COLS:
+            disp[pretty] = df[raw].map(_fmt_pct)
+
+    disp["CMP"]       = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
+    disp["P/E"]       = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    if "Vol Spike" in disp.columns:
+        disp["Vol Spike"] = df["vol_spike"].map(lambda v: f"{v:.1f}×" if pd.notna(v) else "—")
+
+    # Chart link column
+    disp["Chart"] = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
+
+    # ── Styling ─────────────────────────────────────────────────────────────
+    styled = disp.style
+    for raw, pretty in available.items():
+        if raw in _VS_PCT_COLS and pretty in disp.columns:
+            styled = styled.map(_color_return, subset=[pretty])
+    if "Vol Spike" in disp.columns:
+        styled = styled.map(_color_vol_spike, subset=["Vol Spike"])
+
+    st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=True,
+        height=700,
+        column_config={
+            "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
+        },
+    )
+
+    # CSV export
+    csv_cols  = [k for k in _VS_COLS.keys() if k in df.columns]
+    csv_bytes = df[csv_cols].to_csv(index=False).encode()
+    _, dl_col = st.columns([5, 1])
+    with dl_col:
+        st.download_button("⬇ CSV", csv_bytes, "vol_spikes.csv", "text/csv",
+                           key="dl_vs", use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
 # Data-freshness banner — shown when last refresh is >24 h old
 # ---------------------------------------------------------------------------
 if status:
@@ -2078,12 +2196,13 @@ if status:
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_upload = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_upload = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
+    "Vol Spikes",
     "Custom Upload",
 ])
 
@@ -2131,7 +2250,12 @@ with tab_themes:
     _page_header("Themes")
     _frag_themes()
 
-# ── Tab 5: Custom Upload ─────────────────────────────────────────────────────
+# ── Tab 5: Vol Spikes ────────────────────────────────────────────────────────
+with tab_volspike:
+    _page_header("Volume Spike Screener", selected_date)
+    _frag_volspike(selected_date)
+
+# ── Tab 6: Custom Upload ─────────────────────────────────────────────────────
 with tab_upload:
     _page_header("Custom Stock List")
 
