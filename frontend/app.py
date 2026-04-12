@@ -562,7 +562,12 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
                 WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
                 THEN (sd.cmp - h52.high_52w) / h52.high_52w
                 ELSE NULL
-            END AS pct_from_52wh
+            END AS pct_from_52wh,
+            CASE
+                WHEN avg_vol.avg_vol_30d > 0 AND td_vol.today_vol IS NOT NULL
+                THEN ROUND((td_vol.today_vol::float / avg_vol.avg_vol_30d)::numeric, 1)
+                ELSE NULL
+            END AS vol_spike
         FROM snapshots_daily sd
         JOIN stocks s ON sd.symbol = s.symbol
         LEFT JOIN (
@@ -572,6 +577,18 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
               AND date <= CAST(:date AS date)
             GROUP BY symbol
         ) h52 ON h52.symbol = sd.symbol
+        LEFT JOIN (
+            SELECT symbol, AVG(volume) AS avg_vol_30d
+            FROM prices_daily
+            WHERE date >= CAST(:date AS date) - INTERVAL '30 days'
+              AND date < CAST(:date AS date)
+            GROUP BY symbol
+        ) avg_vol ON avg_vol.symbol = sd.symbol
+        LEFT JOIN (
+            SELECT symbol, volume AS today_vol
+            FROM prices_daily
+            WHERE date = CAST(:date AS date)
+        ) td_vol ON td_vol.symbol = sd.symbol
         WHERE sd.date = :date AND s.is_active = TRUE
     """)
     with engine.connect() as conn:
@@ -744,6 +761,7 @@ DISPLAY_COLS = {
     "status_50dma":  "50DMA",
     "status_200dma": "200DMA",
     "pct_from_52wh": "52W High%",
+    "vol_spike":     "Vol Spike",
 }
 
 
@@ -753,6 +771,29 @@ def _color_return(val):
     try:
         n = float(str(val).replace("%", "").replace("+", ""))
         return "color: #22c55e; font-weight:600" if n >= 0 else "color: #ef4444; font-weight:600"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _color_dma(val):
+    v = str(val)
+    if "▲" in v:
+        return "color: #22c55e; font-weight: 600"
+    elif "▼" in v:
+        return "color: #ef4444; font-weight: 600"
+    return "color: #4a5568"
+
+
+def _color_vol_spike(val):
+    if val == "—" or pd.isna(val):
+        return "color: #4a5568"
+    try:
+        n = float(str(val).replace("×", ""))
+        if n >= 3.0:
+            return "color: #f59e0b; font-weight: 700"
+        elif n >= 2.0:
+            return "color: #fbbf24; font-weight: 600"
+        return "color: #64748b"
     except (ValueError, TypeError):
         return ""
 
@@ -768,14 +809,28 @@ def _fmt_mcap(val):
 
 
 def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
-    d = df[list(DISPLAY_COLS.keys())].copy()
-    d = d.rename(columns=DISPLAY_COLS)
-    for raw, pretty in DISPLAY_COLS.items():
+    # Only include columns that actually exist in df (vol_spike may be absent on cached data)
+    available = {k: v for k, v in DISPLAY_COLS.items() if k in df.columns}
+    d = df[list(available.keys())].copy()
+    d = d.rename(columns=available)
+    for raw, pretty in available.items():
         if raw in PCT_COLS:
             d[pretty] = df[raw].map(_fmt_pct)
     d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     d["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    # DMA colored badges
+    if "50DMA" in d.columns:
+        d["50DMA"] = df["status_50dma"].map(
+            lambda v: "▲ Above" if v == "Above 50DMA" else ("▼ Below" if v == "Below 50DMA" else "—")
+        )
+    if "200DMA" in d.columns:
+        d["200DMA"] = df["status_200dma"].map(
+            lambda v: "▲ Above" if v == "Above 200DMA" else ("▼ Below" if v == "Below 200DMA" else "—")
+        )
+    # Volume spike ratio
+    if "Vol Spike" in d.columns:
+        d["Vol Spike"] = df["vol_spike"].map(lambda v: f"{v:.1f}×" if pd.notna(v) else "—")
     return d
 
 # ---------------------------------------------------------------------------
@@ -798,18 +853,29 @@ def _render_chart_body(symbol: str, name: str):
         st.warning(f"No price history found for **{symbol}** in the database.")
         return
 
-    # ── Header row: name + live price + day change ───────────────────────────
+    # ── Header row: name + sector tag + live price + day change ─────────────
     last  = ohlcv.iloc[-1]
     prev  = ohlcv.iloc[-2] if len(ohlcv) > 1 else last
     day_chg_pct = (last["close"] - prev["close"]) / prev["close"] * 100 if prev["close"] else 0
     chg_color   = "#22c55e" if day_chg_pct >= 0 else "#ef4444"
     arrow       = "▲" if day_chg_pct >= 0 else "▼"
 
+    _sym_info = load_all_symbols()
+    _sym_row  = _sym_info[_sym_info["symbol"] == symbol]
+    _sector   = _sym_row.iloc[0]["sector"] if not _sym_row.empty and pd.notna(_sym_row.iloc[0]["sector"]) else None
+    _sector_tag = (
+        f"<span style='font-size:11px;font-weight:600;color:#60a5fa;"
+        f"background:#0f1f3d;padding:2px 8px;border-radius:4px;"
+        f"border:1px solid #1e3a5f;white-space:nowrap;'>{_sector}</span>"
+        if _sector else ""
+    )
+
     st.markdown(
-        f"<div style='display:flex;align-items:baseline;gap:14px;margin-bottom:10px'>"
+        f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;'>"
         f"<span style='font-size:20px;font-weight:700;color:#e2e8f0'>{symbol}</span>"
         f"<span style='color:#8b97a8;font-size:13px'>{name}</span>"
-        f"<span style='font-size:26px;font-weight:700;color:#e2e8f0'>₹{last['close']:,.2f}</span>"
+        f"{_sector_tag}"
+        f"<span style='font-size:26px;font-weight:700;color:#e2e8f0;margin-left:4px;'>₹{last['close']:,.2f}</span>"
         f"<span style='font-size:14px;font-weight:600;color:{chg_color}'>"
         f"{arrow} {abs(day_chg_pct):.2f}%</span>"
         f"</div>",
@@ -940,7 +1006,7 @@ def _show_chart_dialog(symbol: str, name: str):
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
-def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
+def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_date=None):
     valid_ret = df["ret_1d"].dropna()
     adv       = int((valid_ret > 0).sum())
     dec       = int((valid_ret < 0).sum())
@@ -988,6 +1054,14 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
     with c4: st.metric("Adv / Dec",     f"{adv} / {dec}", delta=f"{adv - dec:+d} ({unch} flat)" if unch else f"{adv - dec:+d}")
     with c5: st.metric("Above 200 DMA", f"{above_200} / {total}")
 
+    if snap_date:
+        st.markdown(
+            f"<div style='font-size:10.5px;color:#2d4f6e;margin-top:2px;"
+            f"letter-spacing:0.04em;'>As of market close · "
+            f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}</div>",
+            unsafe_allow_html=True,
+        )
+
     if _yf_fetch_error and yf_sym:
         st.warning(
             f"Live index data unavailable for `{yf_sym}` — showing constituent median instead. "
@@ -1023,14 +1097,34 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
     chunk = df.iloc[start : start + page_size].reset_index(drop=True)
     display = prepare_display(chunk)
 
-    # Add link columns directly into the display df
+    # ── Column visibility toggle ─────────────────────────────────────────────
+    _all_data_cols = list(display.columns)
+    _vis_key = f"vis_cols_{key}"
+    if _vis_key not in st.session_state:
+        st.session_state[_vis_key] = _all_data_cols
+    with st.expander("⚙ Columns", expanded=False):
+        _visible = st.multiselect(
+            "Visible columns", _all_data_cols,
+            default=[c for c in st.session_state[_vis_key] if c in _all_data_cols],
+            key=f"mc_{key}", label_visibility="collapsed",
+        )
+        st.session_state[_vis_key] = _visible
+    display = display[_visible] if _visible else display
+
+    # Add link columns (always shown regardless of visibility toggle)
     display["Screener"] = chunk["screener_url"].where(chunk["screener_url"].notna(), other=None)
     display["Chart"] = chunk["tradingview_url"].where(chunk["tradingview_url"].notna(), other=None)
 
     styled = display.style
     for raw, pretty in DISPLAY_COLS.items():
-        if raw in PCT_COLS:
+        if raw in PCT_COLS and pretty in display.columns:
             styled = styled.map(_color_return, subset=[pretty])
+    if "50DMA" in display.columns:
+        styled = styled.map(_color_dma, subset=["50DMA"])
+    if "200DMA" in display.columns:
+        styled = styled.map(_color_dma, subset=["200DMA"])
+    if "Vol Spike" in display.columns:
+        styled = styled.map(_color_vol_spike, subset=["Vol Spike"])
 
     st.dataframe(
         styled,
@@ -1043,7 +1137,8 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
         },
     )
 
-    csv_bytes = df[list(DISPLAY_COLS.keys())].to_csv(index=False).encode()
+    csv_cols = [k for k in DISPLAY_COLS.keys() if k in df.columns]
+    csv_bytes = df[csv_cols].to_csv(index=False).encode()
     _dl_sp, _dl_col = st.columns([5, 1])
     with _dl_col:
         st.download_button("⬇ CSV", csv_bytes, "stocks.csv", "text/csv",
@@ -1439,6 +1534,27 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
         unsafe_allow_html=True,
     )
 
+    # Previous session date — for delta chips
+    _all_dates = load_available_dates()
+    _prev_date = _all_dates[1] if len(_all_dates) > 1 else None
+
+    def _breadth_pct(target_df, status_col, above_val):
+        valid = target_df[status_col].dropna()
+        a = int((valid == above_val).sum())
+        t = len(valid)
+        return round(a / t * 100, 1) if t else 0.0
+
+    def _delta_chip(current_pct: float, prev_pct: float | None) -> str:
+        if prev_pct is None:
+            return ""
+        delta = current_pct - prev_pct
+        color  = "#22c55e" if delta >= 0 else "#ef4444"
+        arrow  = "↑" if delta >= 0 else "↓"
+        return (
+            f"<span style='font-size:11px;font-weight:600;color:{color};"
+            f"margin-left:4px;'>{arrow} {abs(delta):.1f}pp</span>"
+        )
+
     def _stats(status_col: str, above_val: str, below_val: str):
         # Drop stocks that lack enough history to compute the DMA (NaN status).
         # Percentages are computed over this valid subset — not total universe size —
@@ -1473,6 +1589,14 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
 
         for col_widget, (key, label) in zip([col_left, col_right], pair):
             df = load_snapshot(snap_date, index_name=key)
+
+            # Previous session breadth for delta chips
+            _prev50, _prev200 = None, None
+            if _prev_date:
+                _prev_df = load_snapshot(_prev_date, index_name=key)
+                if not _prev_df.empty:
+                    _prev50  = _breadth_pct(_prev_df, "status_50dma",  "Above 50DMA")
+                    _prev200 = _breadth_pct(_prev_df, "status_200dma", "Above 200DMA")
 
             with col_widget:
                 with st.container(border=True):
@@ -1588,9 +1712,9 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
 
                     # ── Stats strip ──────────────────────────────────────────
                     sc1, sc2 = st.columns(2)
-                    for sc, above, below, total, pct, color, mood, dma_label in [
-                        (sc1, a50,  b50,  t50,  pct50,  c50,  mood50,  "50 DMA"),
-                        (sc2, a200, b200, t200, pct200, c200, mood200, "200 DMA"),
+                    for sc, above, below, total, pct, color, mood, dma_label, prev_pct in [
+                        (sc1, a50,  b50,  t50,  pct50,  c50,  mood50,  "50 DMA",  _prev50),
+                        (sc2, a200, b200, t200, pct200, c200, mood200, "200 DMA", _prev200),
                     ]:
                         with sc:
                             st.markdown(
@@ -1606,7 +1730,9 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                                 f"</div>"
                                 f"<div style='font-size:13px;font-weight:700;"
                                 f"color:{color};margin-top:3px;letter-spacing:0.02em;'>"
-                                f"{mood}</div>"
+                                f"{mood}"
+                                + _delta_chip(pct, prev_pct) +
+                                f"</div>"
                                 f"</div>",
                                 unsafe_allow_html=True,
                             )
@@ -1774,7 +1900,7 @@ def render_universe_view(index_name: str, snap_date):
         return
 
     st.divider()
-    render_summary_cards(df, index_name=index_name)
+    render_summary_cards(df, index_name=index_name, snap_date=snap_date)
     st.divider()
     render_sort_and_table(df, key=index_name)
 
@@ -1840,7 +1966,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown("<div class='sidebar-section-label'>Tips</div>", unsafe_allow_html=True)
-    st.caption("Click any row in a table to open its price chart.")
+    st.caption("Use the 📈 column in any table to open a chart on TradingView.")
 
 # ---------------------------------------------------------------------------
 # Fragment wrappers — isolate each view so button clicks only rerun their
