@@ -102,7 +102,19 @@ def _fetch_one_fundamental(yahoo_symbol: str) -> dict:
 
         market_cap = getattr(fi, "market_cap", None)
         if market_cap and market_cap > 0:
-            result["market_cap_cr"] = round(market_cap / 1e7, 2)  # USD→INR via price, stored in Cr
+            # NSE stocks (.NS) → yfinance returns market_cap in INR already.
+            # If the ticker reports a non-INR currency, convert to INR first
+            # using a rough exchange rate before dividing by 1e7 (1 Cr = 10^7 INR).
+            currency = getattr(fi, "currency", "INR") or "INR"
+            if currency.upper() != "INR":
+                # Fallback exchange-rate approximation (USD/GBP/etc → INR)
+                try:
+                    fx_ticker = yf.Ticker(f"{currency.upper()}INR=X")
+                    fx_rate = fx_ticker.fast_info.last_price or 84.0
+                except Exception:
+                    fx_rate = 84.0          # conservative fallback: 1 USD ≈ ₹84
+                market_cap = market_cap * fx_rate
+            result["market_cap_cr"] = round(market_cap / 1e7, 2)  # Rupees → Crore
 
         # PE and sector from info (slower but only called once per ticker per day)
         info = t.info

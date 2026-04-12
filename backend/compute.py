@@ -91,7 +91,8 @@ def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
         # Returns — Google Finance methodology
         for col, spec in RETURN_WINDOWS.items():
             past, _ = _past_close(dates, closes, latest_date, spec)
-            if past is not None and float(past) != 0:
+            # Guard: past must be a real, non-zero number to avoid div/0 or NaN
+            if past is not None and pd.notna(past) and float(past) != 0:
                 row[col] = round((float(latest_close) / float(past)) - 1, 6)
             else:
                 row[col] = None
@@ -147,8 +148,10 @@ def compute_sector_performance(snapshots: pd.DataFrame, stocks_meta: pd.DataFram
         df.groupby("sector")
         .agg(
             num_companies=("symbol", "count"),
-            advances=("ret_1d", lambda x: (x > 0).sum()),
-            declines=("ret_1d", lambda x: (x < 0).sum()),
+            # Only count stocks with a valid (non-NaN) 1D return
+            advances=("ret_1d", lambda x: int((x.dropna() > 0).sum())),
+            declines=("ret_1d", lambda x: int((x.dropna() < 0).sum())),
+            unchanged=("ret_1d", lambda x: int((x.dropna() == 0).sum())),
             day_change_pct=("ret_1d",   "median"),
             week_chg_pct=("ret_1w",     "median"),
             month_chg_pct=("ret_30d",   "median"),

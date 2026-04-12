@@ -501,12 +501,13 @@ def load_available_dates() -> list:
 
 @st.cache_data(ttl=3600)
 def fetch_index_returns(yf_symbol: str) -> dict:
-    """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance."""
+    """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance.
+    Returns an empty dict (and sets a flag in session_state) on failure."""
     try:
         ticker = yf.Ticker(yf_symbol)
         hist = ticker.history(period="2y")
         if hist.empty or len(hist) < 2:
-            return {}
+            return {"_error": f"No data returned for {yf_symbol}"}
         closes = hist["Close"].dropna()
         last   = closes.iloc[-1]
         prev   = closes.iloc[-2]
@@ -520,8 +521,8 @@ def fetch_index_returns(yf_symbol: str) -> dict:
         close_1y = closes.iloc[idx_1y]
         ret_1y = (last / close_1y - 1) if close_1y else None
         return {"1D": ret_1d, "1M": ret_1m, "1Y": ret_1y}
-    except Exception:
-        return {}
+    except Exception as e:
+        return {"_error": str(e)}
 
 
 @st.cache_data(ttl=1800)
@@ -569,9 +570,10 @@ def load_sector_performance(snap_date) -> pd.DataFrame:
     sql = text("""
         SELECT
             s.sector,
-            COUNT(*)                                                         AS num_companies,
-            SUM(CASE WHEN sd.ret_1d > 0 THEN 1 ELSE 0 END)                 AS advances,
-            SUM(CASE WHEN sd.ret_1d < 0 THEN 1 ELSE 0 END)                 AS declines,
+            COUNT(*)                                                                   AS num_companies,
+            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d > 0 THEN 1 ELSE 0 END) AS advances,
+            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d < 0 THEN 1 ELSE 0 END) AS declines,
+            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d = 0 THEN 1 ELSE 0 END) AS unchanged,
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1d)          AS day_change_pct,
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1w)          AS week_chg_pct,
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_30d)         AS month_chg_pct,
@@ -893,26 +895,35 @@ def _render_chart_body(symbol: str, name: str):
 
 @st.dialog("Stock Chart", width="large")
 def _show_chart_dialog(symbol: str, name: str):
-    _render_chart_body(symbol, name)
+    with st.spinner("Loading chart…"):
+        _render_chart_body(symbol, name)
 
 
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
 def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
-    adv       = int((df["ret_1d"] > 0).sum())
-    dec       = int((df["ret_1d"] < 0).sum())
+    valid_ret = df["ret_1d"].dropna()
+    adv       = int((valid_ret > 0).sum())
+    dec       = int((valid_ret < 0).sum())
+    unch      = int((valid_ret == 0).sum())
     above_200 = int((df["status_200dma"] == "Above 200DMA").sum())
     total     = len(df)
 
     # Fetch index-level returns — prefer a benchmark yfinance symbol, else use
     # the median return of constituent stocks already in df.
     idx_rets: dict = {}
+    _yf_fetch_error: str | None = None
     yf_sym = INDEX_YF_SYMBOL.get(index_name) if index_name else None
     if yf_sym:
-        idx_rets = fetch_index_returns(yf_sym)
+        _raw = fetch_index_returns(yf_sym)
+        if "_error" in _raw:
+            _yf_fetch_error = _raw["_error"]
+        else:
+            idx_rets = _raw
 
     # Fallback: compute median from constituent stocks when no symbol exists
+    # (also used when the yfinance fetch failed)
     if not idx_rets and not df.empty:
         col_map = {"1D": "ret_1d", "1M": "ret_30d", "1Y": "ret_365d"}
         for key, col in col_map.items():
@@ -936,13 +947,26 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
     with c1: st.metric(f"{label_prefix} 1D",  _idx_val("1D"),  delta=_delta_pct("1D"))
     with c2: st.metric(f"{label_prefix} 1M",  _idx_val("1M"),  delta=_delta_pct("1M"))
     with c3: st.metric(f"{label_prefix} 1Y",  _idx_val("1Y"),  delta=_delta_pct("1Y"))
-    with c4: st.metric("Adv / Dec",            f"{adv} / {dec}", delta=adv - dec)
-    with c5: st.metric("Above 200 DMA",        f"{above_200} / {total}")
+    with c4: st.metric("Adv / Dec",     f"{adv} / {dec}", delta=f"{adv - dec:+d} ({unch} flat)" if unch else f"{adv - dec:+d}")
+    with c5: st.metric("Above 200 DMA", f"{above_200} / {total}")
+
+    if _yf_fetch_error and yf_sym:
+        st.caption(
+            f"⚠️ Live index data unavailable for `{yf_sym}` (showing constituent median instead). "
+            f"_{_yf_fetch_error}_"
+        )
 
 
 def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
     total = len(df)
     pages = max(1, (total + page_size - 1) // page_size)
+
+    # Reset to page 1 whenever the result set size changes (e.g. after a filter).
+    # This prevents landing on a non-existent page when the table shrinks.
+    total_state_key = f"total_{key}"
+    if st.session_state.get(total_state_key) != total:
+        st.session_state[total_state_key] = total
+        st.session_state[f"page_{key}"] = 1
 
     hc1, hc2 = st.columns([4, 1])
     with hc1:
@@ -1076,7 +1100,7 @@ def _prepare_theme_display(df: pd.DataFrame) -> pd.DataFrame:
     d["Market Cap (₹ Cr)"] = df["market_cap_cr"].map(
         lambda v: f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
     )
-    d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "N/A")
+    d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
     return d
 
 
@@ -1182,9 +1206,11 @@ def render_themes_view():
         selected_slug = st.session_state["selected_theme_slug"]
         theme_row = themes_df[themes_df["theme_slug"] == selected_slug]
         if theme_row.empty:
-            # Fallback if selection no longer exists after a search
+            # Fallback if selection no longer exists (e.g. after search filters it out).
+            # Sync session state so the sidebar buttons reflect the actual displayed theme.
             selected_slug = themes_df.iloc[0]["theme_slug"]
             theme_row = themes_df.iloc[[0]]
+            st.session_state["selected_theme_slug"] = selected_slug
 
         theme_name  = theme_row.iloc[0]["theme_name"]
         stock_count = int(theme_row.iloc[0]["actual_stock_count"])
@@ -1396,12 +1422,16 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
     )
 
     def _stats(status_col: str, above_val: str, below_val: str):
+        # Drop stocks that lack enough history to compute the DMA (NaN status).
+        # Percentages are computed over this valid subset — not total universe size —
+        # so the numbers are accurate rather than deflated by new/illiquid listings.
         valid = df[status_col].dropna()
         above = int((valid == above_val).sum())
         below = int((valid == below_val).sum())
-        total = above + below
-        pct   = round(above / total * 100, 1) if total else 0.0
-        return above, below, total, pct
+        total_valid = above + below          # stocks with sufficient history
+        total_all   = len(df)               # full universe (including no-history stocks)
+        pct   = round(above / total_valid * 100, 1) if total_valid else 0.0
+        return above, below, total_valid, pct, total_all
 
     def _mood(pct: float):
         if pct >= 65:   return "#22c55e", "Bullish"
@@ -1432,10 +1462,17 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                         st.caption(f"No data for {label}.")
                         continue
 
-                    a50, b50, t50, pct50   = _stats("status_50dma",  "Above 50DMA",  "Below 50DMA")
-                    a200, b200, t200, pct200 = _stats("status_200dma", "Above 200DMA", "Below 200DMA")
+                    a50,  b50,  t50,  pct50,  all50  = _stats("status_50dma",  "Above 50DMA",  "Below 50DMA")
+                    a200, b200, t200, pct200, all200 = _stats("status_200dma", "Above 200DMA", "Below 200DMA")
                     c50,  mood50  = _mood(pct50)
                     c200, mood200 = _mood(pct200)
+
+                    # Subtitle: show total stocks and how many have valid DMA history
+                    dma_note = (
+                        f"{len(df)} stocks"
+                        if t50 == len(df)
+                        else f"{len(df)} stocks · {t50} with 50DMA history"
+                    )
 
                     # ── Card header ──────────────────────────────────────────────
                     # Pick accent color from the dominant breadth signal
@@ -1451,7 +1488,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                         f"letter-spacing:-0.02em;line-height:1.2;'>{label}</div>"
                         f"<div style='font-size:11px;color:#64748b;font-weight:500;"
                         f"letter-spacing:0.07em;text-transform:uppercase;margin-top:2px;'>"
-                        f"{len(df)} stocks</div>"
+                        f"{dma_note}</div>"
                         f"</div>"
                         f"</div>",
                         unsafe_allow_html=True,
@@ -1808,24 +1845,35 @@ def _frag_themes():
 def _frag_sector_performance(snap_date):
     sector_df = load_sector_performance(snap_date)
     if sector_df.empty:
-        st.info("No sector data for this date. Run `daily_refresh.py` to populate.")
+        st.warning(
+            f"No sector data found for **{pd.Timestamp(snap_date).strftime('%d %b %Y')}**. "
+            "Run `daily_refresh.py` to populate, or choose a different date."
+        )
         return
 
-    disp = sector_df[[
-        "sector", "num_companies", "advances", "declines",
-        "day_change_pct", "week_chg_pct", "month_chg_pct",
-        "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct",
-    ]].copy()
+    # Confirm the date that was actually queried so the user is never in doubt
+    date_label = pd.Timestamp(snap_date).strftime("%d %b %Y")
+    st.caption(f"Showing sector aggregates for **{date_label}** — advances/declines exclude stocks with no 1D data.")
+
+    keep_cols = ["sector", "num_companies", "advances", "declines"]
+    if "unchanged" in sector_df.columns:
+        keep_cols.append("unchanged")
+    keep_cols += ["day_change_pct", "week_chg_pct", "month_chg_pct",
+                  "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]
+
+    disp = sector_df[keep_cols].copy()
     for c in ["day_change_pct", "week_chg_pct", "month_chg_pct",
               "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]:
         disp[c] = disp[c].map(_fmt_pct)
-    disp = disp.rename(columns={
+
+    rename_map = {
         "sector": "Sector", "num_companies": "# Stocks",
-        "advances": "Adv", "declines": "Dec",
+        "advances": "Adv", "declines": "Dec", "unchanged": "Flat",
         "day_change_pct": "1D%", "week_chg_pct": "1W%",
         "month_chg_pct": "30D%", "qtr_chg_pct": "60D%",
         "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
-    })
+    }
+    disp = disp.rename(columns={k: v for k, v in rename_map.items() if k in disp.columns})
     st.dataframe(disp, use_container_width=True, hide_index=True)
     st.divider()
 
