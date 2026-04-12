@@ -26,14 +26,22 @@ INDEXES_DIR = REPO_ROOT / "data" / "indexes"
 
 # CSV filename → index_name stored in the DB
 INDEX_MAP = {
-    "nifty_50.csv":   "NIFTY_50",
-    "nifty_500.csv":  "NIFTY_500",
-    "nifty_bank.csv": "NIFTY_BANK",
-    "banks.csv":      "BANKS",
-    "nbfcs.csv":      "NBFCS",
-    "pharma.csv":     "PHARMA",
-    "defence.csv":    "DEFENCE",
-    "fno.csv":        "FNO",
+    "nifty_50.csv":                 "NIFTY_50",
+    "nifty_500.csv":                "NIFTY_500",
+    "nifty_bank.csv":               "NIFTY_BANK",
+    "banks.csv":                    "BANKS",
+    "nbfcs.csv":                    "NBFCS",
+    "pharma.csv":                   "PHARMA",
+    "defence.csv":                  "DEFENCE",
+    "fno.csv":                      "FNO",
+    "nifty_auto.csv":               "NIFTY_AUTO",
+    "nifty_chemical.csv":           "NIFTY_CHEMICAL",
+    "nifty_consumer_durables.csv":  "NIFTY_CONSUMER_DURABLES",
+    "nifty_fmcg.csv":               "NIFTY_FMCG",
+    "nifty_healthcare.csv":         "NIFTY_HEALTHCARE",
+    "nifty_it.csv":                 "NIFTY_IT",
+    "nifty_media.csv":              "NIFTY_MEDIA",
+    "nifty_metal.csv":              "NIFTY_METAL",
 }
 
 

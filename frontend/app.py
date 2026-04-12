@@ -263,6 +263,16 @@ st.markdown("""
         transition: opacity 0s !important;
         pointer-events: none;
     }
+
+    /* ── Sidebar section labels ── */
+    .sidebar-section-label {
+        font-size: 9.5px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #1e3050;
+        margin: 2px 0 8px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -350,24 +360,21 @@ def _check_password():
         .stTextInput [class*="InputInstructions"],
         .stTextInput ~ div > small { display: none !important; }
 
-        .lp-page {
-            display: flex; align-items: center; justify-content: center;
-            min-height: 90vh;
+        /* Style the login card (st.container with border=True) */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background: #0c1220 !important;
+            border: 1px solid #1e2d45 !important;
+            border-radius: 24px !important;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.6) !important;
         }
-        .lp-card {
-            background: #0c1220;
-            border: 1px solid #1e2d45;
-            border-radius: 24px;
-            padding: 52px 56px 48px;
-            width: 100%; max-width: 420px;
-            box-shadow: 0 32px 80px rgba(0,0,0,0.6);
-            text-align: center;
+        [data-testid="stVerticalBlockBorderWrapper"] > div {
+            padding: 12px 32px 24px !important;
         }
         .lp-logo-icon {
             width: 56px; height: 56px; border-radius: 14px;
             background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
             display: inline-flex; align-items: center; justify-content: center;
-            font-size: 26px; margin-bottom: 18px;
+            margin: 8px auto 18px;
         }
         .lp-name {
             font-size: 32px; font-weight: 800; color: #f1f5f9;
@@ -376,40 +383,47 @@ def _check_password():
         .lp-name span { color: #3b82f6; }
         .lp-tagline {
             font-size: 12px; color: #334155; letter-spacing: 0.08em;
-            text-transform: uppercase; font-weight: 500; margin-bottom: 36px;
+            text-transform: uppercase; font-weight: 500; margin-bottom: 24px;
         }
-        .lp-divider { border: none; border-top: 1px solid #1a2740; margin: 0 0 28px; }
+        .lp-divider { border: none; border-top: 1px solid #1a2740; margin: 0 0 20px; }
         .lp-footer {
             text-align: center; font-size: 11px; color: #2d3f57;
-            margin-top: 18px; letter-spacing: 0.02em;
+            margin-top: 12px; letter-spacing: 0.02em;
         }
     </style>
-    <div class="lp-page">
-      <div class="lp-card">
-        <div class="lp-logo-icon">📈</div>
-        <div class="lp-name">Stock<span>Stack</span></div>
-        <div class="lp-tagline">Indian Equity Intelligence</div>
-        <hr class="lp-divider">
-      </div>
-    </div>
     """, unsafe_allow_html=True)
 
+    st.markdown("<div style='min-height:12vh'></div>", unsafe_allow_html=True)
     _, col, _ = st.columns([1, 1.4, 1])
     with col:
-        st.markdown("<div style='margin-top:-148px'>", unsafe_allow_html=True)
-        pw = st.text_input("", type="password", placeholder="Enter password…",
-                           label_visibility="collapsed")
-        if st.button("Sign In →", use_container_width=True, type="primary"):
-            if pw == correct:
-                st.session_state["authenticated"] = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown(
-            "<div class='lp-footer'>Restricted access · Authorised users only</div>",
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.markdown("""
+            <div style="text-align:center; padding-top:12px;">
+                <div class="lp-logo-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
+                         fill="none" stroke="white" stroke-width="2.5"
+                         stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                        <polyline points="16 7 22 7 22 13"/>
+                    </svg>
+                </div>
+                <div class="lp-name">Stock<span>Stack</span></div>
+                <div class="lp-tagline">Indian Equity Intelligence</div>
+                <hr class="lp-divider">
+            </div>
+            """, unsafe_allow_html=True)
+            pw = st.text_input("", type="password", placeholder="Enter password…",
+                               label_visibility="collapsed")
+            if st.button("Sign In →", use_container_width=True, type="primary"):
+                if pw == correct:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+            st.markdown(
+                "<div class='lp-footer'>Restricted access · Authorised users only</div>",
+                unsafe_allow_html=True,
+            )
     st.stop()
 
 
@@ -437,26 +451,46 @@ engine = _get_engine()
 # ---------------------------------------------------------------------------
 INDEX_TABS   = [("NIFTY_50", "Nifty 50"), ("NIFTY_500", "Nifty 500"),
                 ("NIFTY_BANK", "Nifty Bank"), ("FNO", "F&O")]
-SECTOR_TABS  = [("BANKS", "Banks"), ("NBFCS", "NBFCs"),
-                ("PHARMA", "Pharma"), ("DEFENCE", "Defence")]
+SECTOR_TABS  = [
+    ("BANKS",                   "Banks"),
+    ("NBFCS",                   "NBFCs"),
+    ("PHARMA",                  "Pharma"),
+    ("DEFENCE",                 "Defence"),
+    ("NIFTY_AUTO",              "Auto"),
+    ("NIFTY_CHEMICAL",          "Chemicals"),
+    ("NIFTY_CONSUMER_DURABLES", "Consumer Durables"),
+    ("NIFTY_FMCG",              "FMCG"),
+    ("NIFTY_HEALTHCARE",        "Healthcare"),
+    ("NIFTY_IT",                "IT"),
+    ("NIFTY_MEDIA",             "Media"),
+    ("NIFTY_METAL",             "Metal"),
+]
 ALL_UNIVERSES = {k: v for k, v in INDEX_TABS + SECTOR_TABS}
 
-# yfinance ticker symbol for each universe (None = no benchmark index)
+# yfinance ticker symbol for each universe (None = fall back to constituent median)
 INDEX_YF_SYMBOL = {
-    "NIFTY_50":   "^NSEI",
-    "NIFTY_500":  "^CRSLDX",
-    "NIFTY_BANK": "^NSEBANK",
-    "FNO":        None,
-    "BANKS":      "^NSEBANK",
-    "NBFCS":      None,
-    "PHARMA":     "NIFTYPHARMA.NS",
-    "DEFENCE":    None,
+    "NIFTY_50":                 "^NSEI",
+    "NIFTY_500":                "^CRSLDX",
+    "NIFTY_BANK":               "^NSEBANK",
+    "FNO":                      None,
+    "BANKS":                    "^NSEBANK",
+    "NBFCS":                    "^CNXFIN",       # Nifty Financial Services
+    "PHARMA":                   "NIFTYPHARMA.NS",
+    "DEFENCE":                  None,            # No reliable yf symbol; use constituent median
+    "NIFTY_AUTO":               "^CNXAUTO",
+    "NIFTY_CHEMICAL":           None,            # No reliable yf symbol; use constituent median
+    "NIFTY_CONSUMER_DURABLES":  None,            # No reliable yf symbol; use constituent median
+    "NIFTY_FMCG":               "^CNXFMCG",
+    "NIFTY_HEALTHCARE":         "^CNXPHARMA",   # Nifty Healthcare / Pharma index
+    "NIFTY_IT":                 "^CNXIT",
+    "NIFTY_MEDIA":              "^CNXMEDIA",    # Nifty Media index
+    "NIFTY_METAL":              "^CNXMETAL",
 }
 
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_available_dates() -> list:
     with engine.connect() as conn:
         rows = conn.execute(
@@ -465,7 +499,7 @@ def load_available_dates() -> list:
     return [r[0] for r in rows]
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def fetch_index_returns(yf_symbol: str) -> dict:
     """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance."""
     try:
@@ -490,19 +524,10 @@ def fetch_index_returns(yf_symbol: str) -> dict:
         return {}
 
 
-@st.cache_data(ttl=300)
-def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
-    params: dict = {"date": str(snap_date)}
-    index_join = ""
-    if index_name:
-        index_join = """
-            JOIN index_membership im
-              ON s.symbol = im.symbol
-             AND im.index_name = :index_name
-        """
-        params["index_name"] = index_name
-
-    sql = text(f"""
+@st.cache_data(ttl=1800)
+def _load_all_snapshots(snap_date) -> pd.DataFrame:
+    """Single bulk query — loads ALL stocks for a date. Shared across all tabs."""
+    sql = text("""
         SELECT
             sd.symbol, s.name, s.sector,
             sd.cmp,
@@ -512,16 +537,33 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
             s.screener_url, s.tradingview_url
         FROM snapshots_daily sd
         JOIN stocks s ON sd.symbol = s.symbol
-        {index_join}
         WHERE sd.date = :date AND s.is_active = TRUE
-        ORDER BY sd.symbol
     """)
     with engine.connect() as conn:
-        df = pd.read_sql(sql, conn, params=params)
-    return df
+        return pd.read_sql(sql, conn, params={"date": str(snap_date)})
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
+def _load_index_membership() -> pd.DataFrame:
+    """Load all memberships once — changes only when seeds are re-run."""
+    with engine.connect() as conn:
+        return pd.read_sql(
+            text("SELECT symbol, index_name FROM index_membership"),
+            conn,
+        )
+
+
+def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
+    """In-memory filter over the bulk-cached snapshot — zero extra DB round trips."""
+    df = _load_all_snapshots(snap_date)
+    if not index_name:
+        return df.copy()
+    membership = _load_index_membership()
+    symbols = set(membership.loc[membership["index_name"] == index_name, "symbol"])
+    return df[df["symbol"].isin(symbols)].copy()
+
+
+@st.cache_data(ttl=1800)
 def load_sector_performance(snap_date) -> pd.DataFrame:
     """Aggregate all sectors live from snapshots_daily so every sector is included."""
     sql = text("""
@@ -549,7 +591,7 @@ def load_sector_performance(snap_date) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=3600)
 def load_all_symbols() -> pd.DataFrame:
     with engine.connect() as conn:
         df = pd.read_sql(
@@ -559,7 +601,7 @@ def load_all_symbols() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     sql = text("""
         SELECT date, open, high, low, close, volume
@@ -574,7 +616,7 @@ def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_themes() -> pd.DataFrame:
     sql = text("""
         SELECT theme_slug, theme_name, theme_order, actual_stock_count
@@ -585,7 +627,7 @@ def load_themes() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_theme_averages() -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -603,7 +645,7 @@ def load_theme_averages() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -632,7 +674,7 @@ def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
         return pd.read_sql(sql, conn, params={"theme_slug": theme_slug})
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def load_refresh_status() -> dict | None:
     sql = text("""
         SELECT started_at, finished_at, stocks_total, stocks_success, stocks_failed, status
@@ -863,11 +905,21 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
     above_200 = int((df["status_200dma"] == "Above 200DMA").sum())
     total     = len(df)
 
-    # Fetch index-level returns if a benchmark symbol is mapped
+    # Fetch index-level returns — prefer a benchmark yfinance symbol, else use
+    # the median return of constituent stocks already in df.
     idx_rets: dict = {}
     yf_sym = INDEX_YF_SYMBOL.get(index_name) if index_name else None
     if yf_sym:
         idx_rets = fetch_index_returns(yf_sym)
+
+    # Fallback: compute median from constituent stocks when no symbol exists
+    if not idx_rets and not df.empty:
+        col_map = {"1D": "ret_1d", "1M": "ret_30d", "1Y": "ret_365d"}
+        for key, col in col_map.items():
+            if col in df.columns:
+                med = df[col].dropna().median()
+                if pd.notna(med):
+                    idx_rets[key] = float(med)  # already stored as ratio (0.05 = 5%)
 
     def _idx_val(key):
         v = idx_rets.get(key)
@@ -875,11 +927,16 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
 
     label_prefix = ALL_UNIVERSES.get(index_name, "Index") if index_name else "Index"
 
+    def _delta_pct(key):
+        v = idx_rets.get(key)
+        if v is None: return None
+        return f"{v * 100:+.2f}%"
+
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: st.metric(f"{label_prefix} 1D",  _idx_val("1D"),  delta=None)
-    with c2: st.metric(f"{label_prefix} 1M",  _idx_val("1M"),  delta=None)
-    with c3: st.metric(f"{label_prefix} 1Y",  _idx_val("1Y"),  delta=None)
-    with c4: st.metric("Adv / Dec",            f"{adv} / {dec}")
+    with c1: st.metric(f"{label_prefix} 1D",  _idx_val("1D"),  delta=_delta_pct("1D"))
+    with c2: st.metric(f"{label_prefix} 1M",  _idx_val("1M"),  delta=_delta_pct("1M"))
+    with c3: st.metric(f"{label_prefix} 1Y",  _idx_val("1Y"),  delta=_delta_pct("1Y"))
+    with c4: st.metric("Adv / Dec",            f"{adv} / {dec}", delta=adv - dec)
     with c5: st.metric("Above 200 DMA",        f"{above_200} / {total}")
 
 
@@ -936,8 +993,10 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
         )
 
     csv_bytes = df[list(DISPLAY_COLS.keys())].to_csv(index=False).encode()
-    st.download_button("⬇ Download CSV", csv_bytes, "stocks.csv", "text/csv",
-                       key=f"dl_{key}")
+    _dl_sp, _dl_col = st.columns([5, 1])
+    with _dl_col:
+        st.download_button("⬇ CSV", csv_bytes, "stocks.csv", "text/csv",
+                           key=f"dl_{key}", use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1182,25 +1241,36 @@ def render_themes_view():
             )
 
         csv_bytes = stocks_df[list(THEME_DISPLAY_COLS.keys())].to_csv(index=False).encode()
-        st.download_button(
-            "⬇ Download CSV", csv_bytes,
-            f"{selected_slug}.csv", "text/csv",
-            key=f"dl_theme_{selected_slug}",
-        )
+        _dl_sp2, _dl_col2 = st.columns([5, 1])
+        with _dl_col2:
+            st.download_button(
+                "⬇ CSV", csv_bytes,
+                f"{selected_slug}.csv", "text/csv",
+                key=f"dl_theme_{selected_slug}",
+                use_container_width=True,
+            )
 
 
 # ---------------------------------------------------------------------------
 # Analysis view — Top N / Bottom N per universe with timeframe toggle
 # ---------------------------------------------------------------------------
 ANALYSIS_TOP_N = {
-    "NIFTY_50":   5,
-    "NIFTY_500":  20,
-    "NIFTY_BANK": 5,
-    "FNO":        10,
-    "BANKS":      5,
-    "NBFCS":      5,
-    "PHARMA":     5,
-    "DEFENCE":    5,
+    "NIFTY_50":                 5,
+    "NIFTY_500":                20,
+    "NIFTY_BANK":               5,
+    "FNO":                      10,
+    "BANKS":                    5,
+    "NBFCS":                    5,
+    "PHARMA":                   5,
+    "DEFENCE":                  5,
+    "NIFTY_AUTO":               5,
+    "NIFTY_CHEMICAL":           5,
+    "NIFTY_CONSUMER_DURABLES":  5,
+    "NIFTY_FMCG":               5,
+    "NIFTY_HEALTHCARE":         5,
+    "NIFTY_IT":                 5,
+    "NIFTY_MEDIA":              5,
+    "NIFTY_METAL":              5,
 }
 
 RETURN_COLS = {
@@ -1655,7 +1725,14 @@ with st.sidebar:
             <div style="width:34px;height:34px;border-radius:8px;
                         background:linear-gradient(135deg,#1d4ed8 0%,#3b82f6 100%);
                         display:flex;align-items:center;justify-content:center;
-                        font-size:16px;flex-shrink:0;">📈</div>
+                        flex-shrink:0;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                     fill="none" stroke="white" stroke-width="2.5"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                    <polyline points="16 7 22 7 22 13"/>
+                </svg>
+            </div>
             <div style="font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;">
                 Stock<span style="color:#3b82f6;">Stack</span>
             </div>
@@ -1663,6 +1740,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.divider()
 
+    st.markdown("<div class='sidebar-section-label'>Last Refresh</div>", unsafe_allow_html=True)
     status = load_refresh_status()
     if status:
         last_run = status.get("finished_at") or status.get("started_at")
@@ -1680,9 +1758,12 @@ with st.sidebar:
             f"<span>{status_text} · {ts}</span></div>",
             unsafe_allow_html=True,
         )
+    else:
+        st.markdown("<div style='font-size:11.5px;color:#2d3f57;'>No refresh data yet</div>", unsafe_allow_html=True)
 
     st.divider()
 
+    st.markdown("<div class='sidebar-section-label'>Data</div>", unsafe_allow_html=True)
     dates = load_available_dates()
     if not dates:
         st.error("No snapshot data found in Supabase.")
@@ -1692,10 +1773,87 @@ with st.sidebar:
         "As-of date",
         options=dates,
         format_func=lambda d: pd.Timestamp(d).strftime("%d %b %Y"),
+        label_visibility="collapsed",
     )
 
     st.divider()
+    st.markdown("<div class='sidebar-section-label'>Tips</div>", unsafe_allow_html=True)
     st.caption("Click any row in a table to open its price chart.")
+
+# ---------------------------------------------------------------------------
+# Fragment wrappers — isolate each view so button clicks only rerun their
+# own fragment instead of the entire app.
+# ---------------------------------------------------------------------------
+@st.fragment
+def _frag_universe_view(index_name: str, snap_date):
+    render_universe_view(index_name, snap_date)
+
+
+@st.fragment
+def _frag_analysis_tab(snap_date, universes, section_key):
+    render_analysis_tab(snap_date, universes, section_key)
+
+
+@st.fragment
+def _frag_breadth_tab(snap_date, universes, section_key):
+    render_breadth_tab(snap_date, universes, section_key)
+
+
+@st.fragment
+def _frag_themes():
+    render_themes_view()
+
+
+@st.fragment
+def _frag_sector_performance(snap_date):
+    sector_df = load_sector_performance(snap_date)
+    if sector_df.empty:
+        st.info("No sector data for this date. Run `daily_refresh.py` to populate.")
+        return
+
+    disp = sector_df[[
+        "sector", "num_companies", "advances", "declines",
+        "day_change_pct", "week_chg_pct", "month_chg_pct",
+        "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct",
+    ]].copy()
+    for c in ["day_change_pct", "week_chg_pct", "month_chg_pct",
+              "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]:
+        disp[c] = disp[c].map(_fmt_pct)
+    disp = disp.rename(columns={
+        "sector": "Sector", "num_companies": "# Stocks",
+        "advances": "Adv", "declines": "Dec",
+        "day_change_pct": "1D%", "week_chg_pct": "1W%",
+        "month_chg_pct": "30D%", "qtr_chg_pct": "60D%",
+        "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
+    })
+    st.dataframe(disp, use_container_width=True, hide_index=True)
+    st.divider()
+
+    chart_df = sector_df.copy()
+    chart_df = chart_df.sort_values("month_chg_pct", ascending=False)
+    chart_df["pct"] = chart_df["month_chg_pct"] * 100
+    fig = px.bar(
+        chart_df,
+        x="pct", y="sector", orientation="h",
+        color="pct",
+        color_continuous_scale=["#ef4444", "#1e2535", "#22c55e"],
+        color_continuous_midpoint=0,
+        labels={"pct": "Median 30D Return (%)", "sector": ""},
+        title="Median 30-Day Return by Sector",
+    )
+    fig.update_layout(
+        coloraxis_showscale=False,
+        yaxis={"categoryorder": "total ascending"},
+        height=max(320, len(chart_df) * 32),
+        plot_bgcolor="#0f1117",
+        paper_bgcolor="#0f1117",
+        font_color="#cbd5e0",
+        title_font_size=15,
+        margin=dict(l=10, r=20, t=40, b=10),
+    )
+    fig.update_traces(marker_line_width=0)
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
@@ -1725,11 +1883,11 @@ with tab_idx:
     sub_tabs = st.tabs([label for _, label in INDEX_TABS] + ["Analysis", "Breadth"])
     for tab, (key, _) in zip(sub_tabs[:len(INDEX_TABS)], INDEX_TABS):
         with tab:
-            render_universe_view(key, selected_date)
+            _frag_universe_view(key, selected_date)
     with sub_tabs[-2]:
-        render_analysis_tab(selected_date, INDEX_TABS, "indexes")
+        _frag_analysis_tab(selected_date, INDEX_TABS, "indexes")
     with sub_tabs[-1]:
-        render_breadth_tab(selected_date, INDEX_TABS, "indexes")
+        _frag_breadth_tab(selected_date, INDEX_TABS, "indexes")
 
 # ── Tab 2: Sectors ──────────────────────────────────────────────────────────
 with tab_sec:
@@ -1737,78 +1895,63 @@ with tab_sec:
     sub_tabs2 = st.tabs([label for _, label in SECTOR_TABS] + ["Analysis", "Breadth"])
     for tab, (key, _) in zip(sub_tabs2[:len(SECTOR_TABS)], SECTOR_TABS):
         with tab:
-            render_universe_view(key, selected_date)
+            _frag_universe_view(key, selected_date)
     with sub_tabs2[-2]:
-        render_analysis_tab(selected_date, SECTOR_TABS, "sectors")
+        _frag_analysis_tab(selected_date, SECTOR_TABS, "sectors")
     with sub_tabs2[-1]:
-        render_breadth_tab(selected_date, SECTOR_TABS, "sectors")
+        _frag_breadth_tab(selected_date, SECTOR_TABS, "sectors")
 
 # ── Tab 3: Sector Performance ────────────────────────────────────────────────
 with tab_analysis:
     _page_header("Sector Performance", selected_date)
-
-    sector_df = load_sector_performance(selected_date)
-
-    if sector_df.empty:
-        st.info("No sector data for this date. Run `daily_refresh.py` to populate.")
-    else:
-        # Summary table
-        disp = sector_df[[
-            "sector", "num_companies", "advances", "declines",
-            "day_change_pct", "week_chg_pct", "month_chg_pct",
-            "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct",
-        ]].copy()
-        for c in ["day_change_pct", "week_chg_pct", "month_chg_pct",
-                  "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]:
-            disp[c] = disp[c].map(_fmt_pct)
-        disp = disp.rename(columns={
-            "sector": "Sector", "num_companies": "# Stocks",
-            "advances": "Adv", "declines": "Dec",
-            "day_change_pct": "1D%", "week_chg_pct": "1W%",
-            "month_chg_pct": "30D%", "qtr_chg_pct": "60D%",
-            "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
-        })
-        st.dataframe(disp, use_container_width=True, hide_index=True)
-
-        st.divider()
-
-        # Bar chart
-        chart_df = sector_df.copy()
-        chart_df = chart_df.sort_values("month_chg_pct", ascending=False)
-        chart_df["pct"] = chart_df["month_chg_pct"] * 100
-
-        fig = px.bar(
-            chart_df,
-            x="pct", y="sector", orientation="h",
-            color="pct",
-            color_continuous_scale=["#ef4444", "#1e2535", "#22c55e"],
-            color_continuous_midpoint=0,
-            labels={"pct": "Median 30D Return (%)", "sector": ""},
-            title="Median 30-Day Return by Sector",
-        )
-        fig.update_layout(
-            coloraxis_showscale=False,
-            yaxis={"categoryorder": "total ascending"},
-            height=max(320, len(chart_df) * 32),
-            plot_bgcolor="#0f1117",
-            paper_bgcolor="#0f1117",
-            font_color="#cbd5e0",
-            title_font_size=15,
-            margin=dict(l=10, r=20, t=40, b=10),
-        )
-        fig.update_traces(marker_line_width=0)
-        st.plotly_chart(fig, use_container_width=True)
+    _frag_sector_performance(selected_date)
 
 # ── Tab 4: Themes ────────────────────────────────────────────────────────────
 with tab_themes:
-    render_themes_view()
+    _page_header("Themes")
+    _frag_themes()
 
 # ── Tab 5: Custom Upload ─────────────────────────────────────────────────────
 with tab_upload:
     _page_header("Custom Stock List")
-    st.caption("Upload a CSV with a `symbol` column (NSE symbols, no `.NS` suffix).")
 
     uploaded = st.file_uploader("Upload CSV", type=["csv"])
+    if not uploaded:
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #0c1220 0%, #0f1729 100%);
+            border: 1px dashed #1e2d45;
+            border-radius: 16px;
+            padding: 48px 32px;
+            text-align: center;
+            margin-top: 16px;
+        ">
+            <div style="font-size:36px; margin-bottom:14px; opacity:0.6;">
+                <svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'
+                     fill='none' stroke='#2d5a9e' stroke-width='1.5'
+                     stroke-linecap='round' stroke-linejoin='round'>
+                    <path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>
+                    <polyline points='14 2 14 8 20 8'/>
+                    <line x1='16' y1='13' x2='8' y2='13'/>
+                    <line x1='16' y1='17' x2='8' y2='17'/>
+                    <polyline points='10 9 9 9 8 9'/>
+                </svg>
+            </div>
+            <div style="font-size:15px; font-weight:600; color:#e2e8f0; margin-bottom:8px;">
+                Analyse a custom watchlist
+            </div>
+            <div style="font-size:13px; color:#4a5568; max-width:380px; margin:0 auto 20px; line-height:1.6;">
+                Upload a CSV with a
+                <code style="background:#111827; padding:2px 7px; border-radius:4px; color:#94a3b8; font-size:12px;">symbol</code>
+                column containing NSE tickers — no
+                <code style="background:#111827; padding:2px 7px; border-radius:4px; color:#94a3b8; font-size:12px;">.NS</code>
+                suffix needed.
+            </div>
+            <div style="font-size:11px; color:#1e3a5f; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">
+                Example &nbsp;·&nbsp; RELIANCE &nbsp;·&nbsp; TCS &nbsp;·&nbsp; INFY &nbsp;·&nbsp; HDFCBANK
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     if uploaded:
         try:
             user_df = pd.read_csv(uploaded)
@@ -1825,7 +1968,8 @@ with tab_upload:
                     st.warning(f"Unknown symbols (not in master): {', '.join(unknown)}")
                 if known:
                     st.success(f"{len(known)} symbols matched.")
-                    custom_df = load_snapshot(selected_date, index_name=None)
+                    # Reuse bulk cache — no extra query
+                    custom_df = _load_all_snapshots(selected_date)
                     custom_df = custom_df[custom_df["symbol"].isin(known)]
                     if custom_df.empty:
                         st.info("No snapshot data for these symbols on the selected date.")
@@ -1837,8 +1981,9 @@ with tab_upload:
         except Exception as e:
             st.error(f"Error reading CSV: {e}")
 
-# ── Tab 7: Global Markets ─────────────────────────────────────────────────────
+# ── Tab 6: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
+    _page_header("Global Markets")
     if _GM_AVAILABLE:
         _render_global_markets()
     else:
