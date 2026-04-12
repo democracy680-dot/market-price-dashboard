@@ -535,9 +535,21 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
             sd.ret_1d, sd.ret_1w, sd.ret_30d, sd.ret_60d, sd.ret_180d, sd.ret_365d,
             sd.dma_50, sd.dma_200, sd.status_50dma, sd.status_200dma,
             sd.pe_ratio, sd.market_cap_cr,
-            s.screener_url, s.tradingview_url
+            s.screener_url, s.tradingview_url,
+            CASE
+                WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
+                THEN (sd.cmp - h52.high_52w) / h52.high_52w
+                ELSE NULL
+            END AS pct_from_52wh
         FROM snapshots_daily sd
         JOIN stocks s ON sd.symbol = s.symbol
+        LEFT JOIN (
+            SELECT symbol, MAX(high) AS high_52w
+            FROM prices_daily
+            WHERE date >= CAST(:date AS date) - INTERVAL '365 days'
+              AND date <= CAST(:date AS date)
+            GROUP BY symbol
+        ) h52 ON h52.symbol = sd.symbol
         WHERE sd.date = :date AND s.is_active = TRUE
     """)
     with engine.connect() as conn:
@@ -689,7 +701,10 @@ def load_refresh_status() -> dict | None:
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
-PCT_COLS = ["ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d"]
+PCT_COLS = ["ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d", "pct_from_52wh"]
+
+# Schedule string — used in user-facing messages so it stays in sync with daily_refresh.py
+DAILY_REFRESH_TIME_IST = "4:30 PM IST"
 
 DISPLAY_COLS = {
     "symbol":        "Symbol",
@@ -706,6 +721,7 @@ DISPLAY_COLS = {
     "pe_ratio":      "P/E",
     "status_50dma":  "50DMA",
     "status_200dma": "200DMA",
+    "pct_from_52wh": "52W High%",
 }
 
 
@@ -951,9 +967,10 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None):
     with c5: st.metric("Above 200 DMA", f"{above_200} / {total}")
 
     if _yf_fetch_error and yf_sym:
-        st.caption(
-            f"⚠️ Live index data unavailable for `{yf_sym}` (showing constituent median instead). "
-            f"_{_yf_fetch_error}_"
+        st.warning(
+            f"Live index data unavailable for `{yf_sym}` — showing constituent median instead. "
+            f"_{_yf_fetch_error}_",
+            icon="⚠️",
         )
 
 
@@ -1033,6 +1050,7 @@ SORT_BUTTONS = [
     ("60D%",   "ret_60d",       True),
     ("180D%",  "ret_180d",      True),
     ("365D%",  "ret_365d",      True),
+    ("52WH%",  "pct_from_52wh", True),   # descending = closest to 52W high first
     ("MCap",   "market_cap_cr", True),
     ("P/E",    "pe_ratio",      True),
     ("Symbol", "symbol",        False),
@@ -1229,7 +1247,7 @@ def render_themes_view():
         if len(stocks_df) > 0 and null_count / len(stocks_df) > 0.1:
             st.warning(
                 "⚠️ Some stocks in this theme were recently added and will be "
-                "populated after the next daily refresh (4:30 PM IST)."
+                f"populated after the next daily refresh ({DAILY_REFRESH_TIME_IST})."
             )
 
         if stocks_df.empty:
@@ -1744,6 +1762,13 @@ def render_universe_view(index_name: str, snap_date):
     if sel_50dma != "All":
         df = df[df["status_50dma"] == sel_50dma]
 
+    # Reset pagination whenever filter values change (not just when total count changes)
+    _fstate_key  = f"fstate_{index_name}"
+    _filter_hash = (tuple(sorted(sel_sectors)), sel_200dma, sel_50dma)
+    if st.session_state.get(_fstate_key) != _filter_hash:
+        st.session_state[_fstate_key] = _filter_hash
+        st.session_state[f"page_{index_name}"] = 1
+
     if df.empty:
         st.warning("No stocks match the current filters.")
         return
@@ -1902,6 +1927,27 @@ def _frag_sector_performance(snap_date):
     fig.update_traces(marker_line_width=0)
     st.plotly_chart(fig, use_container_width=True)
 
+
+# ---------------------------------------------------------------------------
+# Data-freshness banner — shown when last refresh is >24 h old
+# ---------------------------------------------------------------------------
+if status:
+    _last_run = status.get("finished_at") or status.get("started_at")
+    if _last_run:
+        try:
+            _last_ts = pd.Timestamp(_last_run)
+            _now_ts  = pd.Timestamp.now("UTC")
+            if _last_ts.tzinfo is None:
+                _last_ts = _last_ts.tz_localize("UTC")
+            _age_h = (_now_ts - _last_ts).total_seconds() / 3600
+            if _age_h > 24:
+                st.warning(
+                    f"Data may be stale — last refresh was **{int(_age_h)} hours ago**. "
+                    "This typically happens over weekends or market holidays.",
+                    icon="⚠️",
+                )
+        except Exception:
+            pass
 
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
