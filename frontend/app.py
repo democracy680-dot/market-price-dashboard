@@ -547,7 +547,7 @@ def fetch_index_returns(yf_symbol: str) -> dict:
         return {"_error": str(e)}
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def _load_all_snapshots(snap_date) -> pd.DataFrame:
     """Single bulk query — loads ALL stocks for a date. Shared across all tabs."""
     sql = text("""

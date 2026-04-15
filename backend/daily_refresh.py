@@ -125,8 +125,9 @@ def upsert_snapshots(snapshots_df: pd.DataFrame):
             dma_200       = EXCLUDED.dma_200,
             status_50dma  = EXCLUDED.status_50dma,
             status_200dma = EXCLUDED.status_200dma,
-            market_cap_cr = EXCLUDED.market_cap_cr,
-            pe_ratio      = EXCLUDED.pe_ratio
+            -- Never overwrite a good MCap/PE with NULL — keep existing if new is NULL
+            market_cap_cr = COALESCE(EXCLUDED.market_cap_cr, snapshots_daily.market_cap_cr),
+            pe_ratio      = COALESCE(EXCLUDED.pe_ratio,      snapshots_daily.pe_ratio)
     """
     conn = get_psycopg2_conn()
     try:
@@ -266,11 +267,17 @@ def run():
     # Map yahoo_symbol → symbol, then merge into snapshots
     fundamentals["symbol"] = fundamentals["yahoo_symbol"].map(symbol_map)
     fundamentals = fundamentals.dropna(subset=["symbol"])
+    # Deduplicate fundamentals before merging — yfinance can return multiple rows
+    # for the same symbol, which would create duplicate (symbol, date) pairs in
+    # snapshots and trigger a CardinalityViolation on upsert.
+    fundamentals = fundamentals.drop_duplicates(subset=["symbol"], keep="last")
     snapshots = snapshots.merge(
         fundamentals[["symbol", "market_cap_cr", "pe_ratio"]],
         on="symbol",
         how="left",
     )
+    # Safety: drop any remaining duplicates before upsert
+    snapshots = snapshots.drop_duplicates(subset=["symbol", "date"], keep="last")
 
     # ── 4c. Backfill sectors into stocks table ───────────────────────────────
     sectors_to_update = fundamentals[fundamentals["sector"].notna()][["symbol", "sector"]]
@@ -286,6 +293,29 @@ def run():
 
     n_snaps = upsert_snapshots(snapshots)
     logger.info(f"  {n_snaps} rows upserted into snapshots_daily")
+
+    # ── 4d. Backfill MCap/PE from previous snapshot for stocks still NULL ────
+    logger.info("Backfilling missing MCap/PE from previous snapshots...")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE snapshots_daily sd
+            SET
+                market_cap_cr = prev.market_cap_cr,
+                pe_ratio      = prev.pe_ratio
+            FROM (
+                SELECT DISTINCT ON (symbol)
+                    symbol, market_cap_cr, pe_ratio
+                FROM snapshots_daily
+                WHERE date < CURRENT_DATE
+                  AND (market_cap_cr IS NOT NULL OR pe_ratio IS NOT NULL)
+                ORDER BY symbol, date DESC
+            ) prev
+            WHERE sd.symbol    = prev.symbol
+              AND sd.date      = CURRENT_DATE
+              AND sd.market_cap_cr IS NULL
+              AND sd.pe_ratio  IS NULL
+        """))
+    logger.info("  MCap/PE backfill complete.")
 
     # ── 5. Sector aggregations ───────────────────────────────────────────────
     logger.info("Computing sector performance...")
