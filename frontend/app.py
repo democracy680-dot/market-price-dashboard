@@ -707,6 +707,7 @@ def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
             s.screener_url,
             s.tradingview_url,
             snap.cmp,
+            snap.ret_1d,
             snap.ret_1w,
             snap.ret_30d,
             snap.ret_60d,
@@ -1198,11 +1199,12 @@ def render_sort_and_table(df: pd.DataFrame, key: str):
 # ---------------------------------------------------------------------------
 # Themes view — left sidebar picker + right stock table
 # ---------------------------------------------------------------------------
-THEME_PCT_COLS = ["ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d"]
+THEME_PCT_COLS = ["ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d"]
 THEME_DISPLAY_COLS = {
     "symbol":        "Symbol",
     "name":          "Name",
     "cmp":           "CMP",
+    "ret_1d":        "1D %",
     "ret_1w":        "1W %",
     "ret_30d":       "1M %",
     "ret_60d":       "3M %",
