@@ -592,7 +592,19 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
         WHERE sd.date = :date AND s.is_active = TRUE
     """)
     with engine.connect() as conn:
-        return pd.read_sql(sql, conn, params={"date": str(snap_date)})
+        df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
+
+    # PostgreSQL NUMERIC/DECIMAL columns come back as Python Decimal objects
+    # (object dtype), which pandas sorts lexicographically instead of numerically.
+    # Force all sortable numeric columns to float64 so sort_values works correctly.
+    _numeric_cols = [
+        "cmp", "ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d",
+        "pct_from_52wh", "vol_spike", "market_cap_cr", "pe_ratio", "dma_50", "dma_200",
+    ]
+    for c in _numeric_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
 
 
 @st.cache_data(ttl=3600)
