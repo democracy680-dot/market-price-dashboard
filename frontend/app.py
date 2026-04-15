@@ -743,7 +743,7 @@ def load_refresh_status() -> dict | None:
 PCT_COLS = ["ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d", "pct_from_52wh"]
 
 # Schedule string — used in user-facing messages so it stays in sync with daily_refresh.py
-DAILY_REFRESH_TIME_IST = "4:30 PM IST"
+DAILY_REFRESH_TIME_IST = "4:00 PM IST"
 
 DISPLAY_COLS = {
     "symbol":        "Symbol",
@@ -1748,6 +1748,9 @@ def _render_topbottom_chart(df: pd.DataFrame, ret_col: str, n: int,
                              universe_label: str, ret_label: str):
     """Render Top-N (green) and Bottom-N (red) charts side by side."""
     df_valid = df[df[ret_col].notna()].copy()
+    # Ensure numeric dtype — SQL returns object when all values are NULL
+    df_valid[ret_col] = pd.to_numeric(df_valid[ret_col], errors="coerce")
+    df_valid = df_valid[df_valid[ret_col].notna()]
     df_valid["pct"] = df_valid[ret_col] * 100
 
     # Sort: top descending → reversed in chart so rank 1 is at top visually
@@ -2192,6 +2195,31 @@ if status:
                 )
         except Exception:
             pass
+
+# ---------------------------------------------------------------------------
+# Auto-refresh at 3:35 PM IST — gives backend 5 min after market close to finish
+# ---------------------------------------------------------------------------
+try:
+    import pytz as _pytz
+    from datetime import datetime as _dt
+    _ist = _pytz.timezone("Asia/Kolkata")
+    _now_ist = _dt.now(_ist)
+    # Only on weekdays (Mon=0 … Fri=4), and only if we're before 3:35 PM today
+    if _now_ist.weekday() < 5:
+        _trigger = _now_ist.replace(hour=16, minute=5, second=0, microsecond=0)
+        if _now_ist < _trigger:
+            _ms = int((_trigger - _now_ist).total_seconds() * 1000)
+            components.html(
+                f"""<script>
+                    setTimeout(function() {{
+                        // Clear Streamlit's own cache then reload
+                        window.parent.location.reload();
+                    }}, {_ms});
+                </script>""",
+                height=0,
+            )
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs

@@ -90,6 +90,19 @@ def compute_snapshots(prices: pd.DataFrame) -> pd.DataFrame:
 
         # Returns — Google Finance methodology
         for col, spec in RETURN_WINDOWS.items():
+            # 1D special case: always use the immediately previous trading day
+            # (timedelta(1) breaks on Mondays — lands on Sunday with no data)
+            if col == "ret_1d":
+                if n >= 2:
+                    past = closes.iloc[-2]
+                    if pd.notna(past) and float(past) != 0:
+                        row["ret_1d"] = round((float(latest_close) / float(past)) - 1, 6)
+                    else:
+                        row["ret_1d"] = None
+                else:
+                    row["ret_1d"] = None
+                continue
+
             past, _ = _past_close(dates, closes, latest_date, spec)
             # Guard: past must be a real, non-zero number to avoid div/0 or NaN
             if past is not None and pd.notna(past) and float(past) != 0:
