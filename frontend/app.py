@@ -684,7 +684,7 @@ def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_latest_technicals() -> pd.DataFrame:
     """Load the most recent technical indicators for all active stocks."""
-    sql = text("""
+    sql_v2 = text("""
         SELECT
             s.symbol,
             s.name,
@@ -710,8 +710,34 @@ def load_latest_technicals() -> pd.DataFrame:
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
+    sql_v1 = text("""
+        SELECT
+            s.symbol,
+            s.name,
+            t.cmp,
+            t.rsi_14,
+            t.macd_line,
+            t.macd_signal,
+            t.macd_histogram,
+            t.adx_14,
+            t.sma_50,
+            t.sma_200,
+            t.volume,
+            s.tradingview_url,
+            t.technical_status,
+            t.signal_score,
+            t.date AS indicator_date
+        FROM stocks s
+        JOIN latest_technicals t ON t.symbol = s.symbol
+        WHERE s.is_active = true
+        ORDER BY s.symbol
+    """)
     with engine.connect() as conn:
-        df = pd.read_sql(sql, conn)
+        try:
+            df = pd.read_sql(sql_v2, conn)
+        except Exception:
+            # v2 columns not yet migrated — fall back to v1 schema
+            df = pd.read_sql(sql_v1, conn)
     # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
               "adx_14", "sma_50", "sma_200", "signal_score",
