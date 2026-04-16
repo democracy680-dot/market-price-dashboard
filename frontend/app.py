@@ -78,9 +78,16 @@ st.markdown("""
         background-color: #080c14;
     }
     .block-container {
-        padding-top: 1.5rem;
+        padding-top: 0 !important;
         padding-bottom: 1rem;
         max-width: 100%;
+    }
+    /* Remove Streamlit's default top gap above the main content area */
+    [data-testid="stAppViewContainer"] > section:first-child {
+        padding-top: 0 !important;
+    }
+    [data-testid="stMain"] > div:first-child {
+        padding-top: 0 !important;
     }
 
     /* ── Sidebar ── */
