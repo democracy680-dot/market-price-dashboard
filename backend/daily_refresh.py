@@ -28,6 +28,7 @@ from sqlalchemy import text
 from db import get_engine, get_psycopg2_conn
 from fetcher import fetch_prices, fetch_fundamentals
 from compute import compute_snapshots, compute_sector_performance
+from compute_technicals import run_technical_refresh
 
 # ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -323,6 +324,15 @@ def run():
 
     n_sectors = upsert_sector_performance(sector_df)
     logger.info(f"  {n_sectors} rows upserted into sector_performance_daily")
+
+    # ── 5b. Technical indicators (final step — depends on prices_daily being fresh) ──
+    logger.info("Computing technical indicators...")
+    try:
+        run_technical_refresh()
+    except Exception as tech_err:
+        # Technical refresh failure must NOT abort the main daily run.
+        # Prices and snapshots are already committed above.
+        logger.error(f"  Technical refresh failed (non-fatal): {tech_err}", exc_info=True)
 
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"

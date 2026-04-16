@@ -681,6 +681,40 @@ def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=300)
+def load_latest_technicals() -> pd.DataFrame:
+    """Load the most recent technical indicators for all active stocks."""
+    sql = text("""
+        SELECT
+            s.symbol,
+            s.name,
+            t.cmp,
+            t.rsi_14,
+            t.macd_line,
+            t.macd_signal,
+            t.macd_histogram,
+            t.adx_14,
+            t.sma_50,
+            t.sma_200,
+            t.volume,
+            s.tradingview_url,
+            t.technical_status,
+            t.date AS indicator_date
+        FROM stocks s
+        JOIN latest_technicals t ON t.symbol = s.symbol
+        WHERE s.is_active = true
+        ORDER BY s.symbol
+    """)
+    with engine.connect() as conn:
+        df = pd.read_sql(sql, conn)
+    # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
+    for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
+              "adx_14", "sma_50", "sma_200"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
 @st.cache_data(ttl=1800)
 def load_themes() -> pd.DataFrame:
     sql = text("""
@@ -2015,6 +2049,11 @@ def _frag_volspike(snap_date):
 
 
 @st.fragment
+def _frag_technical_analysis():
+    render_technical_analysis_view()
+
+
+@st.fragment
 def _frag_sector_performance(snap_date):
     sector_df = load_sector_performance(snap_date)
     if sector_df.empty:
@@ -2074,6 +2113,219 @@ def _frag_sector_performance(snap_date):
     )
     fig.update_traces(marker_line_width=0)
     st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Technical Analysis view — RSI, MACD, ADX, DMA signal table
+# ---------------------------------------------------------------------------
+
+def _fmt_volume_ind(v):
+    """Format volume in Indian style: 12.3L (lakhs) or 12.3Cr (crores)."""
+    if pd.isna(v) or v is None:
+        return "—"
+    v = int(v)
+    if v >= 10_000_000:       # ≥ 1 crore
+        return f"{v / 10_000_000:.1f}Cr"
+    if v >= 100_000:           # ≥ 1 lakh
+        return f"{v / 100_000:.1f}L"
+    return f"{v:,}"
+
+
+def _color_rsi(val):
+    """Style RSI cell: red if overbought (>70), green if oversold (<30)."""
+    if val == "—":
+        return ""
+    try:
+        v = float(val)
+        if v > 70:
+            return "color: #ef4444; font-weight: 600"
+        if v < 30:
+            return "color: #22c55e; font-weight: 600"
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
+def _style_adx(val):
+    """Highlight ADX > 25 in amber — signals strong trend."""
+    if val == "—":
+        return ""
+    try:
+        if float(val) > 25:
+            return "font-weight: 700; color: #f59e0b"
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
+def _render_technical_table(df: pd.DataFrame, key: str):
+    """Build and render the formatted technical indicators table."""
+    if df.empty:
+        st.info("No stocks match the current filters.")
+        return
+
+    # ── Build display columns ─────────────────────────────────────────────────
+    disp = pd.DataFrame()
+    disp["Ticker"]    = df["symbol"]
+    disp["Name"]      = df["name"]
+    disp["CMP"]       = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["RSI (14)"]  = df["rsi_14"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
+    disp["MACD"]      = df.apply(
+        lambda r: (
+            f"L: {r['macd_line']:.2f} | S: {r['macd_signal']:.2f} | H: {r['macd_histogram']:.2f}"
+            if pd.notna(r["macd_line"]) and pd.notna(r["macd_signal"]) and pd.notna(r["macd_histogram"])
+            else "—"
+        ),
+        axis=1,
+    )
+    disp["ADX (14)"]  = df["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    disp["50 DMA"]    = df["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["200 DMA"]   = df["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["Volume"]    = df["volume"].map(_fmt_volume_ind)
+    disp["Chart"]     = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
+    disp["Status"]    = df["technical_status"]
+
+    # ── Styling ───────────────────────────────────────────────────────────────
+    styled = disp.style
+    styled = styled.map(_color_rsi,  subset=["RSI (14)"])
+    styled = styled.map(_style_adx,  subset=["ADX (14)"])
+
+    total = len(disp)
+    st.caption(f"{total} stocks")
+
+    st.dataframe(
+        styled,
+        use_container_width=True,
+        hide_index=True,
+        height=700,
+        column_config={
+            "Chart": st.column_config.LinkColumn("Chart", display_text="📈 Chart"),
+        },
+    )
+
+    # ── CSV download ──────────────────────────────────────────────────────────
+    raw_cols = ["symbol", "name", "cmp", "rsi_14", "macd_line", "macd_signal",
+                "macd_histogram", "adx_14", "sma_50", "sma_200", "volume",
+                "technical_status"]
+    csv_cols = [c for c in raw_cols if c in df.columns]
+    csv_bytes = df[csv_cols].to_csv(index=False).encode()
+    _, dl_col = st.columns([5, 1])
+    with dl_col:
+        st.download_button(
+            "⬇ CSV", csv_bytes, f"technicals_{key}.csv", "text/csv",
+            key=f"dl_tech_{key}", use_container_width=True,
+        )
+
+
+def render_technical_analysis_view():
+    """Render the Technical Analysis tab: filters, summary cards, sub-tabs."""
+    # ── Load data ─────────────────────────────────────────────────────────────
+    df_all = load_latest_technicals()
+
+    if df_all.empty:
+        st.info(
+            "No technical indicator data found. "
+            "Run `python backend/compute_technicals.py` first "
+            "or wait for the next daily refresh."
+        )
+        return
+
+    # Latest computed date
+    latest_date = "—"
+    if "indicator_date" in df_all.columns and df_all["indicator_date"].notna().any():
+        latest_date = pd.Timestamp(df_all["indicator_date"].dropna().max()).strftime("%d %b %Y")
+
+    st.caption(f"Indicators as of {latest_date} · Refreshed daily after market close")
+
+    # ── F&O subset ───────────────────────────────────────────────────────────
+    membership    = _load_index_membership()
+    fno_symbols   = set(membership.loc[membership["index_name"] == "FNO", "symbol"])
+    df_fno        = df_all[df_all["symbol"].isin(fno_symbols)].copy()
+
+    # ── Sidebar-style filters rendered inline (above sub-tabs) ───────────────
+    fc1, fc2, fc3, fc4 = st.columns([2, 1, 2, 2])
+    with fc1:
+        rsi_range = st.slider(
+            "RSI range", min_value=0, max_value=100, value=(0, 100),
+            key="ta_rsi_range",
+        )
+    with fc2:
+        adx_min = st.slider(
+            "Min ADX", min_value=0, max_value=100, value=0,
+            key="ta_adx_min",
+        )
+    with fc3:
+        all_statuses = sorted(df_all["technical_status"].dropna().unique().tolist())
+        sel_statuses = st.multiselect(
+            "Status", all_statuses, default=[],
+            key="ta_status", placeholder="All statuses",
+        )
+    with fc4:
+        search = st.text_input(
+            "Search symbol / name", placeholder="e.g. RELIANCE or Tata",
+            key="ta_search", label_visibility="collapsed",
+        )
+
+    def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        # RSI filter (exclude rows where RSI is null only if user moved slider away from default)
+        if rsi_range != (0, 100):
+            df = df[df["rsi_14"].isna() | (df["rsi_14"].between(rsi_range[0], rsi_range[1]))]
+        # ADX min filter
+        if adx_min > 0:
+            df = df[df["adx_14"].notna() & (df["adx_14"] >= adx_min)]
+        # Status filter
+        if sel_statuses:
+            df = df[df["technical_status"].isin(sel_statuses)]
+        # Search
+        if search.strip():
+            q = search.strip().lower()
+            mask = (
+                df["symbol"].str.lower().str.contains(q, na=False) |
+                df["name"].str.lower().str.contains(q, na=False)
+            )
+            df = df[mask]
+        return df
+
+    # ── Sub-tabs ──────────────────────────────────────────────────────────────
+    tab_all_stocks, tab_fno_stocks = st.tabs(["All Stocks", "F&O Stocks"])
+
+    # ── All Stocks sub-tab ────────────────────────────────────────────────────
+    with tab_all_stocks:
+        # Summary cards (from the full all-stocks universe, before user filters)
+        n_strong_buy = int(df_all["technical_status"].str.contains("Strong Buy", na=False).sum())
+        n_sell       = int(df_all["technical_status"].str.contains("Sell", na=False).sum())
+        n_oversold   = int((df_all["rsi_14"].notna() & (df_all["rsi_14"] < 30)).sum())
+        n_strong_trn = int((df_all["adx_14"].notna() & (df_all["adx_14"] > 25)).sum())
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("🚀 Strong Buys",    n_strong_buy)
+        c2.metric("🔻 Sells / Avoid",  n_sell)
+        c3.metric("🔥 Oversold (RSI<30)", n_oversold)
+        c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
+
+        st.divider()
+        _render_technical_table(_apply_filters(df_all), key="all")
+
+    # ── F&O Stocks sub-tab ────────────────────────────────────────────────────
+    with tab_fno_stocks:
+        # Summary cards (from the F&O universe, before user filters)
+        n_strong_buy_fno = int(df_fno["technical_status"].str.contains("Strong Buy", na=False).sum())
+        n_sell_fno       = int(df_fno["technical_status"].str.contains("Sell", na=False).sum())
+        n_oversold_fno   = int((df_fno["rsi_14"].notna() & (df_fno["rsi_14"] < 30)).sum())
+        n_strong_trn_fno = int((df_fno["adx_14"].notna() & (df_fno["adx_14"] > 25)).sum())
+
+        c1f, c2f, c3f, c4f = st.columns(4)
+        c1f.metric("🚀 Strong Buys",    n_strong_buy_fno)
+        c2f.metric("🔻 Sells / Avoid",  n_sell_fno)
+        c3f.metric("🔥 Oversold (RSI<30)", n_oversold_fno)
+        c4f.metric("💪 Strong Trends (ADX>25)", n_strong_trn_fno)
+
+        st.divider()
+        if df_fno.empty:
+            st.info("No F&O stocks found. Ensure `index_membership` is seeded with `index_name = 'FNO'`.")
+        else:
+            _render_technical_table(_apply_filters(df_fno), key="fno")
 
 
 # ---------------------------------------------------------------------------
@@ -2238,13 +2490,14 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_upload = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_upload = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
     "Vol Spikes",
+    "🔬 Technical Analysis",
     "Custom Upload",
 ])
 
@@ -2367,7 +2620,12 @@ with tab_upload:
         except Exception as e:
             st.error(f"Error reading CSV: {e}")
 
-# ── Tab 6: Global Markets ─────────────────────────────────────────────────────
+# ── Tab 7: Technical Analysis ────────────────────────────────────────────────
+with tab_technical:
+    _page_header("Technical Analysis")
+    _frag_technical_analysis()
+
+# ── Tab 8: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
     _page_header("Global Markets")
     if _GM_AVAILABLE:
