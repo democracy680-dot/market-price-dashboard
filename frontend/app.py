@@ -72,41 +72,21 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* Collapse header — visibility:hidden keeps space, height:0 removes it */
-    header, header[data-testid="stHeader"] {
-        height: 0 !important;
-        min-height: 0 !important;
-        padding: 0 !important;
-        overflow: hidden !important;
-        display: block !important;
-    }
+    /* Hide Streamlit header (ticker bar is injected as position:fixed via JS) */
+    header[data-testid="stHeader"] { display: none !important; }
+
+    /* Collapse invisible autorefresh iframe */
+    iframe[title="st_autorefresh.st_autorefresh"] { display: none !important; }
 
     /* Main background */
-    .stApp {
-        background-color: #080c14;
-    }
+    .stApp { background-color: #080c14; }
 
-    /* Kill every layer of top padding/margin Streamlit adds */
     .block-container,
     [data-testid="block-container"],
     [data-testid="stMainBlockContainer"] {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
+        padding-top: 1rem !important;
         padding-bottom: 1rem;
         max-width: 100%;
-    }
-    [data-testid="stAppViewContainer"] > section:first-child,
-    [data-testid="stMain"],
-    [data-testid="stMain"] > div:first-child,
-    [data-testid="stVerticalBlock"] > div:first-child {
-        padding-top: 0 !important;
-        margin-top: 0 !important;
-    }
-
-    /* Collapse the autorefresh iframe height to 0 so it takes no space */
-    iframe[title="st_autorefresh.st_autorefresh"],
-    iframe[height="0"] {
-        display: none !important;
     }
 
     /* ── Sidebar ── */
