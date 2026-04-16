@@ -4,12 +4,15 @@ indicators.py — Pure-Python technical indicator math library.
 No database calls, no network access. Independently testable with pytest.
 
 Functions:
-    compute_rsi         — 14-period Wilder's RSI
-    compute_ema_series  — EMA series (seeded with SMA) used by MACD
-    compute_macd        — MACD line, signal, histogram
-    compute_adx         — ADX, +DI, -DI (Wilder's method)
-    compute_sma         — Simple moving average of last N values
-    compute_technical_status — Combined signal score + human label
+    compute_rsi                  — 14-period Wilder's RSI
+    compute_ema_series           — EMA series (seeded with SMA) used by MACD
+    compute_macd                 — MACD line, signal, histogram
+    compute_adx                  — ADX, +DI, -DI (Wilder's method)
+    compute_sma                  — Simple moving average of last N values
+    compute_technical_status_v1  — Original signal score + label (preserved for comparison)
+    compute_sma_slope            — SMA200 percent change over N trading days
+    compute_volume_ratio         — Today's volume / N-day average volume
+    compute_technical_status_v2  — Improved score with slope awareness + volume confirmation
 """
 
 import math
@@ -230,15 +233,16 @@ def compute_sma(values: list, period: int):
     return sum(values[-period:]) / period
 
 
-# ── Technical Status ──────────────────────────────────────────────────────────
+# ── Technical Status v1 (preserved for rollout comparison) ───────────────────
 
-def compute_technical_status(
+def compute_technical_status_v1(
     cmp, rsi, sma_50, sma_200,
     macd_line, macd_signal, macd_histogram,
     adx,
 ) -> tuple:
     """
-    Combine all indicators into a single score and human-readable label.
+    Original scoring logic — preserved for comparison during v2 rollout.
+    Do not modify this function.
 
     adx may be None (treated as "no trend strength info" — score is not amplified).
     All other inputs being None → returns (0, "⚪ Insufficient Data").
@@ -284,6 +288,136 @@ def compute_technical_status(
         return (score, "🔥 Oversold – Possible Bounce")
 
     # ── Final verdict mapping ─────────────────────────────────────────────────
+    if score >= 5:
+        return (score, "🚀 Strong Buy (Trend + Momentum)")
+    if score >= 3:
+        return (score, "✅ Buy / Accumulate")
+    if score >= 1:
+        return (score, "📈 Mild Bullish")
+    if score <= -3:
+        return (score, "🔻 Sell / Avoid")
+    if score <= -1:
+        return (score, "📉 Mild Bearish")
+    return (score, "⚖️ Neutral / Hold")
+
+
+# ── SMA Slope ─────────────────────────────────────────────────────────────────
+
+def compute_sma_slope(sma_series: list, lookback: int = 20):
+    """
+    Percent change in SMA from `lookback` bars ago to latest.
+    Returns None if series too short or earlier value is zero.
+    """
+    if sma_series is None or len(sma_series) <= lookback:
+        return None
+    earlier = sma_series[-(lookback + 1)]
+    latest = sma_series[-1]
+    if earlier is None or latest is None or earlier == 0:
+        return None
+    return (latest - earlier) / earlier * 100.0
+
+
+# ── Volume Ratio ──────────────────────────────────────────────────────────────
+
+def compute_volume_ratio(volumes: list, lookback: int = 20):
+    """
+    Today's volume divided by the mean of the prior `lookback` sessions
+    (not including today, to avoid self-bias).
+    Returns None if insufficient data or average is zero.
+    """
+    if volumes is None or len(volumes) < lookback + 1:
+        return None
+    prior = volumes[-(lookback + 1):-1]
+    prior_clean = [v for v in prior if v is not None and v > 0]
+    if len(prior_clean) < lookback // 2:  # need at least half the window to be valid
+        return None
+    avg = sum(prior_clean) / len(prior_clean)
+    if avg == 0:
+        return None
+    today = volumes[-1]
+    if today is None or today <= 0:
+        return None
+    return today / avg
+
+
+# ── Technical Status v2 ───────────────────────────────────────────────────────
+
+def compute_technical_status_v2(
+    cmp, rsi, sma_50, sma_200, sma_200_slope,
+    macd_line, macd_signal, macd_histogram,
+    adx, volume_ratio
+) -> tuple:
+    """
+    v2 scoring: adds SMA200 slope awareness and volume confirmation.
+    Returns (score, label). Score is numeric (allows for +0.5 granularity).
+    """
+    # Guard: if any core indicator is missing, return insufficient data
+    if any(x is None for x in [cmp, rsi, sma_50, sma_200, macd_line, macd_signal, macd_histogram]):
+        return (0, "⚪ Insufficient Data")
+
+    score = 0.0
+
+    # --- 1. TREND (with slope awareness) ---
+    # v1 was: CMP>SMA50>SMA200 → +3; CMP>SMA200 → +1; CMP<SMA200 → -2
+    # v2 refines the middle cases using slope
+    if cmp > sma_50 > sma_200:
+        # Golden alignment — but amplify only if slope is rising
+        if sma_200_slope is not None and sma_200_slope > 1.0:
+            score += 3.0  # full strong uptrend
+        else:
+            score += 2.0  # alignment but trend flattening
+    elif cmp > sma_200:
+        # Above long-term MA — quality depends on slope
+        if sma_200_slope is not None:
+            if sma_200_slope > 1.0:
+                score += 1.5      # healthy drift up
+            elif sma_200_slope < -1.0:
+                score += 0.0      # drifting above a falling MA — low quality
+            else:
+                score += 0.5      # flat long-term trend
+        else:
+            score += 1.0  # slope unknown, fall back to v1 behavior
+    elif cmp < sma_200:
+        # Below long-term MA — slope determines severity
+        if sma_200_slope is not None and sma_200_slope < -1.0:
+            score -= 3.0      # below a falling MA = broken trend
+        else:
+            score -= 2.0      # below MA but trend may still be OK
+
+    # --- 2. MOMENTUM (MACD) — unchanged from v1 ---
+    if macd_histogram > 0 and macd_line > 0:
+        score += 2.0
+    elif macd_histogram > 0:
+        score += 1.0
+    elif macd_histogram < 0 and macd_line < 0:
+        score -= 2.0
+    elif macd_histogram < 0:
+        score -= 1.0
+
+    # --- 3. ADX amplifier — unchanged from v1 ---
+    if adx is not None and adx > 25:
+        score = score * 1.3
+
+    # --- 4. VOLUME CONFIRMATION (new in v2) ---
+    # Only rewards when volume confirms an already-meaningful move.
+    # A +1.5x volume day on a neutral score should NOT be a buy signal.
+    if volume_ratio is not None:
+        if volume_ratio >= 1.5 and score > 0:
+            score += 1.0          # confirms strength
+        elif volume_ratio >= 1.5 and score < 0:
+            score -= 1.0          # confirms weakness (heavy distribution)
+        # weak volume (<0.5) doesn't change the score — just not a bonus
+
+    # --- 5. RSI OVERRIDE (unchanged from v1) ---
+    if rsi >= 80 and score < 2:
+        return (score, "⚠️ Overbought – Risk of Pullback")
+    if rsi <= 20 and score > -2:
+        return (score, "🔥 Oversold – Possible Bounce")
+
+    # --- 6. LABEL MAPPING ---
+    # Note: thresholds kept at v1 values deliberately. With ADX multiplier AND
+    # volume bonus, scores can reach ~6.5 in extreme cases, but the distribution
+    # of real signals should remain roughly similar.
     if score >= 5:
         return (score, "🚀 Strong Buy (Trend + Momentum)")
     if score >= 3:

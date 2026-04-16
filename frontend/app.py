@@ -699,6 +699,11 @@ def load_latest_technicals() -> pd.DataFrame:
             t.volume,
             s.tradingview_url,
             t.technical_status,
+            t.signal_score,
+            t.sma_200_slope,
+            t.volume_ratio,
+            t.technical_status_v1,
+            t.signal_score_v2,
             t.date AS indicator_date
         FROM stocks s
         JOIN latest_technicals t ON t.symbol = s.symbol
@@ -709,7 +714,8 @@ def load_latest_technicals() -> pd.DataFrame:
         df = pd.read_sql(sql, conn)
     # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
-              "adx_14", "sma_50", "sma_200"]:
+              "adx_14", "sma_50", "sma_200", "signal_score",
+              "sma_200_slope", "volume_ratio", "signal_score_v2"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
@@ -2158,7 +2164,48 @@ def _style_adx(val):
     return ""
 
 
-def _render_technical_table(df: pd.DataFrame, key: str):
+def _fmt_slope(v) -> str:
+    """Format SMA200 slope as +1.2% / -0.8% or —."""
+    if pd.isna(v) or v is None:
+        return "—"
+    return f"{v:+.2f}%"
+
+
+def _color_slope(val) -> str:
+    """Color SMA200 slope: green if rising >+1%, red if falling <-1%, gray otherwise."""
+    if val == "—":
+        return ""
+    try:
+        v = float(val.replace("%", "").replace("+", ""))
+        if v > 1.0:
+            return "color: #22c55e; font-weight: 600"
+        if v < -1.0:
+            return "color: #ef4444; font-weight: 600"
+        return "color: #94a3b8"
+    except (ValueError, TypeError):
+        return ""
+
+
+def _fmt_vol_ratio(v) -> str:
+    """Format volume ratio as 1.8x or —."""
+    if pd.isna(v) or v is None:
+        return "—"
+    return f"{v:.2f}x"
+
+
+def _style_vol_ratio(val) -> str:
+    """Bold volume ratio >= 1.5x."""
+    if val == "—":
+        return ""
+    try:
+        if float(val.replace("x", "")) >= 1.5:
+            return "font-weight: 700; color: #f59e0b"
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
+def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False):
     """Build and render the formatted technical indicators table."""
     if df.empty:
         st.info("No stocks match the current filters.")
@@ -2181,14 +2228,20 @@ def _render_technical_table(df: pd.DataFrame, key: str):
     disp["ADX (14)"]  = df["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
     disp["50 DMA"]    = df["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     disp["200 DMA"]   = df["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["Volume"]    = df["volume"].map(_fmt_volume_ind)
-    disp["Chart"]     = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
-    disp["Status"]    = df["technical_status"]
+    disp["Volume"]      = df["volume"].map(_fmt_volume_ind)
+    disp["SMA200 Slope"] = df["sma_200_slope"].map(_fmt_slope) if "sma_200_slope" in df.columns else "—"
+    disp["Vol Ratio"]   = df["volume_ratio"].map(_fmt_vol_ratio) if "volume_ratio" in df.columns else "—"
+    disp["Chart"]       = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
+    disp["Status"]      = df["technical_status"]
+    if show_v1 and "technical_status_v1" in df.columns:
+        disp["v1 Signal"] = df["technical_status_v1"]
 
     # ── Styling ───────────────────────────────────────────────────────────────
     styled = disp.style
-    styled = styled.map(_color_rsi,  subset=["RSI (14)"])
-    styled = styled.map(_style_adx,  subset=["ADX (14)"])
+    styled = styled.map(_color_rsi,        subset=["RSI (14)"])
+    styled = styled.map(_style_adx,        subset=["ADX (14)"])
+    styled = styled.map(_color_slope,      subset=["SMA200 Slope"])
+    styled = styled.map(_style_vol_ratio,  subset=["Vol Ratio"])
 
     total = len(disp)
     st.caption(f"{total} stocks")
@@ -2206,7 +2259,7 @@ def _render_technical_table(df: pd.DataFrame, key: str):
     # ── CSV download ──────────────────────────────────────────────────────────
     raw_cols = ["symbol", "name", "cmp", "rsi_14", "macd_line", "macd_signal",
                 "macd_histogram", "adx_14", "sma_50", "sma_200", "volume",
-                "technical_status"]
+                "sma_200_slope", "volume_ratio", "technical_status", "technical_status_v1"]
     csv_cols = [c for c in raw_cols if c in df.columns]
     csv_bytes = df[csv_cols].to_csv(index=False).encode()
     _, dl_col = st.columns([5, 1])
@@ -2242,7 +2295,7 @@ def render_technical_analysis_view():
     fno_symbols   = set(membership.loc[membership["index_name"] == "FNO", "symbol"])
     df_fno        = df_all[df_all["symbol"].isin(fno_symbols)].copy()
 
-    # ── Sidebar-style filters rendered inline (above sub-tabs) ───────────────
+    # ── Filters row 1: existing filters ──────────────────────────────────────
     fc1, fc2, fc3, fc4 = st.columns([2, 1, 2, 2])
     with fc1:
         rsi_range = st.slider(
@@ -2266,6 +2319,21 @@ def render_technical_analysis_view():
             key="ta_search", label_visibility="collapsed",
         )
 
+    # ── Filters row 2: v2 slope + volume filters ──────────────────────────────
+    fc5, fc6, fc7 = st.columns([2, 2, 1])
+    with fc5:
+        slope_filter = st.radio(
+            "SMA200 Slope", ["Any", "Rising only (>+1%)", "Falling only (<-1%)"],
+            horizontal=True, key="ta_slope_filter",
+        )
+    with fc6:
+        vol_ratio_min = st.slider(
+            "Min Volume Ratio", min_value=0.0, max_value=3.0, value=0.0, step=0.1,
+            key="ta_vol_ratio_min",
+        )
+    with fc7:
+        show_v1 = st.checkbox("Show v1 signal", value=False, key="ta_show_v1")
+
     def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         # RSI filter (exclude rows where RSI is null only if user moved slider away from default)
@@ -2277,6 +2345,14 @@ def render_technical_analysis_view():
         # Status filter
         if sel_statuses:
             df = df[df["technical_status"].isin(sel_statuses)]
+        # SMA200 slope filter
+        if slope_filter == "Rising only (>+1%)" and "sma_200_slope" in df.columns:
+            df = df[df["sma_200_slope"].notna() & (df["sma_200_slope"] > 1.0)]
+        elif slope_filter == "Falling only (<-1%)" and "sma_200_slope" in df.columns:
+            df = df[df["sma_200_slope"].notna() & (df["sma_200_slope"] < -1.0)]
+        # Volume ratio min filter
+        if vol_ratio_min > 0.0 and "volume_ratio" in df.columns:
+            df = df[df["volume_ratio"].notna() & (df["volume_ratio"] >= vol_ratio_min)]
         # Search
         if search.strip():
             q = search.strip().lower()
@@ -2305,7 +2381,7 @@ def render_technical_analysis_view():
         c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
 
         st.divider()
-        _render_technical_table(_apply_filters(df_all), key="all")
+        _render_technical_table(_apply_filters(df_all), key="all", show_v1=show_v1)
 
     # ── F&O Stocks sub-tab ────────────────────────────────────────────────────
     with tab_fno_stocks:
@@ -2325,7 +2401,29 @@ def render_technical_analysis_view():
         if df_fno.empty:
             st.info("No F&O stocks found. Ensure `index_membership` is seeded with `index_name = 'FNO'`.")
         else:
-            _render_technical_table(_apply_filters(df_fno), key="fno")
+            _render_technical_table(_apply_filters(df_fno), key="fno", show_v1=show_v1)
+
+    # ── v1 vs v2 Debug Panel ──────────────────────────────────────────────────
+    if "technical_status_v1" in df_all.columns:
+        changed = df_all[
+            df_all["technical_status_v1"].notna() &
+            (df_all["technical_status_v1"] != df_all["technical_status"])
+        ].copy()
+        with st.expander(f"🔍 v1 vs v2 Signal Comparison ({len(changed)} stocks differ)", expanded=False):
+            if changed.empty:
+                st.info("No label differences between v1 and v2 signals.")
+            else:
+                debug = pd.DataFrame()
+                debug["Symbol"]       = changed["symbol"]
+                debug["Name"]         = changed["name"]
+                debug["v1 Signal"]    = changed["technical_status_v1"]
+                debug["v2 Signal"]    = changed["technical_status"]
+                debug["v1 Score"]     = changed["signal_score_v2"].map(
+                    lambda v: f"{v:.1f}" if pd.notna(v) else "—"
+                ) if "signal_score_v2" in changed.columns else "—"
+                debug["Slope"]        = changed["sma_200_slope"].map(_fmt_slope) if "sma_200_slope" in changed.columns else "—"
+                debug["Vol Ratio"]    = changed["volume_ratio"].map(_fmt_vol_ratio) if "volume_ratio" in changed.columns else "—"
+                st.dataframe(debug, use_container_width=True, hide_index=True)
 
 
 # ---------------------------------------------------------------------------

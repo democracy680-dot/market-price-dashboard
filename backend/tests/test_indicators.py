@@ -20,7 +20,10 @@ from indicators import (
     compute_macd,
     compute_adx,
     compute_sma,
-    compute_technical_status,
+    compute_technical_status_v1,
+    compute_sma_slope,
+    compute_volume_ratio,
+    compute_technical_status_v2,
 )
 
 
@@ -189,7 +192,7 @@ def test_status_strong_buy():
       - ADX > 25 (amplifier)                  score * 1.3
       Total before amplification: 5 → after: int(5*1.3) = 6 → Strong Buy
     """
-    score, label = compute_technical_status(
+    score, label = compute_technical_status_v1(
         cmp=150.0, rsi=60.0,
         sma_50=140.0, sma_200=120.0,
         macd_line=2.5, macd_signal=2.0, macd_histogram=0.5,
@@ -206,7 +209,7 @@ def test_status_sell_avoid():
       - MACD histogram < 0, line < 0 (-2)
       Total: -4 → Sell / Avoid
     """
-    score, label = compute_technical_status(
+    score, label = compute_technical_status_v1(
         cmp=80.0, rsi=40.0,
         sma_50=95.0, sma_200=110.0,
         macd_line=-1.5, macd_signal=-1.0, macd_histogram=-0.5,
@@ -218,7 +221,7 @@ def test_status_sell_avoid():
 
 def test_status_insufficient_data():
     """Any None argument (except adx) must return Insufficient Data."""
-    score, label = compute_technical_status(
+    score, label = compute_technical_status_v1(
         cmp=None, rsi=50.0,
         sma_50=100.0, sma_200=95.0,
         macd_line=0.5, macd_signal=0.3, macd_histogram=0.2,
@@ -227,7 +230,7 @@ def test_status_insufficient_data():
     assert "Insufficient Data" in label
     assert score == 0
 
-    score2, label2 = compute_technical_status(
+    score2, label2 = compute_technical_status_v1(
         cmp=100.0, rsi=None,
         sma_50=95.0, sma_200=90.0,
         macd_line=None, macd_signal=None, macd_histogram=None,
@@ -238,7 +241,7 @@ def test_status_insufficient_data():
 
 def test_status_overbought():
     """RSI >= 80 with a weak score < 2 → Overbought warning."""
-    score, label = compute_technical_status(
+    score, label = compute_technical_status_v1(
         cmp=105.0, rsi=85.0,
         sma_50=100.0, sma_200=110.0,   # below 200 DMA → score -2
         macd_line=0.1, macd_signal=0.05, macd_histogram=0.05,  # +1
@@ -250,13 +253,13 @@ def test_status_overbought():
 
 def test_status_adx_amplifies_bullish():
     """ADX > 25 should increase the score, not flip direction."""
-    _, label_no_adx = compute_technical_status(
+    _, label_no_adx = compute_technical_status_v1(
         cmp=150.0, rsi=65.0,
         sma_50=140.0, sma_200=120.0,
         macd_line=1.0, macd_signal=0.8, macd_histogram=0.2,
         adx=None,
     )
-    _, label_with_adx = compute_technical_status(
+    _, label_with_adx = compute_technical_status_v1(
         cmp=150.0, rsi=65.0,
         sma_50=140.0, sma_200=120.0,
         macd_line=1.0, macd_signal=0.8, macd_histogram=0.2,
@@ -269,3 +272,133 @@ def test_status_adx_amplifies_bullish():
     }
     assert label_no_adx  in bullish_labels, f"Unexpected: {label_no_adx}"
     assert label_with_adx in bullish_labels, f"Unexpected: {label_with_adx}"
+
+
+# ── SMA Slope ─────────────────────────────────────────────────────────────────
+
+def test_sma_slope_rising():
+    """Ascending SMA series should produce a positive slope."""
+    # 22 values steadily rising: slope of last vs 21 bars ago is clearly > 0
+    sma_series = _steady_up(22, start=100.0, step=0.5)
+    slope = compute_sma_slope(sma_series, lookback=20)
+    assert slope is not None
+    assert slope > 0, f"Expected positive slope for rising SMA, got {slope}"
+
+
+def test_sma_slope_falling():
+    """Descending SMA series should produce a negative slope."""
+    sma_series = _steady_down(22, start=200.0, step=0.5)
+    slope = compute_sma_slope(sma_series, lookback=20)
+    assert slope is not None
+    assert slope < 0, f"Expected negative slope for falling SMA, got {slope}"
+
+
+def test_sma_slope_insufficient():
+    """Series shorter than lookback+1 must return None."""
+    assert compute_sma_slope([100.0] * 20, lookback=20) is None   # exactly lookback, not +1
+    assert compute_sma_slope([100.0] * 5,  lookback=20) is None
+    assert compute_sma_slope(None,          lookback=20) is None
+
+
+# ── Volume Ratio ──────────────────────────────────────────────────────────────
+
+def test_volume_ratio_surge():
+    """Flat prior volumes + 2x today should produce ratio ≈ 2.0."""
+    # 20 prior days all at 1_000_000, today at 2_000_000
+    volumes = [1_000_000] * 20 + [2_000_000]
+    ratio = compute_volume_ratio(volumes, lookback=20)
+    assert ratio is not None
+    assert abs(ratio - 2.0) < 0.01, f"Expected ratio ≈ 2.0, got {ratio}"
+
+
+def test_volume_ratio_zero_avg():
+    """All-zero prior volumes must return None (avoid division by zero)."""
+    volumes = [0] * 20 + [500_000]
+    assert compute_volume_ratio(volumes, lookback=20) is None
+
+
+# ── v2 Scoring ────────────────────────────────────────────────────────────────
+
+def _bullish_kwargs(**overrides):
+    """Base kwargs for a clear uptrend setup."""
+    base = dict(
+        cmp=150.0, rsi=60.0,
+        sma_50=140.0, sma_200=120.0, sma_200_slope=2.0,
+        macd_line=1.5, macd_signal=1.0, macd_histogram=0.5,
+        adx=None, volume_ratio=None,
+    )
+    base.update(overrides)
+    return base
+
+
+def test_v2_vs_v1_agreement():
+    """For a clear uptrend, both v1 and v2 should return bullish labels."""
+    bullish_labels = {
+        "📈 Mild Bullish", "✅ Buy / Accumulate",
+        "🚀 Strong Buy (Trend + Momentum)",
+    }
+    _, v1_label = compute_technical_status_v1(
+        cmp=150.0, rsi=60.0,
+        sma_50=140.0, sma_200=120.0,
+        macd_line=1.5, macd_signal=1.0, macd_histogram=0.5,
+        adx=None,
+    )
+    _, v2_label = compute_technical_status_v2(**_bullish_kwargs())
+    assert v1_label in bullish_labels, f"v1 not bullish: {v1_label}"
+    assert v2_label in bullish_labels, f"v2 not bullish: {v2_label}"
+
+
+def test_v2_slope_penalizes_weak_trend():
+    """
+    Stock above SMA200 but below SMA50, with a falling SMA200:
+    v2 score should be lower (or equal at worst) than v1 score.
+    """
+    v1_score, _ = compute_technical_status_v1(
+        cmp=125.0, rsi=50.0,
+        sma_50=130.0, sma_200=120.0,
+        macd_line=0.1, macd_signal=0.05, macd_histogram=0.05,
+        adx=None,
+    )
+    v2_score, _ = compute_technical_status_v2(
+        cmp=125.0, rsi=50.0,
+        sma_50=130.0, sma_200=120.0, sma_200_slope=-2.0,  # falling MA
+        macd_line=0.1, macd_signal=0.05, macd_histogram=0.05,
+        adx=None, volume_ratio=None,
+    )
+    assert v2_score <= v1_score, (
+        f"v2 score ({v2_score}) should be <= v1 score ({v1_score}) "
+        "when SMA200 slope is falling"
+    )
+
+
+def test_v2_volume_rewards_confirmation():
+    """Same inputs with vs without volume surge: v2 with surge > v2 without."""
+    base = _bullish_kwargs(volume_ratio=None)
+    surge = _bullish_kwargs(volume_ratio=2.0)
+
+    score_no_surge, _ = compute_technical_status_v2(**base)
+    score_surge, _    = compute_technical_status_v2(**surge)
+
+    assert score_surge > score_no_surge, (
+        f"Expected volume surge to boost score: {score_no_surge} → {score_surge}"
+    )
+
+
+def test_v2_volume_does_not_convert_neutral():
+    """
+    A neutral score (score == 0) with a volume surge must NOT become a buy signal.
+    The volume bonus only applies when score > 0 or score < 0.
+    """
+    # Construct a truly neutral setup: CMP between SMA50 and SMA200, MACD near zero
+    # CMP > SMA200 with falling slope → score contribution = 0.0
+    # MACD histogram == 0 → no momentum contribution
+    score, label = compute_technical_status_v2(
+        cmp=125.0, rsi=50.0,
+        sma_50=130.0, sma_200=120.0, sma_200_slope=-2.0,
+        macd_line=0.0, macd_signal=0.0, macd_histogram=0.0,
+        adx=None, volume_ratio=2.0,
+    )
+    buy_labels = {"✅ Buy / Accumulate", "🚀 Strong Buy (Trend + Momentum)", "📈 Mild Bullish"}
+    assert label not in buy_labels, (
+        f"Volume surge on neutral score should not produce buy signal, got: {label}"
+    )

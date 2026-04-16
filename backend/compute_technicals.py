@@ -34,7 +34,10 @@ from indicators import (
     compute_macd,
     compute_adx,
     compute_sma,
-    compute_technical_status,
+    compute_technical_status_v1,
+    compute_sma_slope,
+    compute_volume_ratio,
+    compute_technical_status_v2,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -67,11 +70,11 @@ def _fetch_all_ohlcv(engine) -> dict:
 
     We fetch 380 calendar days to ensure ~260+ trading days of history.
     """
-    logger.info("Fetching bulk OHLCV from prices_daily (last 380 calendar days)...")
+    logger.info("Fetching bulk OHLCV from prices_daily (last 410 calendar days)...")
     sql = text("""
         SELECT symbol, date, open, high, low, close, volume
         FROM prices_daily
-        WHERE date >= CURRENT_DATE - INTERVAL '380 days'
+        WHERE date >= CURRENT_DATE - INTERVAL '410 days'
         ORDER BY symbol, date ASC
     """)
     with engine.connect() as conn:
@@ -112,27 +115,48 @@ def _get_latest_prices_date(engine):
     return row[0] if row else None
 
 
+def _compute_sma200_series(closes: list, count: int = 21) -> list:
+    """
+    Return the last `count` values of the 200-day SMA series.
+    Index 0 = oldest (20 days ago), index -1 = today.
+    Returns None for positions with insufficient history.
+    """
+    n = len(closes)
+    result = []
+    for offset in range(count - 1, -1, -1):  # count-1 down to 0
+        end = n - offset
+        if end >= 200:
+            result.append(sum(closes[end - 200:end]) / 200)
+        else:
+            result.append(None)
+    return result
+
+
 def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
     """
     Given sorted OHLCV bars for one symbol, compute all indicators for target_date.
     Always returns a dict — nulls out indicators if insufficient data.
     """
     base = {
-        "symbol":           symbol,
-        "date":             target_date,
-        "cmp":              None,
-        "volume":           None,
-        "rsi_14":           None,
-        "macd_line":        None,
-        "macd_signal":      None,
-        "macd_histogram":   None,
-        "adx_14":           None,
-        "plus_di_14":       None,
-        "minus_di_14":      None,
-        "sma_50":           None,
-        "sma_200":          None,
-        "signal_score":     0,
-        "technical_status": "⚪ Insufficient Data",
+        "symbol":               symbol,
+        "date":                 target_date,
+        "cmp":                  None,
+        "volume":               None,
+        "rsi_14":               None,
+        "macd_line":            None,
+        "macd_signal":          None,
+        "macd_histogram":       None,
+        "adx_14":               None,
+        "plus_di_14":           None,
+        "minus_di_14":          None,
+        "sma_50":               None,
+        "sma_200":              None,
+        "signal_score":         0,
+        "technical_status":     "⚪ Insufficient Data",
+        "sma_200_slope":        None,
+        "volume_ratio":         None,
+        "signal_score_v2":      0,
+        "technical_status_v1":  "⚪ Insufficient Data",
     }
 
     if not bars:
@@ -176,29 +200,48 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
     plus_di   = adx_r["plus_di"]  if adx_r else None
     minus_di  = adx_r["minus_di"] if adx_r else None
 
-    score, status = compute_technical_status(
+    # ── v2: SMA200 slope (needs 21 SMA200 values → 220 closes minimum) ───────
+    sma200_series = _compute_sma200_series(closes_trim, count=21)
+    slope = compute_sma_slope(sma200_series, lookback=20)
+
+    # ── v2: Volume ratio (last 21 raw volumes: 20 prior + today) ─────────────
+    all_volumes = [b["volume"] for b in relevant]
+    vol_ratio = compute_volume_ratio(all_volumes, lookback=20)
+
+    # ── Dual scoring ─────────────────────────────────────────────────────────
+    v1_score, v1_label = compute_technical_status_v1(
         cmp=base["cmp"], rsi=rsi,
         sma_50=sma50, sma_200=sma200,
         macd_line=macd_line, macd_signal=macd_sig, macd_histogram=macd_hist,
         adx=adx_val,
     )
+    v2_score, v2_label = compute_technical_status_v2(
+        cmp=base["cmp"], rsi=rsi,
+        sma_50=sma50, sma_200=sma200, sma_200_slope=slope,
+        macd_line=macd_line, macd_signal=macd_sig, macd_histogram=macd_hist,
+        adx=adx_val, volume_ratio=vol_ratio,
+    )
 
     return {
-        "symbol":           symbol,
-        "date":             target_date,
-        "cmp":              _clean(base["cmp"]),
-        "volume":           base["volume"],
-        "rsi_14":           _clean(rsi),
-        "macd_line":        _clean(macd_line),
-        "macd_signal":      _clean(macd_sig),
-        "macd_histogram":   _clean(macd_hist),
-        "adx_14":           _clean(adx_val),
-        "plus_di_14":       _clean(plus_di),
-        "minus_di_14":      _clean(minus_di),
-        "sma_50":           _clean(sma50),
-        "sma_200":          _clean(sma200),
-        "signal_score":     score,
-        "technical_status": status,
+        "symbol":               symbol,
+        "date":                 target_date,
+        "cmp":                  _clean(base["cmp"]),
+        "volume":               base["volume"],
+        "rsi_14":               _clean(rsi),
+        "macd_line":            _clean(macd_line),
+        "macd_signal":          _clean(macd_sig),
+        "macd_histogram":       _clean(macd_hist),
+        "adx_14":               _clean(adx_val),
+        "plus_di_14":           _clean(plus_di),
+        "minus_di_14":          _clean(minus_di),
+        "sma_50":               _clean(sma50),
+        "sma_200":              _clean(sma200),
+        "signal_score":         v2_score,       # v2 is now primary
+        "technical_status":     v2_label,
+        "sma_200_slope":        _clean(slope),
+        "volume_ratio":         _clean(vol_ratio),
+        "signal_score_v2":      v2_score,
+        "technical_status_v1":  v1_label,
     }
 
 
@@ -207,7 +250,9 @@ _UPSERT_COLS = [
     "rsi_14", "macd_line", "macd_signal", "macd_histogram",
     "adx_14", "plus_di_14", "minus_di_14",
     "sma_50", "sma_200",
-    "signal_score", "technical_status", "computed_at",
+    "signal_score", "technical_status",
+    "sma_200_slope", "volume_ratio", "signal_score_v2", "technical_status_v1",
+    "computed_at",
 ]
 
 _UPSERT_SQL = """
@@ -216,23 +261,29 @@ _UPSERT_SQL = """
          rsi_14, macd_line, macd_signal, macd_histogram,
          adx_14, plus_di_14, minus_di_14,
          sma_50, sma_200,
-         signal_score, technical_status, computed_at)
+         signal_score, technical_status,
+         sma_200_slope, volume_ratio, signal_score_v2, technical_status_v1,
+         computed_at)
     VALUES %s
     ON CONFLICT (symbol, date) DO UPDATE SET
-        cmp              = EXCLUDED.cmp,
-        volume           = EXCLUDED.volume,
-        rsi_14           = EXCLUDED.rsi_14,
-        macd_line        = EXCLUDED.macd_line,
-        macd_signal      = EXCLUDED.macd_signal,
-        macd_histogram   = EXCLUDED.macd_histogram,
-        adx_14           = EXCLUDED.adx_14,
-        plus_di_14       = EXCLUDED.plus_di_14,
-        minus_di_14      = EXCLUDED.minus_di_14,
-        sma_50           = EXCLUDED.sma_50,
-        sma_200          = EXCLUDED.sma_200,
-        signal_score     = EXCLUDED.signal_score,
-        technical_status = EXCLUDED.technical_status,
-        computed_at      = EXCLUDED.computed_at
+        cmp                  = EXCLUDED.cmp,
+        volume               = EXCLUDED.volume,
+        rsi_14               = EXCLUDED.rsi_14,
+        macd_line            = EXCLUDED.macd_line,
+        macd_signal          = EXCLUDED.macd_signal,
+        macd_histogram       = EXCLUDED.macd_histogram,
+        adx_14               = EXCLUDED.adx_14,
+        plus_di_14           = EXCLUDED.plus_di_14,
+        minus_di_14          = EXCLUDED.minus_di_14,
+        sma_50               = EXCLUDED.sma_50,
+        sma_200              = EXCLUDED.sma_200,
+        signal_score         = EXCLUDED.signal_score,
+        technical_status     = EXCLUDED.technical_status,
+        sma_200_slope        = EXCLUDED.sma_200_slope,
+        volume_ratio         = EXCLUDED.volume_ratio,
+        signal_score_v2      = EXCLUDED.signal_score_v2,
+        technical_status_v1  = EXCLUDED.technical_status_v1,
+        computed_at          = EXCLUDED.computed_at
 """
 
 
@@ -246,7 +297,10 @@ def _batch_upsert(rows: list):
             r["rsi_14"], r["macd_line"], r["macd_signal"], r["macd_histogram"],
             r["adx_14"], r["plus_di_14"], r["minus_di_14"],
             r["sma_50"], r["sma_200"],
-            r["signal_score"], r["technical_status"], now,
+            r["signal_score"], r["technical_status"],
+            r["sma_200_slope"], r["volume_ratio"],
+            r["signal_score_v2"], r["technical_status_v1"],
+            now,
         ))
 
     conn = get_psycopg2_conn()
@@ -312,10 +366,12 @@ def run_technical_refresh():
     logger.info(f"  Processing {total} active stocks...")
 
     # ── 4. Compute indicators per symbol ─────────────────────────────────────
-    results       = []
-    count_full    = 0   # got full indicators
-    count_partial = 0   # insufficient history
-    verdict_counts = {}
+    results          = []
+    count_full       = 0   # got full indicators
+    count_partial    = 0   # insufficient history
+    verdict_counts   = {}
+    slope_vals       = []
+    label_transitions = {}  # "v1 label → v2 label" → count
 
     for symbol in active_symbols:
         bars = ohlcv_by_symbol.get(symbol, [])
@@ -329,6 +385,17 @@ def run_technical_refresh():
             v = row["technical_status"]
             verdict_counts[v] = verdict_counts.get(v, 0) + 1
 
+            # Track slope for sanity check
+            if row["sma_200_slope"] is not None:
+                slope_vals.append(row["sma_200_slope"])
+
+            # Track v1 → v2 label transitions
+            v1 = row["technical_status_v1"]
+            v2 = row["technical_status"]
+            if v1 != v2:
+                key = f"{v1} → {v2}"
+                label_transitions[key] = label_transitions.get(key, 0) + 1
+
         # Batch upsert every UPSERT_BATCH_SIZE stocks
         if len(results) >= UPSERT_BATCH_SIZE:
             _batch_upsert(results)
@@ -340,25 +407,20 @@ def run_technical_refresh():
         _batch_upsert(results)
 
     # ── 5. Summary ────────────────────────────────────────────────────────────
-    adx_vals = []
-    for sym in active_symbols:
-        bars = ohlcv_by_symbol.get(sym, [])
-        relevant = [b for b in bars if b["date"] <= target_date and b["high"] and b["low"] and b["close"]]
-        if len(relevant) >= MIN_ROWS_REQUIRED:
-            from indicators import compute_adx as _adx
-            closes = [b["close"] for b in relevant]
-            highs  = [b["high"]  for b in relevant]
-            lows   = [b["low"]   for b in relevant]
-            r = _adx(highs, lows, closes)
-            if r:
-                adx_vals.append(r["adx"])
-
-    avg_adx = sum(adx_vals) / len(adx_vals) if adx_vals else 0.0
+    avg_slope = sum(slope_vals) / len(slope_vals) if slope_vals else 0.0
+    changed_count = sum(label_transitions.values())
 
     logger.info(f"=== Technical refresh complete ===")
     logger.info(f"  Total: {total} | Full indicators: {count_full} | Insufficient data: {count_partial}")
-    logger.info(f"  Average ADX (stocks with data): {avg_adx:.1f}")
-    logger.info("  Verdict breakdown:")
+    logger.info(f"  Average SMA200 slope (stocks with data): {avg_slope:+.2f}%")
+    logger.info(f"  Stocks where v1 and v2 labels differ: {changed_count}")
+    if label_transitions:
+        logger.info("  v1 → v2 transitions:")
+        for transition, cnt in sorted(label_transitions.items(), key=lambda x: -x[1]):
+            logger.info(f"    {transition}: {cnt}")
+    else:
+        logger.info("  No label changes between v1 and v2 — check slope/volume data.")
+    logger.info("  v2 verdict breakdown:")
     for verdict, cnt in sorted(verdict_counts.items(), key=lambda x: -x[1]):
         logger.info(f"    {verdict}: {cnt}")
 
