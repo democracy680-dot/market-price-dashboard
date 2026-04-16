@@ -732,11 +732,12 @@ def load_latest_technicals() -> pd.DataFrame:
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
-    with engine.connect() as conn:
-        try:
+    try:
+        with engine.connect() as conn:
             df = pd.read_sql(sql_v2, conn)
-        except Exception:
-            # v2 columns not yet migrated — fall back to v1 schema
+    except Exception:
+        # v2 columns not yet migrated — open a fresh connection for fallback
+        with engine.connect() as conn:
             df = pd.read_sql(sql_v1, conn)
     # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
