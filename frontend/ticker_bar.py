@@ -1,5 +1,6 @@
 import yfinance as yf
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 
@@ -96,14 +97,12 @@ def render_ticker_bar():
     # Check for total failure (all prices None)
     all_failed = all(item["price"] is None for item in data)
     if all_failed:
-        st.markdown(
-            '<div style="'
-            "width:100%; padding:10px 16px; margin-bottom:16px;"
-            "border-bottom:1px solid rgba(128,128,128,0.2);"
-            'font-size:13px; color:#888; text-align:center;">'
+        components.html(
+            '<div style="width:100%;padding:10px 16px;background:#0b0f1a;border:1px solid #1a2236;'
+            'border-radius:8px;font-size:13px;color:#888;text-align:center;font-family:Inter,sans-serif;">'
             "⚠️ Market data temporarily unavailable • Dashboard data (EOD) is unaffected"
             "</div>",
-            unsafe_allow_html=True,
+            height=48,
         )
         return
 
@@ -173,6 +172,8 @@ def render_ticker_bar():
 
     full_html = f"""
     <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{ background: #0b0f1a; margin: 0; }}
         @keyframes pulse {{
             0%, 100% {{ opacity: 1; }}
             50% {{ opacity: 0.4; }}
@@ -186,7 +187,7 @@ def render_ticker_bar():
         border: 1px solid #1a2236;
         border-radius: 8px;
         padding: 8px 0;
-        margin-bottom: 16px;
+        font-family: Inter, -apple-system, sans-serif;
         display: flex;
         align-items: center;
     ">
@@ -204,4 +205,4 @@ def render_ticker_bar():
     </div>
     """
 
-    st.markdown(full_html, unsafe_allow_html=True)
+    components.html(full_html, height=80, scrolling=False)
