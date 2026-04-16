@@ -149,7 +149,7 @@ def render_ticker_bar():
             <span style="font-size: 11px; color: #888; font-weight: 500; letter-spacing: 0.5px;">
                 {name}
             </span>
-            <span style="font-size: 15px; font-weight: 700; margin: 2px 0;">
+            <span style="font-size: 15px; font-weight: 700; margin: 2px 0; color: #e2e8f0;">
                 {price_str}
             </span>
             <span style="font-size: 12px; color: {color}; font-weight: 600;">
@@ -182,7 +182,9 @@ def render_ticker_bar():
         width: 100%;
         overflow-x: auto;
         white-space: nowrap;
-        border-bottom: 1px solid rgba(128,128,128,0.2);
+        background-color: #0b0f1a;
+        border: 1px solid #1a2236;
+        border-radius: 8px;
         padding: 8px 0;
         margin-bottom: 16px;
         display: flex;
