@@ -84,7 +84,7 @@ st.markdown("""
     .block-container,
     [data-testid="block-container"],
     [data-testid="stMainBlockContainer"] {
-        padding-top: 0.25rem !important;
+        padding-top: 0 !important;
         padding-bottom: 1rem;
         max-width: 100%;
     }

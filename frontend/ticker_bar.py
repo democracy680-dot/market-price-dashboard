@@ -179,7 +179,6 @@ def render_ticker_bar():
 """
 
     # ── JS: inject fixed bar into parent document ───────────────────────────
-    # json.dumps handles all escaping safely
     html_json = json.dumps(ticker_html)
     css_json  = json.dumps(ticker_css)
 
@@ -190,38 +189,59 @@ def render_ticker_bar():
   var CSS  = {css_json};
   var H    = {TICKER_HEIGHT};
 
+  function collapseOwnIframe() {{
+    // Find this script's iframe in the parent and zero its height + all wrappers
+    var p = window.parent.document;
+    var frames = p.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {{
+      try {{
+        if (frames[i].contentWindow === window) {{
+          var el = frames[i];
+          var s = 'height:0!important;min-height:0!important;max-height:0!important;' +
+                  'margin:0!important;padding:0!important;border:none!important;display:block!important;overflow:hidden!important;';
+          el.style.cssText = s;
+          // Walk up 4 wrapper divs Streamlit adds and collapse them too
+          for (var j = 0; j < 4; j++) {{
+            el = el.parentElement;
+            if (!el || el === p.body) break;
+            el.style.cssText += s;
+          }}
+          break;
+        }}
+      }} catch(e) {{}}
+    }}
+  }}
+
   function inject() {{
     var p = window.parent.document;
     if (!p) return;
 
-    // Remove previous instance (Streamlit reruns trigger this repeatedly)
     var old = p.getElementById('stk-ticker');
     if (old) old.remove();
     var oldCss = p.getElementById('stk-ticker-css');
     if (oldCss) oldCss.remove();
 
-    // Inject CSS into parent <head>
     var style = p.createElement('style');
     style.id = 'stk-ticker-css';
     style.textContent = CSS;
     p.head.appendChild(style);
 
-    // Inject ticker div as very first child of <body>
     var wrap = p.createElement('div');
     wrap.id = 'stk-ticker';
     wrap.innerHTML = HTML;
     p.body.insertBefore(wrap, p.body.firstChild);
 
-    // Push Streamlit's root container down so content isn't hidden under ticker
+    // Push root down by exactly the ticker height
     var root = p.querySelector('[data-testid="stAppViewContainer"]')
             || p.querySelector('.stApp')
             || p.querySelector('#root');
     if (root) root.style.paddingTop = H + 'px';
+
+    collapseOwnIframe();
   }}
 
-  // Run immediately and also after a short delay to handle Streamlit's async rendering
   inject();
-  setTimeout(inject, 300);
+  setTimeout(inject, 200);
 }})();
 </script>
 """
