@@ -1312,7 +1312,7 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
 
     # ── Column visibility toggle ─────────────────────────────────────────────
     _all_data_cols = list(display.columns) + ["Screener", "Chart"]
-    _hidden = _render_col_visibility_ui("universe", _all_data_cols)
+    _hidden = _render_col_visibility_ui(key, _all_data_cols)
 
     # Add link columns before filtering so they can also be hidden
     display["Screener"] = chunk["screener_url"].where(chunk["screener_url"].notna(), other=None)
