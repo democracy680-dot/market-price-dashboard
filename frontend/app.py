@@ -20,6 +20,9 @@ from PIL import Image, ImageDraw
 
 load_dotenv()
 
+# PERF: Timing instrumentation — gated behind DEBUG=true env var
+from perf_logger import measure, show_perf_panel, reset_timings
+
 
 def _make_favicon() -> Image.Image:
     """Generate a favicon matching the login screen logo: blue rounded square + white trend arrow."""
@@ -458,6 +461,9 @@ def _check_password():
 
 _check_password()
 
+# PERF: Reset timing counters at the start of every full-page render.
+reset_timings()
+
 # ---------------------------------------------------------------------------
 # Live ticker bar — auto-refresh + render (above all tabs)
 # ---------------------------------------------------------------------------
@@ -469,7 +475,9 @@ try:
         st_autorefresh(interval=_refresh_interval, key="market_ticker_refresh", limit=None)
     except Exception:
         pass  # autorefresh optional — ticker bar still renders
-    render_ticker_bar()
+    # PERF: Measure ticker bar fetch + render time (includes yfinance calls)
+    with measure("ticker_bar_render"):
+        render_ticker_bar()
 except Exception:
     pass
 
@@ -488,7 +496,9 @@ def _get_engine():
     return create_engine(url, pool_pre_ping=True)
 
 
-engine = _get_engine()
+# PERF: Engine is cached via @st.cache_resource — near-zero on warm runs
+with measure("get_engine"):
+    engine = _get_engine()
 
 # ---------------------------------------------------------------------------
 # Universe definitions
@@ -613,8 +623,10 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
         ) td_vol ON td_vol.symbol = sd.symbol
         WHERE sd.date = :date AND s.is_active = TRUE
     """)
-    with engine.connect() as conn:
-        df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
+    # PERF: Measure the actual SQL round-trip — near-zero on cache hit, 300-800ms on cold
+    with measure("_load_all_snapshots__sql"):
+        with engine.connect() as conn:
+            df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
 
     # PostgreSQL NUMERIC/DECIMAL columns come back as Python Decimal objects
     # (object dtype), which pandas sorts lexicographically instead of numerically.
@@ -673,8 +685,10 @@ def load_sector_performance(snap_date) -> pd.DataFrame:
         GROUP BY s.sector
         ORDER BY month_chg_pct DESC NULLS LAST
     """)
-    with engine.connect() as conn:
-        df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
+    # PERF: PERCENTILE_CONT aggregation — expensive on large tables without indexes
+    with measure("load_sector_performance__sql"):
+        with engine.connect() as conn:
+            df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
     return df
 
 
@@ -778,13 +792,16 @@ def load_latest_technicals() -> pd.DataFrame:
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
+    # PERF: Measure technicals SQL round-trip — ~1500 rows with 52W high join
     try:
-        with engine.connect() as conn:
-            df = pd.read_sql(sql_v2, conn)
+        with measure("load_latest_technicals__sql_v2"):
+            with engine.connect() as conn:
+                df = pd.read_sql(sql_v2, conn)
     except Exception:
         # v2 columns not yet migrated — open a fresh connection for fallback
-        with engine.connect() as conn:
-            df = pd.read_sql(sql_v1, conn)
+        with measure("load_latest_technicals__sql_v1_fallback"):
+            with engine.connect() as conn:
+                df = pd.read_sql(sql_v1, conn)
     # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
               "adx_14", "sma_50", "sma_200", "signal_score",
@@ -1198,7 +1215,9 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
     _yf_fetch_error: str | None = None
     yf_sym = INDEX_YF_SYMBOL.get(index_name) if index_name else None
     if yf_sym:
-        _raw = fetch_index_returns(yf_sym)
+        # PERF: yfinance fetch — 2yr history download, cached 1h; slow on first call
+        with measure(f"fetch_index_returns__{yf_sym}"):
+            _raw = fetch_index_returns(yf_sym)
         if "_error" in _raw:
             _yf_fetch_error = _raw["_error"]
         else:
@@ -1296,16 +1315,18 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
     if "Vol Spike" in display.columns:
         styled = styled.map(_color_vol_spike, subset=["Vol Spike"])
 
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        hide_index=True,
-        height=700,
-        column_config={
-            "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
-            "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
-        },
-    )
+    # PERF: Measure st.dataframe render for universe table (varies by row count)
+    with measure(f"render_table__{key}"):
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True,
+            height=700,
+            column_config={
+                "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
+            },
+        )
 
     csv_cols = [k for k in DISPLAY_COLS.keys() if k in df.columns]
     csv_bytes = df[csv_cols].to_csv(index=False).encode()
@@ -2031,7 +2052,9 @@ def render_analysis_tab(snap_date, universes: list, section_key: str):
 # Universe view — inline filters + cards + sort + table
 # ---------------------------------------------------------------------------
 def render_universe_view(index_name: str, snap_date):
-    df = load_snapshot(snap_date, index_name=index_name)
+    # PERF: load_snapshot is an in-memory filter over the cached bulk snapshot
+    with measure(f"load_snapshot__{index_name}"):
+        df = load_snapshot(snap_date, index_name=index_name)
     if df.empty:
         st.info("No snapshot data for this date.")
         return
@@ -2079,9 +2102,13 @@ def render_universe_view(index_name: str, snap_date):
         return
 
     st.divider()
-    render_summary_cards(df, index_name=index_name, snap_date=snap_date)
+    # PERF: Summary cards include yfinance index return fetch (cached 1h)
+    with measure(f"render_summary_cards__{index_name}"):
+        render_summary_cards(df, index_name=index_name, snap_date=snap_date)
     st.divider()
-    render_sort_and_table(df, key=index_name)
+    # PERF: Table render time — depends on row count and column count
+    with measure(f"render_sort_and_table__{index_name}"):
+        render_sort_and_table(df, key=index_name)
 
 # ---------------------------------------------------------------------------
 # Sidebar
@@ -2108,7 +2135,9 @@ with st.sidebar:
     st.divider()
 
     st.markdown("<div class='sidebar-section-label'>Last Refresh</div>", unsafe_allow_html=True)
-    status = load_refresh_status()
+    # PERF: Measure refresh status query (TTL=1800s, near-zero on cache hit)
+    with measure("load_refresh_status"):
+        status = load_refresh_status()
     if status:
         last_run = status.get("finished_at") or status.get("started_at")
         s   = status.get("status", "")
@@ -2131,7 +2160,9 @@ with st.sidebar:
     st.divider()
 
     st.markdown("<div class='sidebar-section-label'>Data</div>", unsafe_allow_html=True)
-    dates = load_available_dates()
+    # PERF: Measure available-dates query (TTL=1800s, near-zero on cache hit)
+    with measure("load_available_dates"):
+        dates = load_available_dates()
     if not dates:
         st.error("No snapshot data found in Supabase.")
         st.stop()
@@ -2406,15 +2437,17 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
     total = len(disp)
     st.caption(f"{total} stocks")
 
-    st.dataframe(
-        styled,
-        use_container_width=True,
-        hide_index=True,
-        height=700,
-        column_config={
-            "Chart": st.column_config.LinkColumn("Chart", display_text="📈 Chart"),
-        },
-    )
+    # PERF: Measure st.dataframe render time — key bottleneck for 1500-row tables
+    with measure(f"render_technical_table__{key}_{total}rows"):
+        st.dataframe(
+            styled,
+            use_container_width=True,
+            hide_index=True,
+            height=700,
+            column_config={
+                "Chart": st.column_config.LinkColumn("Chart", display_text="📈 Chart"),
+            },
+        )
 
     # ── CSV download ──────────────────────────────────────────────────────────
     raw_cols = ["symbol", "name", "cmp", "rsi_14", "macd_line", "macd_signal",
@@ -2433,7 +2466,9 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
 def render_technical_analysis_view():
     """Render the Technical Analysis tab: filters, summary cards, sub-tabs."""
     # ── Load data ─────────────────────────────────────────────────────────────
-    df_all = load_latest_technicals()
+    # PERF: ~1500 rows with 52W high join — cached 5 min, ~800ms on cold load
+    with measure("load_latest_technicals"):
+        df_all = load_latest_technicals()
 
     if df_all.empty:
         st.info(
@@ -2899,3 +2934,6 @@ with tab_gm:
     else:
         st.error(f"Global Markets module failed to load: {_GM_ERROR}")
         st.info("Make sure `frontend/global_markets_tab.py` exists and all dependencies are installed.")
+
+# PERF: Show timing panel at the bottom — only visible when DEBUG=true
+show_perf_panel()
