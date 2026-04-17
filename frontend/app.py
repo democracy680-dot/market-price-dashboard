@@ -872,6 +872,57 @@ PCT_COLS = ["ret_1d", "ret_1w", "ret_30d", "ret_60d", "ret_180d", "ret_365d", "p
 # Schedule string — used in user-facing messages so it stays in sync with daily_refresh.py
 DAILY_REFRESH_TIME_IST = "4:00 PM IST"
 
+# ---------------------------------------------------------------------------
+# Column visibility — persistent per-table, saved to .tmp/col_visibility.json
+# ---------------------------------------------------------------------------
+_COL_VIS_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", ".tmp", "col_visibility.json")
+
+
+def _load_col_visibility(table_id: str) -> set:
+    try:
+        with open(_COL_VIS_CONFIG_PATH) as f:
+            return set(json.load(f).get(table_id, []))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return set()
+
+
+def _save_col_visibility(table_id: str, hidden_cols: set):
+    os.makedirs(os.path.dirname(_COL_VIS_CONFIG_PATH), exist_ok=True)
+    try:
+        with open(_COL_VIS_CONFIG_PATH) as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        data = {}
+    data[table_id] = sorted(hidden_cols)
+    with open(_COL_VIS_CONFIG_PATH, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _render_col_visibility_ui(table_id: str, all_cols: list, ncols: int = 7) -> set:
+    """Expander with checkboxes for every column. Returns current hidden-col set."""
+    saved_hidden = _load_col_visibility(table_id)
+    with st.expander("⚙ Column Visibility", expanded=False):
+        btn_col, _ = st.columns([1, 5])
+        with btn_col:
+            if st.button("Show All Columns", key=f"_colvis_showall_{table_id}"):
+                for col in all_cols:
+                    sk = f"_colvis_{table_id}_{col}"
+                    if sk in st.session_state:
+                        del st.session_state[sk]
+                _save_col_visibility(table_id, set())
+                st.rerun()
+        ui_cols = st.columns(ncols)
+        new_hidden: set = set()
+        for i, col in enumerate(all_cols):
+            with ui_cols[i % ncols]:
+                is_visible = st.checkbox(col, value=col not in saved_hidden, key=f"_colvis_{table_id}_{col}")
+                if not is_visible:
+                    new_hidden.add(col)
+        if new_hidden != saved_hidden:
+            _save_col_visibility(table_id, new_hidden)
+    return _load_col_visibility(table_id)
+
+
 DISPLAY_COLS = {
     "symbol":        "Symbol",
     "name":          "Name",
@@ -1225,22 +1276,14 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
     display = prepare_display(chunk)
 
     # ── Column visibility toggle ─────────────────────────────────────────────
-    _all_data_cols = list(display.columns)
-    _vis_key = f"vis_cols_{key}"
-    if _vis_key not in st.session_state:
-        st.session_state[_vis_key] = _all_data_cols
-    with st.expander("⚙ Columns", expanded=False):
-        _visible = st.multiselect(
-            "Visible columns", _all_data_cols,
-            default=[c for c in st.session_state[_vis_key] if c in _all_data_cols],
-            key=f"mc_{key}", label_visibility="collapsed",
-        )
-        st.session_state[_vis_key] = _visible
-    display = display[_visible] if _visible else display
+    _all_data_cols = list(display.columns) + ["Screener", "Chart"]
+    _hidden = _render_col_visibility_ui("universe", _all_data_cols)
 
-    # Add link columns (always shown regardless of visibility toggle)
+    # Add link columns before filtering so they can also be hidden
     display["Screener"] = chunk["screener_url"].where(chunk["screener_url"].notna(), other=None)
     display["Chart"] = chunk["tradingview_url"].where(chunk["tradingview_url"].notna(), other=None)
+    _visible_cols = [c for c in display.columns if c not in _hidden]
+    display = display[_visible_cols]
 
     styled = display.style
     for raw, pretty in DISPLAY_COLS.items():
@@ -1491,9 +1534,14 @@ def render_themes_view():
         display["Screener"] = stocks_df["screener_url"].where(stocks_df["screener_url"].notna(), other=None)
         display["Chart"]    = stocks_df["tradingview_url"].where(stocks_df["tradingview_url"].notna(), other=None)
 
+        _themes_all_cols = list(display.columns)
+        _themes_hidden = _render_col_visibility_ui("themes", _themes_all_cols)
+        _themes_visible = [c for c in display.columns if c not in _themes_hidden]
+        display = display[_themes_visible]
+
         styled = display.style
         for raw, pretty in THEME_DISPLAY_COLS.items():
-            if raw in THEME_PCT_COLS:
+            if raw in THEME_PCT_COLS and pretty in display.columns:
                 styled = styled.map(_color_return, subset=[pretty])
 
         st.dataframe(
@@ -2166,7 +2214,10 @@ def _frag_sector_performance(snap_date):
         "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
     }
     disp = disp.rename(columns={k: v for k, v in rename_map.items() if k in disp.columns})
-    st.dataframe(disp, use_container_width=True, hide_index=True)
+    _sector_all_cols = list(disp.columns)
+    _sector_hidden = _render_col_visibility_ui("sector", _sector_all_cols)
+    _sector_visible = [c for c in disp.columns if c not in _sector_hidden]
+    st.dataframe(disp[_sector_visible], use_container_width=True, hide_index=True)
     st.divider()
 
     chart_df = sector_df.copy()
@@ -2199,27 +2250,11 @@ def _frag_sector_performance(snap_date):
 # Technical Analysis view — RSI, MACD, ADX, DMA signal table
 # ---------------------------------------------------------------------------
 
-_TECH_COL_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", ".tmp", "tech_col_visibility.json")
-
 _ALL_TECH_COLS = [
     "Ticker", "Name", "CMP", "RSI (14)", "MACD", "ADX (14)",
     "% from 52W High", "50 DMA", "200 DMA", "Volume",
     "SMA200 Slope", "Vol Ratio", "Chart", "Status",
 ]
-
-
-def _load_tech_col_visibility() -> set:
-    try:
-        with open(_TECH_COL_CONFIG_PATH) as f:
-            return set(json.load(f).get("hidden_cols", []))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return set()
-
-
-def _save_tech_col_visibility(hidden_cols: set):
-    os.makedirs(os.path.dirname(_TECH_COL_CONFIG_PATH), exist_ok=True)
-    with open(_TECH_COL_CONFIG_PATH, "w") as f:
-        json.dump({"hidden_cols": sorted(hidden_cols)}, f)
 
 
 def _fmt_volume_ind(v):
@@ -2489,27 +2524,7 @@ def render_technical_analysis_view():
         return df
 
     # ── Column Visibility ─────────────────────────────────────────────────────
-    saved_hidden = _load_tech_col_visibility()
-    with st.expander("⚙ Column Visibility", expanded=False):
-        btn_col, _ = st.columns([1, 5])
-        with btn_col:
-            if st.button("Show All Columns", key="ta_show_all_cols"):
-                for col in _ALL_TECH_COLS:
-                    sk = f"techcol_{col}"
-                    if sk in st.session_state:
-                        del st.session_state[sk]
-                _save_tech_col_visibility(set())
-                st.rerun()
-        cols_ui = st.columns(7)
-        new_hidden = set()
-        for i, col in enumerate(_ALL_TECH_COLS):
-            with cols_ui[i % 7]:
-                is_visible = st.checkbox(col, value=col not in saved_hidden, key=f"techcol_{col}")
-                if not is_visible:
-                    new_hidden.add(col)
-        if new_hidden != saved_hidden:
-            _save_tech_col_visibility(new_hidden)
-    hidden_cols = _load_tech_col_visibility()
+    hidden_cols = _render_col_visibility_ui("technical", _ALL_TECH_COLS)
 
     # ── Sub-tabs ──────────────────────────────────────────────────────────────
     tab_all_stocks, tab_fno_stocks = st.tabs(["All Stocks", "F&O Stocks"])
@@ -2659,6 +2674,11 @@ def render_volspike_view(snap_date):
 
     # Chart link column
     disp["Chart"] = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
+
+    # ── Column visibility ────────────────────────────────────────────────────
+    _vs_hidden = _render_col_visibility_ui("volspike", list(disp.columns))
+    _vs_visible = [c for c in disp.columns if c not in _vs_hidden]
+    disp = disp[_vs_visible]
 
     # ── Styling ─────────────────────────────────────────────────────────────
     styled = disp.style
