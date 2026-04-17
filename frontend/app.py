@@ -5,6 +5,7 @@ Reads primarily from Supabase. yfinance is used for live benchmark index returns
 All heavy stock computation happens in the daily refresh job.
 """
 
+import json
 import os
 import pandas as pd
 import streamlit as st
@@ -2198,6 +2199,29 @@ def _frag_sector_performance(snap_date):
 # Technical Analysis view — RSI, MACD, ADX, DMA signal table
 # ---------------------------------------------------------------------------
 
+_TECH_COL_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", ".tmp", "tech_col_visibility.json")
+
+_ALL_TECH_COLS = [
+    "Ticker", "Name", "CMP", "RSI (14)", "MACD", "ADX (14)",
+    "% from 52W High", "50 DMA", "200 DMA", "Volume",
+    "SMA200 Slope", "Vol Ratio", "Chart", "Status",
+]
+
+
+def _load_tech_col_visibility() -> set:
+    try:
+        with open(_TECH_COL_CONFIG_PATH) as f:
+            return set(json.load(f).get("hidden_cols", []))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return set()
+
+
+def _save_tech_col_visibility(hidden_cols: set):
+    os.makedirs(os.path.dirname(_TECH_COL_CONFIG_PATH), exist_ok=True)
+    with open(_TECH_COL_CONFIG_PATH, "w") as f:
+        json.dump({"hidden_cols": sorted(hidden_cols)}, f)
+
+
 def _fmt_volume_ind(v):
     """Format volume in Indian style: 12.3L (lakhs) or 12.3Cr (crores)."""
     if pd.isna(v) or v is None:
@@ -2293,8 +2317,10 @@ def _style_vol_ratio(val) -> str:
     return ""
 
 
-def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False):
+def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, hidden_cols: set = None):
     """Build and render the formatted technical indicators table."""
+    if hidden_cols is None:
+        hidden_cols = set()
     if df.empty:
         st.info("No stocks match the current filters.")
         return
@@ -2325,14 +2351,22 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False):
     if show_v1 and "technical_status_v1" in df.columns:
         disp["v1 Signal"] = df["technical_status_v1"]
 
+    # ── Apply column visibility ────────────────────────────────────────────────
+    visible_cols = [c for c in disp.columns if c not in hidden_cols]
+    disp = disp[visible_cols]
+
     # ── Styling ───────────────────────────────────────────────────────────────
     styled = disp.style
-    styled = styled.map(_color_rsi,        subset=["RSI (14)"])
-    styled = styled.map(_style_adx,        subset=["ADX (14)"])
-    styled = styled.map(_color_slope,      subset=["SMA200 Slope"])
-    styled = styled.map(_style_vol_ratio,  subset=["Vol Ratio"])
+    if "RSI (14)" in disp.columns:
+        styled = styled.map(_color_rsi,        subset=["RSI (14)"])
+    if "ADX (14)" in disp.columns:
+        styled = styled.map(_style_adx,        subset=["ADX (14)"])
+    if "SMA200 Slope" in disp.columns:
+        styled = styled.map(_color_slope,      subset=["SMA200 Slope"])
+    if "Vol Ratio" in disp.columns:
+        styled = styled.map(_style_vol_ratio,  subset=["Vol Ratio"])
     if "% from 52W High" in disp.columns:
-        styled = styled.map(_color_52wh,   subset=["% from 52W High"])
+        styled = styled.map(_color_52wh,       subset=["% from 52W High"])
 
     total = len(disp)
     st.caption(f"{total} stocks")
@@ -2454,6 +2488,29 @@ def render_technical_analysis_view():
             df = df[mask]
         return df
 
+    # ── Column Visibility ─────────────────────────────────────────────────────
+    saved_hidden = _load_tech_col_visibility()
+    with st.expander("⚙ Column Visibility", expanded=False):
+        btn_col, _ = st.columns([1, 5])
+        with btn_col:
+            if st.button("Show All Columns", key="ta_show_all_cols"):
+                for col in _ALL_TECH_COLS:
+                    sk = f"techcol_{col}"
+                    if sk in st.session_state:
+                        del st.session_state[sk]
+                _save_tech_col_visibility(set())
+                st.rerun()
+        cols_ui = st.columns(7)
+        new_hidden = set()
+        for i, col in enumerate(_ALL_TECH_COLS):
+            with cols_ui[i % 7]:
+                is_visible = st.checkbox(col, value=col not in saved_hidden, key=f"techcol_{col}")
+                if not is_visible:
+                    new_hidden.add(col)
+        if new_hidden != saved_hidden:
+            _save_tech_col_visibility(new_hidden)
+    hidden_cols = _load_tech_col_visibility()
+
     # ── Sub-tabs ──────────────────────────────────────────────────────────────
     tab_all_stocks, tab_fno_stocks = st.tabs(["All Stocks", "F&O Stocks"])
 
@@ -2472,7 +2529,7 @@ def render_technical_analysis_view():
         c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
 
         st.divider()
-        _render_technical_table(_apply_filters(df_all), key="all", show_v1=show_v1)
+        _render_technical_table(_apply_filters(df_all), key="all", show_v1=show_v1, hidden_cols=hidden_cols)
 
     # ── F&O Stocks sub-tab ────────────────────────────────────────────────────
     with tab_fno_stocks:
@@ -2492,7 +2549,7 @@ def render_technical_analysis_view():
         if df_fno.empty:
             st.info("No F&O stocks found. Ensure `index_membership` is seeded with `index_name = 'FNO'`.")
         else:
-            _render_technical_table(_apply_filters(df_fno), key="fno", show_v1=show_v1)
+            _render_technical_table(_apply_filters(df_fno), key="fno", show_v1=show_v1, hidden_cols=hidden_cols)
 
     # ── v1 vs v2 Debug Panel ──────────────────────────────────────────────────
     if "technical_status_v1" in df_all.columns:
