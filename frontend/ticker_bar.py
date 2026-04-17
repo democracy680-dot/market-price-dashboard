@@ -55,6 +55,9 @@ def is_market_open() -> bool:
 
 
 def _fmt_price(price: float) -> str:
+    # BUGFIX: guard against None/zero before comparison to prevent TypeError/ZeroDivisionError
+    if price is None or price != price:  # price != price catches NaN
+        return "—"
     if price > 10000:
         return f"{price:,.0f}"
     if price > 100:

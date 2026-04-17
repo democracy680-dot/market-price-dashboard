@@ -493,7 +493,18 @@ def _get_engine():
     if not url:
         st.error("SUPABASE_DB_URL not configured.")
         st.stop()
-    return create_engine(url, pool_pre_ping=True)
+    # PERF: pool_size=3 keeps 3 warm connections; max_overflow=5 allows burst to 8.
+    # pool_recycle=300 drops connections before Supabase's 5-min idle timeout kills them.
+    # pool_pre_ping verifies a connection is alive before using it (avoids stale-conn errors).
+    # connect_timeout=10 prevents hanging queries from blocking the UI indefinitely.
+    return create_engine(
+        url,
+        pool_size=3,
+        max_overflow=5,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args={"connect_timeout": 10},
+    )
 
 
 # PERF: Engine is cached via @st.cache_resource — near-zero on warm runs
@@ -565,15 +576,17 @@ def fetch_index_returns(yf_symbol: str) -> dict:
         closes = hist["Close"].dropna()
         last   = closes.iloc[-1]
         prev   = closes.iloc[-2]
-        ret_1d = (last / prev - 1) if prev else None
+        # BUGFIX: `if prev` lets NaN through (NaN is truthy). Use explicit != 0 check.
+        # dropna() above already removes NaN, but 0.0 prices occur on currency pairs.
+        ret_1d = (last / prev - 1) if (pd.notna(prev) and prev != 0) else None
         # ~21 trading days ≈ 1 month
         idx_1m = max(0, len(closes) - 22)
         close_1m = closes.iloc[idx_1m]
-        ret_1m = (last / close_1m - 1) if close_1m else None
+        ret_1m = (last / close_1m - 1) if (pd.notna(close_1m) and close_1m != 0) else None
         # ~252 trading days ≈ 1 year
         idx_1y = max(0, len(closes) - 253)
         close_1y = closes.iloc[idx_1y]
-        ret_1y = (last / close_1y - 1) if close_1y else None
+        ret_1y = (last / close_1y - 1) if (pd.notna(close_1y) and close_1y != 0) else None
         return {"1D": ret_1d, "1M": ret_1m, "1Y": ret_1y}
     except Exception as e:
         return {"_error": str(e)}
@@ -1051,7 +1064,10 @@ def _render_chart_body(symbol: str, name: str):
     # ── Header row: name + sector tag + live price + day change ─────────────
     last  = ohlcv.iloc[-1]
     prev  = ohlcv.iloc[-2] if len(ohlcv) > 1 else last
-    day_chg_pct = (last["close"] - prev["close"]) / prev["close"] * 100 if prev["close"] else 0
+    # BUGFIX: `if prev["close"]` lets NaN through (NaN is truthy in Python), producing
+    # "nan%" on screen. Use pd.notna to correctly detect missing values.
+    _pc = prev["close"]
+    day_chg_pct = (last["close"] - _pc) / _pc * 100 if (pd.notna(_pc) and _pc != 0) else 0
     chg_color   = "#22c55e" if day_chg_pct >= 0 else "#ef4444"
     arrow       = "▲" if day_chg_pct >= 0 else "▼"
 
@@ -1406,16 +1422,23 @@ THEME_DISPLAY_COLS = {
 
 
 def _prepare_theme_display(df: pd.DataFrame) -> pd.DataFrame:
-    d = df[list(THEME_DISPLAY_COLS.keys())].copy()
+    # BUGFIX: only select columns that actually exist in df — the theme SQL uses LEFT JOINs
+    # so a stock with no snapshot data would still produce all columns, but defensive
+    # filtering prevents KeyError if the schema ever drifts.
+    available_keys = [k for k in THEME_DISPLAY_COLS.keys() if k in df.columns]
+    d = df[available_keys].copy()
     d = d.rename(columns=THEME_DISPLAY_COLS)
     for raw, pretty in THEME_DISPLAY_COLS.items():
-        if raw in THEME_PCT_COLS:
+        if raw in THEME_PCT_COLS and raw in df.columns:
             d[pretty] = df[raw].map(_fmt_pct)
-    d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    d["Market Cap (₹ Cr)"] = df["market_cap_cr"].map(
-        lambda v: f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
-    )
-    d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    if "cmp" in df.columns:
+        d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    if "market_cap_cr" in df.columns:
+        d["Market Cap (₹ Cr)"] = df["market_cap_cr"].map(
+            lambda v: f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
+        )
+    if "pe_ratio" in df.columns:
+        d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
     return d
 
 
@@ -2143,8 +2166,9 @@ with st.sidebar:
         s   = status.get("status", "")
         ok  = status.get("stocks_success", 0)
         tot = status.get("stocks_total", 0)
-        if last_run:
-            ts = pd.Timestamp(last_run).strftime("%d %b %Y · %H:%M")
+        # BUGFIX: ts was only set inside `if last_run:` but used unconditionally below,
+        # causing NameError when finished_at and started_at are both None.
+        ts = pd.Timestamp(last_run).strftime("%d %b %Y · %H:%M") if last_run else "—"
         dot_color = "#22c55e" if s == "success" else "#f59e0b"
         status_text = f"{ok}/{tot} stocks" if s == "success" else s.title()
         st.markdown(
@@ -2384,20 +2408,55 @@ def _style_vol_ratio(val) -> str:
 
 
 def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, hidden_cols: set = None):
-    """Build and render the formatted technical indicators table."""
+    """Build and render the formatted technical indicators table with pagination."""
     if hidden_cols is None:
         hidden_cols = set()
     if df.empty:
         st.info("No stocks match the current filters.")
         return
 
-    # ── Build display columns ─────────────────────────────────────────────────
+    # PERF: Paginate BEFORE building display columns and before .style.map().
+    # Styling runs a Python function on every cell — 1500 rows × N columns is slow.
+    # Paginating first means styling runs on 100 rows instead of 1500: ~15x speedup.
+    # Also reduces DOM elements sent to the browser by the same factor.
+    _PAGE_SIZE = 100
+    total = len(df)
+    pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
+
+    # Reset to page 1 when the result set size changes (e.g. after a filter change)
+    _page_key  = f"ta_page_{key}"
+    _total_key = f"ta_total_{key}"
+    if st.session_state.get(_total_key) != total:
+        st.session_state[_total_key] = total
+        st.session_state[_page_key]  = 1
+
+    hdr_left, hdr_right = st.columns([4, 1])
+    with hdr_left:
+        st.caption(f"{total} stocks" + (f" · page {st.session_state.get(_page_key, 1)} of {pages}" if pages > 1 else ""))
+    with hdr_right:
+        if pages > 1:
+            # BUGFIX: use namespaced key ta_page_{key} to avoid collisions between
+            # All Stocks and F&O sub-tabs sharing a generic "page_1" key
+            page = st.number_input(
+                "Page", min_value=1, max_value=pages,
+                value=st.session_state.get(_page_key, 1),
+                step=1, key=_page_key,
+            )
+        else:
+            page = 1
+
+    start = (page - 1) * _PAGE_SIZE
+    end   = min(start + _PAGE_SIZE, total)
+    # Slice the raw df BEFORE formatting so column builders only touch this page
+    df_page = df.iloc[start:end].copy()
+
+    # ── Build display columns (only for the current page) ────────────────────
     disp = pd.DataFrame()
-    disp["Ticker"]    = df["symbol"]
-    disp["Name"]      = df["name"]
-    disp["CMP"]       = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["RSI (14)"]  = df["rsi_14"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
-    disp["MACD"]      = df.apply(
+    disp["Ticker"]    = df_page["symbol"]
+    disp["Name"]      = df_page["name"]
+    disp["CMP"]       = df_page["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["RSI (14)"]  = df_page["rsi_14"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
+    disp["MACD"]      = df_page.apply(
         lambda r: (
             f"L: {r['macd_line']:.2f} | S: {r['macd_signal']:.2f} | H: {r['macd_histogram']:.2f}"
             if pd.notna(r["macd_line"]) and pd.notna(r["macd_signal"]) and pd.notna(r["macd_histogram"])
@@ -2405,23 +2464,23 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
         ),
         axis=1,
     )
-    disp["ADX (14)"]  = df["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
-    disp["% from 52W High"] = df["pct_from_52wh"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_52wh" in df.columns else "—"
-    disp["50 DMA"]    = df["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["200 DMA"]   = df["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["Volume"]      = df["volume"].map(_fmt_volume_ind)
-    disp["SMA200 Slope"] = df["sma_200_slope"].map(_fmt_slope) if "sma_200_slope" in df.columns else "—"
-    disp["Vol Ratio"]   = df["volume_ratio"].map(_fmt_vol_ratio) if "volume_ratio" in df.columns else "—"
-    disp["Chart"]       = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
-    disp["Status"]      = df["technical_status"]
-    if show_v1 and "technical_status_v1" in df.columns:
-        disp["v1 Signal"] = df["technical_status_v1"]
+    disp["ADX (14)"]  = df_page["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    disp["% from 52W High"] = df_page["pct_from_52wh"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_52wh" in df_page.columns else "—"
+    disp["50 DMA"]    = df_page["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["200 DMA"]   = df_page["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
+    disp["Volume"]      = df_page["volume"].map(_fmt_volume_ind)
+    disp["SMA200 Slope"] = df_page["sma_200_slope"].map(_fmt_slope) if "sma_200_slope" in df_page.columns else "—"
+    disp["Vol Ratio"]   = df_page["volume_ratio"].map(_fmt_vol_ratio) if "volume_ratio" in df_page.columns else "—"
+    disp["Chart"]       = df_page["tradingview_url"].where(df_page["tradingview_url"].notna(), other=None)
+    disp["Status"]      = df_page["technical_status"]
+    if show_v1 and "technical_status_v1" in df_page.columns:
+        disp["v1 Signal"] = df_page["technical_status_v1"]
 
     # ── Apply column visibility ────────────────────────────────────────────────
     visible_cols = [c for c in disp.columns if c not in hidden_cols]
     disp = disp[visible_cols]
 
-    # ── Styling ───────────────────────────────────────────────────────────────
+    # ── Styling (runs on page slice only — ~100 rows, not 1500) ──────────────
     styled = disp.style
     if "RSI (14)" in disp.columns:
         styled = styled.map(_color_rsi,        subset=["RSI (14)"])
@@ -2434,11 +2493,8 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
     if "% from 52W High" in disp.columns:
         styled = styled.map(_color_52wh,       subset=["% from 52W High"])
 
-    total = len(disp)
-    st.caption(f"{total} stocks")
-
-    # PERF: Measure st.dataframe render time — key bottleneck for 1500-row tables
-    with measure(f"render_technical_table__{key}_{total}rows"):
+    # PERF: Measure st.dataframe render time — now only renders 100 rows
+    with measure(f"render_technical_table__{key}_{len(disp)}rows"):
         st.dataframe(
             styled,
             use_container_width=True,
@@ -2449,7 +2505,7 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
             },
         )
 
-    # ── CSV download ──────────────────────────────────────────────────────────
+    # ── CSV download — exports ALL filtered rows, not just the current page ───
     raw_cols = ["symbol", "name", "cmp", "rsi_14", "macd_line", "macd_signal",
                 "macd_histogram", "adx_14", "sma_50", "sma_200", "volume",
                 "sma_200_slope", "volume_ratio", "technical_status", "technical_status_v1"]
