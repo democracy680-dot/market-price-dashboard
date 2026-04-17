@@ -5,7 +5,7 @@ import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
 
-TICKER_HEIGHT = 48  # px — keep in sync with CSS below
+TICKER_HEIGHT = 52  # px — keep in sync with CSS below
 
 TICKER_SYMBOLS = {
     "NIFTY 50":   "^NSEI",
@@ -55,8 +55,7 @@ def is_market_open() -> bool:
 
 
 def _fmt_price(price: float) -> str:
-    # BUGFIX: guard against None/zero before comparison to prevent TypeError/ZeroDivisionError
-    if price is None or price != price:  # price != price catches NaN
+    if price is None or price != price:
         return "—"
     if price > 10000:
         return f"{price:,.0f}"
@@ -66,9 +65,13 @@ def _fmt_price(price: float) -> str:
 
 
 def render_ticker_bar():
-    data       = fetch_ticker_data()
+    data        = fetch_ticker_data()
     market_open = is_market_open()
     all_failed  = all(d["price"] is None for d in data)
+
+    ist     = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(ist)
+    time_str = now_ist.strftime("%H:%M IST")
 
     # ── Build scrolling items HTML ──────────────────────────────────────────
     if all_failed:
@@ -81,45 +84,79 @@ def render_ticker_bar():
                 p_str   = "—"
                 chg_cls = "neutral"
                 chg_str = "N/A"
+                arrow   = ""
             else:
                 p_str = _fmt_price(price)
                 if change_pct is None:
-                    chg_cls, chg_str = "neutral", "—"
+                    chg_cls, chg_str, arrow = "neutral", "—", ""
                 elif change_pct >= 0:
                     chg_cls = "up"
-                    chg_str = f"▲ {abs(change_pct):.2f}%"
+                    chg_str = f"{abs(change_pct):.2f}%"
+                    arrow   = "▲"
                 else:
                     chg_cls = "dn"
-                    chg_str = f"▼ {abs(change_pct):.2f}%"
+                    chg_str = f"{abs(change_pct):.2f}%"
+                    arrow   = "▼"
 
             items_html += (
                 f'<span class="t-item">'
-                f'<span class="t-name">{name}</span>'
-                f'<span class="t-price">{p_str}</span>'
-                f'<span class="t-chg {chg_cls}">{chg_str}</span>'
+                f'  <span class="t-name">{name}</span>'
+                f'  <span class="t-price">{p_str}</span>'
+                f'  <span class="t-chg {chg_cls}">'
+                f'    <span class="t-arrow">{arrow}</span>{chg_str}'
+                f'  </span>'
                 f'</span>'
-                f'<span class="t-dot">●</span>'
+                f'<span class="t-sep"></span>'
             )
 
     scroll_html = items_html * 2  # duplicate for seamless loop
 
-    # ── Badge ───────────────────────────────────────────────────────────────
-    if market_open:
-        badge_html  = '<span class="dot-live"></span><span class="badge live-badge">LIVE</span>'
-    else:
-        badge_html  = '<span class="dot-off"></span><span class="badge off-badge">CLOSED</span>'
+    # ── Left-side brand + badge markup ─────────────────────────────────────
+    brand_html = """
+<div class="stk-brand">
+  <div class="stk-logo-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+         fill="none" stroke="white" stroke-width="2.8"
+         stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+      <polyline points="16 7 22 7 22 13"/>
+    </svg>
+  </div>
+  <span class="stk-brand-name">Stock<em>Stack</em></span>
+</div>
+<div class="stk-divider-v"></div>
+"""
 
-    # ── Full ticker markup (will be injected into parent DOM) ───────────────
+    if market_open:
+        badge_html = (
+            f'<div class="stk-meta">'
+            f'  <span class="dot-live"></span>'
+            f'  <span class="badge live-badge">LIVE</span>'
+            f'  <span class="stk-clock" id="stk-clock">{time_str}</span>'
+            f'</div>'
+        )
+    else:
+        badge_html = (
+            f'<div class="stk-meta">'
+            f'  <span class="dot-off"></span>'
+            f'  <span class="badge off-badge">CLOSED</span>'
+            f'  <span class="stk-clock" id="stk-clock">{time_str}</span>'
+            f'</div>'
+        )
+
+    # ── Full ticker markup ──────────────────────────────────────────────────
     ticker_html = (
         f'<div class="stk-outer">'
-        f'  <div class="stk-badge">{badge_html}</div>'
+        f'  {brand_html}'
+        f'  {badge_html}'
+        f'  <div class="stk-divider-v"></div>'
         f'  <div class="stk-track">'
         f'    <div class="stk-scroll">{scroll_html}</div>'
         f'  </div>'
         f'</div>'
     )
 
-    # ── CSS injected into parent <head> ─────────────────────────────────────
+    # ── CSS ─────────────────────────────────────────────────────────────────
     ticker_css = f"""
 #stk-ticker {{
   position: fixed;
@@ -130,54 +167,143 @@ def render_ticker_bar():
 }}
 .stk-outer {{
   width: 100%; height: {TICKER_HEIGHT}px;
-  background: #080c14;
-  border-bottom: 1px solid #1a2236;
+  background: linear-gradient(180deg, #0d1626 0%, #080c14 100%);
+  position: relative;
   display: flex; align-items: center; overflow: hidden;
 }}
-.stk-badge {{
-  flex-shrink: 0; display: flex; align-items: center; gap: 7px;
-  padding: 0 16px; height: 100%;
-  background: #0b0f1a; border-right: 1px solid #1a2236;
-  min-width: 96px;
+.stk-outer::after {{
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    #1e3a5f 15%,
+    #2d5a9e 40%,
+    #3b82f6 50%,
+    #2d5a9e 60%,
+    #1e3a5f 85%,
+    transparent 100%);
+  opacity: 0.6;
+}}
+
+/* ── Brand ── */
+.stk-brand {{
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 20px;
+  height: 100%;
+}}
+.stk-logo-icon {{
+  width: 24px; height: 24px; border-radius: 6px;
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 10px rgba(59,130,246,0.3);
+}}
+.stk-brand-name {{
+  font-size: 13.5px; font-weight: 700; color: #cbd5e1;
+  letter-spacing: -0.03em; white-space: nowrap;
+}}
+.stk-brand-name em {{
+  color: #3b82f6; font-style: normal;
+}}
+
+/* ── Vertical divider ── */
+.stk-divider-v {{
+  width: 1px; height: 22px;
+  background: linear-gradient(180deg, transparent, #1e2d45, transparent);
+  flex-shrink: 0;
+}}
+
+/* ── Meta (badge + clock) ── */
+.stk-meta {{
+  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 16px;
+  height: 100%;
 }}
 .badge {{
-  font-size: 10px; font-weight: 700; letter-spacing: 1.4px;
-  padding: 2px 7px; border-radius: 3px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px;
+  padding: 2px 7px; border-radius: 3px; white-space: nowrap;
 }}
-.live-badge {{ color: #22c55e; background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.3); }}
-.off-badge  {{ color: #64748b; background: rgba(100,116,139,.12); border: 1px solid rgba(100,116,139,.3); }}
+.live-badge {{
+  color: #22c55e;
+  background: rgba(34,197,94,.1);
+  border: 1px solid rgba(34,197,94,.25);
+}}
+.off-badge {{
+  color: #64748b;
+  background: rgba(100,116,139,.1);
+  border: 1px solid rgba(100,116,139,.2);
+}}
 .dot-live {{
-  width: 7px; height: 7px; border-radius: 50%; background: #22c55e; flex-shrink: 0;
-  animation: stk-pulse 1.8s ease-in-out infinite;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #22c55e; flex-shrink: 0;
+  animation: stk-pulse 2s ease-in-out infinite;
 }}
-.dot-off  {{ width: 7px; height: 7px; border-radius: 50%; background: #475569; flex-shrink: 0; }}
+.dot-off {{
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #475569; flex-shrink: 0;
+}}
 @keyframes stk-pulse {{
   0%,100% {{ box-shadow: 0 0 0 0 rgba(34,197,94,.5); }}
-  50%      {{ box-shadow: 0 0 0 5px rgba(34,197,94,0); }}
+  50%      {{ box-shadow: 0 0 0 4px rgba(34,197,94,0); }}
 }}
+.stk-clock {{
+  font-size: 10.5px; font-weight: 500; color: #374151;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}}
+
+/* ── Scrolling track ── */
 .stk-track {{
   flex: 1; overflow: hidden; height: 100%; position: relative;
-  -webkit-mask-image: linear-gradient(to right,transparent 0%,#000 2%,#000 98%,transparent 100%);
-  mask-image:         linear-gradient(to right,transparent 0%,#000 2%,#000 98%,transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
+  mask-image:         linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
 }}
 .stk-scroll {{
   display: inline-flex; align-items: center; height: 100%; white-space: nowrap;
-  animation: stk-marquee 60s linear infinite; will-change: transform;
+  animation: stk-marquee 70s linear infinite;
+  will-change: transform;
 }}
 .stk-scroll:hover {{ animation-play-state: paused; }}
 @keyframes stk-marquee {{
   0%   {{ transform: translateX(0); }}
   100% {{ transform: translateX(-50%); }}
 }}
-.t-item  {{ display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; height: 100%; cursor: default; }}
-.t-item:hover {{ background: rgba(255,255,255,.04); }}
-.t-name  {{ font-size: 10px; font-weight: 700; color: #64748b; letter-spacing: .8px; }}
-.t-price {{ font-size: 13px; font-weight: 700; color: #e2e8f0; }}
-.t-chg   {{ font-size: 11px; font-weight: 600; }}
+
+/* ── Ticker items ── */
+.t-item {{
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 18px; height: 100%;
+  cursor: default;
+  transition: background 0.15s;
+}}
+.t-item:hover {{ background: rgba(255,255,255,.03); }}
+.t-name {{
+  font-size: 9.5px; font-weight: 700; color: #3d4f68;
+  letter-spacing: 0.9px; text-transform: uppercase;
+}}
+.t-price {{
+  font-size: 13px; font-weight: 600; color: #c8d3e0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}}
+.t-chg {{
+  font-size: 10.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 2px;
+}}
+.t-arrow {{ font-size: 8px; }}
 .up      {{ color: #22c55e; }}
 .dn      {{ color: #ef4444; }}
 .neutral {{ color: #475569; }}
-.t-dot   {{ color: #1e2d45; font-size: 5px; flex-shrink: 0; }}
+.t-sep {{
+  width: 1px; height: 14px;
+  background: #131d2e;
+  flex-shrink: 0;
+}}
 .t-unavail {{ font-size: 12px; color: #64748b; padding: 0 24px; }}
 """
 
@@ -202,13 +328,26 @@ def render_ticker_bar():
           var s = 'height:0!important;min-height:0!important;max-height:0!important;' +
                   'margin:0!important;padding:0!important;border:none!important;overflow:hidden!important;';
           iframe.style.cssText = s;
-          // Only collapse the single immediate wrapper div — no further
           var parent = iframe.parentElement;
           if (parent && parent !== p.body) parent.style.cssText += s;
           break;
         }}
       }} catch(e) {{}}
     }}
+  }}
+
+  function startClock(p) {{
+    var el = p.getElementById('stk-clock');
+    if (!el) return;
+    function tick() {{
+      var now = new Date();
+      var ist = new Date(now.toLocaleString('en-US', {{timeZone: 'Asia/Kolkata'}}));
+      var h = String(ist.getHours()).padStart(2, '0');
+      var m = String(ist.getMinutes()).padStart(2, '0');
+      if (el) el.textContent = h + ':' + m + ' IST';
+    }}
+    tick();
+    setInterval(tick, 30000);
   }}
 
   function inject() {{
@@ -230,12 +369,12 @@ def render_ticker_bar():
     wrap.innerHTML = HTML;
     p.body.insertBefore(wrap, p.body.firstChild);
 
-    // Push root down by exactly the ticker height
     var root = p.querySelector('[data-testid="stAppViewContainer"]')
             || p.querySelector('.stApp')
             || p.querySelector('#root');
     if (root) root.style.paddingTop = H + 'px';
 
+    startClock(p);
     collapseOwnIframe();
   }}
 
