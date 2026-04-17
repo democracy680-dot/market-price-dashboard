@@ -190,22 +190,18 @@ def render_ticker_bar():
   var H    = {TICKER_HEIGHT};
 
   function collapseOwnIframe() {{
-    // Find this script's iframe in the parent and zero its height + all wrappers
     var p = window.parent.document;
     var frames = p.querySelectorAll('iframe');
     for (var i = 0; i < frames.length; i++) {{
       try {{
         if (frames[i].contentWindow === window) {{
-          var el = frames[i];
+          var iframe = frames[i];
           var s = 'height:0!important;min-height:0!important;max-height:0!important;' +
-                  'margin:0!important;padding:0!important;border:none!important;display:block!important;overflow:hidden!important;';
-          el.style.cssText = s;
-          // Walk up 4 wrapper divs Streamlit adds and collapse them too
-          for (var j = 0; j < 4; j++) {{
-            el = el.parentElement;
-            if (!el || el === p.body) break;
-            el.style.cssText += s;
-          }}
+                  'margin:0!important;padding:0!important;border:none!important;overflow:hidden!important;';
+          iframe.style.cssText = s;
+          // Only collapse the single immediate wrapper div — no further
+          var parent = iframe.parentElement;
+          if (parent && parent !== p.body) parent.style.cssText += s;
           break;
         }}
       }} catch(e) {{}}
