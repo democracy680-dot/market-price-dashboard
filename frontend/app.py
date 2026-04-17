@@ -555,7 +555,7 @@ INDEX_YF_SYMBOL = {
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_available_dates() -> list:
     with engine.connect() as conn:
         rows = conn.execute(
@@ -674,7 +674,7 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
     return df[df["symbol"].isin(symbols)].copy()
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_sector_performance(snap_date) -> pd.DataFrame:
     """Aggregate all sectors live from snapshots_daily so every sector is included."""
     sql = text("""
@@ -715,7 +715,7 @@ def load_all_symbols() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     sql = text("""
         SELECT date, open, high, low, close, volume
@@ -836,7 +836,7 @@ def load_themes() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_theme_averages() -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -854,7 +854,7 @@ def load_theme_averages() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -884,7 +884,7 @@ def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
         return pd.read_sql(sql, conn, params={"theme_slug": theme_slug})
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=300)
 def load_refresh_status() -> dict | None:
     sql = text("""
         SELECT started_at, finished_at, stocks_total, stocks_success, stocks_failed, status
