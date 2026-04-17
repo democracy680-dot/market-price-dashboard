@@ -725,9 +725,21 @@ def load_latest_technicals() -> pd.DataFrame:
             t.volume_ratio,
             t.technical_status_v1,
             t.signal_score_v2,
-            t.date AS indicator_date
+            t.date AS indicator_date,
+            h52.high_52w,
+            CASE
+                WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
+                THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
+                ELSE NULL
+            END AS pct_from_52wh
         FROM stocks s
         JOIN latest_technicals t ON t.symbol = s.symbol
+        LEFT JOIN (
+            SELECT symbol, MAX(high) AS high_52w
+            FROM prices_daily
+            WHERE date >= CURRENT_DATE - INTERVAL '365 days'
+            GROUP BY symbol
+        ) h52 ON h52.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
@@ -747,9 +759,21 @@ def load_latest_technicals() -> pd.DataFrame:
             s.tradingview_url,
             t.technical_status,
             t.signal_score,
-            t.date AS indicator_date
+            t.date AS indicator_date,
+            h52.high_52w,
+            CASE
+                WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
+                THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
+                ELSE NULL
+            END AS pct_from_52wh
         FROM stocks s
         JOIN latest_technicals t ON t.symbol = s.symbol
+        LEFT JOIN (
+            SELECT symbol, MAX(high) AS high_52w
+            FROM prices_daily
+            WHERE date >= CURRENT_DATE - INTERVAL '365 days'
+            GROUP BY symbol
+        ) h52 ON h52.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
@@ -763,7 +787,8 @@ def load_latest_technicals() -> pd.DataFrame:
     # Cast NUMERIC → float (PostgreSQL returns Decimal objects)
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
               "adx_14", "sma_50", "sma_200", "signal_score",
-              "sma_200_slope", "volume_ratio", "signal_score_v2"]:
+              "sma_200_slope", "volume_ratio", "signal_score_v2",
+              "high_52w", "pct_from_52wh"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
@@ -2234,6 +2259,21 @@ def _color_slope(val) -> str:
         return ""
 
 
+def _color_52wh(val) -> str:
+    """Color % from 52W High: green if < -5%, orange if -20% to -5%, red if < -20%."""
+    if val == "—":
+        return ""
+    try:
+        v = float(val.replace("%", ""))
+        if v >= -5:
+            return "color: #22c55e; font-weight: 600"
+        if v >= -20:
+            return "color: #f59e0b; font-weight: 600"
+        return "color: #ef4444; font-weight: 600"
+    except (ValueError, TypeError):
+        return ""
+
+
 def _fmt_vol_ratio(v) -> str:
     """Format volume ratio as 1.8x or —."""
     if pd.isna(v) or v is None:
@@ -2274,6 +2314,7 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False):
         axis=1,
     )
     disp["ADX (14)"]  = df["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    disp["% from 52W High"] = df["pct_from_52wh"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_52wh" in df.columns else "—"
     disp["50 DMA"]    = df["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     disp["200 DMA"]   = df["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     disp["Volume"]      = df["volume"].map(_fmt_volume_ind)
@@ -2290,6 +2331,8 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False):
     styled = styled.map(_style_adx,        subset=["ADX (14)"])
     styled = styled.map(_color_slope,      subset=["SMA200 Slope"])
     styled = styled.map(_style_vol_ratio,  subset=["Vol Ratio"])
+    if "% from 52W High" in disp.columns:
+        styled = styled.map(_color_52wh,   subset=["% from 52W High"])
 
     total = len(disp)
     st.caption(f"{total} stocks")
