@@ -555,7 +555,7 @@ INDEX_YF_SYMBOL = {
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_available_dates() -> list:
     with engine.connect() as conn:
         rows = conn.execute(
@@ -564,7 +564,7 @@ def load_available_dates() -> list:
     return [r[0] for r in rows]
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_index_returns(yf_symbol: str) -> dict:
     """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance.
     Returns an empty dict (and sets a flag in session_state) on failure."""
@@ -592,7 +592,7 @@ def fetch_index_returns(yf_symbol: str) -> dict:
         return {"_error": str(e)}
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def _load_all_snapshots(snap_date) -> pd.DataFrame:
     """Single bulk query — loads ALL stocks for a date. Shared across all tabs."""
     sql = text("""
@@ -654,7 +654,7 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _load_index_membership() -> pd.DataFrame:
     """Load all memberships once — changes only when seeds are re-run."""
     with engine.connect() as conn:
@@ -674,7 +674,7 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
     return df[df["symbol"].isin(symbols)].copy()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_sector_performance(snap_date) -> pd.DataFrame:
     """Aggregate all sectors live from snapshots_daily so every sector is included."""
     sql = text("""
@@ -705,7 +705,7 @@ def load_sector_performance(snap_date) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_all_symbols() -> pd.DataFrame:
     with engine.connect() as conn:
         df = pd.read_sql(
@@ -715,7 +715,7 @@ def load_all_symbols() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     sql = text("""
         SELECT date, open, high, low, close, volume
@@ -730,7 +730,7 @@ def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_latest_technicals() -> pd.DataFrame:
     """Load the most recent technical indicators for all active stocks."""
     sql_v2 = text("""
@@ -837,7 +837,7 @@ def load_latest_technicals() -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800, show_spinner=False)
 def load_themes() -> pd.DataFrame:
     sql = text("""
         SELECT theme_slug, theme_name, theme_order, actual_stock_count
@@ -848,7 +848,7 @@ def load_themes() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_theme_averages() -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -866,7 +866,7 @@ def load_theme_averages() -> pd.DataFrame:
         return pd.read_sql(sql, conn)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -896,7 +896,7 @@ def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
         return pd.read_sql(sql, conn, params={"theme_slug": theme_slug})
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_refresh_status() -> dict | None:
     sql = text("""
         SELECT started_at, finished_at, stocks_total, stocks_success, stocks_failed, status
@@ -1222,8 +1222,7 @@ def _render_chart_body(symbol: str, name: str):
 
 @st.dialog("Stock Chart", width="large")
 def _show_chart_dialog(symbol: str, name: str):
-    with st.spinner("Loading chart…"):
-        _render_chart_body(symbol, name)
+    _render_chart_body(symbol, name)
 
 
 # ---------------------------------------------------------------------------

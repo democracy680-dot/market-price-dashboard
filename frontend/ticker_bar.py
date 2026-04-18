@@ -20,7 +20,7 @@ TICKER_SYMBOLS = {
 }
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_ticker_data():
     results = []
     symbols = list(TICKER_SYMBOLS.values())
