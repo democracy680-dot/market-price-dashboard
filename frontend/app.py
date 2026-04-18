@@ -2661,7 +2661,36 @@ def render_technical_analysis_view():
             key="ta_show_rs_value",
             help="Display the excess return % alongside the label",
         )
+
+    # ── Filters row 4: Outperformance % ───────────────────────────────────────
+    fc_op1, fc_op2, fc_op3 = st.columns([1, 2, 1])
+    with fc_op1:
+        rs_outperf_min = st.selectbox(
+            "Min Outperformance %",
+            options=["Any", ">0%", ">2%", ">5%", ">10%", ">15%", ">20%"],
+            index=0,
+            key="ta_rs_outperf_min",
+            help="Show only stocks with excess return above this threshold vs Nifty 50",
+        )
+    with fc_op2:
+        rs_outperf_max = st.selectbox(
+            "Max Outperformance %",
+            options=["Any", "<0%", "<-2%", "<-5%", "<-10%", "<-15%", "<-20%"],
+            index=0,
+            key="ta_rs_outperf_max",
+            help="Show only stocks with excess return below this threshold (underperformers)",
+        )
+
     rs_tf_col = _RS_TIMEFRAME_MAP[rs_timeframe]
+
+    _OUTPERF_MIN_MAP = {
+        "Any": None, ">0%": 0.0, ">2%": 2.0, ">5%": 5.0,
+        ">10%": 10.0, ">15%": 15.0, ">20%": 20.0,
+    }
+    _OUTPERF_MAX_MAP = {
+        "Any": None, "<0%": 0.0, "<-2%": -2.0, "<-5%": -5.0,
+        "<-10%": -10.0, "<-15%": -15.0, "<-20%": -20.0,
+    }
 
     def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
@@ -2687,6 +2716,15 @@ def render_technical_analysis_view():
             _bucket_col = f"rs_bucket_{rs_tf_col}"
             if _bucket_col in df.columns:
                 df = df[df[_bucket_col] == rs_filter]
+        # Outperformance % min filter
+        _excess_col = f"rs_excess_{rs_tf_col}"
+        _op_min = _OUTPERF_MIN_MAP[rs_outperf_min]
+        if _op_min is not None and _excess_col in df.columns:
+            df = df[df[_excess_col].notna() & (df[_excess_col] > _op_min)]
+        # Outperformance % max filter
+        _op_max = _OUTPERF_MAX_MAP[rs_outperf_max]
+        if _op_max is not None and _excess_col in df.columns:
+            df = df[df[_excess_col].notna() & (df[_excess_col] < _op_max)]
         # Search
         if search.strip():
             q = search.strip().lower()
