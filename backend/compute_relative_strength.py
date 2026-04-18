@@ -162,6 +162,77 @@ def _fetch_close_prices(engine, as_of_date: date) -> dict:
     return dict(prices)
 
 
+def fetch_all_close_prices_bulk(engine, cutoff_date: date) -> dict:
+    """
+    Load close prices for ALL symbols since cutoff_date in one query.
+    Returns {symbol: [(date, close), ...]} sorted ASC by date.
+    Used by the backfill script to avoid repeated queries.
+    """
+    sql = text("""
+        SELECT symbol, date, close
+        FROM prices_daily
+        WHERE date >= :cutoff
+        ORDER BY symbol, date ASC
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"cutoff": cutoff_date}).fetchall()
+
+    prices: dict[str, list] = defaultdict(list)
+    for symbol, dt, close in rows:
+        prices[symbol].append((dt, float(close) if close is not None else None))
+
+    logger.info(f"  Bulk loaded {len(rows):,} rows across {len(prices)} symbols")
+    return dict(prices)
+
+
+def compute_rs_for_date_in_memory(
+    prices_asc: dict,
+    active_symbols: list,
+    as_of_date: date,
+) -> list:
+    """
+    Compute RS for all active stocks for a single date using pre-loaded price data.
+
+    prices_asc: {symbol: [(date, close), ...]} sorted ASC by date
+    Returns list of upsert tuples (ready for _batch_upsert).
+    """
+    now = datetime.now(timezone.utc)
+
+    # Build DESC-sorted price lists up to as_of_date for each symbol
+    def _prices_desc(symbol: str) -> list:
+        all_bars = prices_asc.get(symbol, [])
+        relevant = [c for dt, c in all_bars if dt <= as_of_date]
+        return list(reversed(relevant))  # DESC: latest first
+
+    nifty_prices = _prices_desc(NIFTY_SYMBOL)
+    if not nifty_prices:
+        return []
+
+    nifty_returns = {tf: _return_at_n(nifty_prices, n) for tf, n in TIMEFRAME_DAYS.items()}
+
+    rows = []
+    for symbol in active_symbols:
+        prices = _prices_desc(symbol)
+        if not prices:
+            continue
+
+        excess, bucket = {}, {}
+        for tf, n in TIMEFRAME_DAYS.items():
+            exc = compute_excess_return(_return_at_n(prices, n), nifty_returns[tf])
+            excess[tf] = _clean(exc)
+            bucket[tf] = classify_rs(exc, tf)
+
+        rows.append((
+            symbol, as_of_date,
+            excess["1w"], excess["2w"], excess["1m"],
+            excess["3m"], excess["6m"], excess["1y"],
+            bucket["1w"], bucket["2w"], bucket["1m"],
+            bucket["3m"], bucket["6m"], bucket["1y"],
+            now,
+        ))
+    return rows
+
+
 def _load_active_symbols(engine) -> list:
     with engine.connect() as conn:
         rows = conn.execute(
