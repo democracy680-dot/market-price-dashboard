@@ -1,5 +1,6 @@
 import json
 import sys
+import concurrent.futures
 import pandas as pd
 import yfinance as yf
 import streamlit as st
@@ -24,15 +25,29 @@ TICKER_SYMBOLS = {
 }
 
 
+def _yf_download_safe(symbols, period, interval, timeout=12):
+    """Run yf.download with a hard timeout; returns empty DataFrame on hang/error."""
+    def _run():
+        return yf.download(
+            tickers=symbols, period=period, interval=interval,
+            auto_adjust=True, progress=False, threads=False,
+        )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_run)
+        try:
+            return fut.result(timeout=timeout)
+        except Exception:
+            return pd.DataFrame()
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def fetch_ticker_data():
     results = []
     symbols = list(TICKER_SYMBOLS.values())
     try:
-        raw = yf.download(
-            tickers=symbols, period='2d', interval='1d',
-            auto_adjust=True, progress=False, threads=True,
-        )
+        raw = _yf_download_safe(symbols, period='2d', interval='1d')
+        if raw.empty:
+            raise ValueError("empty")
         close = (raw['Close'] if isinstance(raw.columns, pd.MultiIndex)
                  else raw[['Close']].rename(columns={'Close': symbols[0]}))
         for display_name, symbol in TICKER_SYMBOLS.items():

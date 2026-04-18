@@ -8,6 +8,7 @@ All heavy stock computation happens in the daily refresh job.
 import json
 import os
 import sys
+import concurrent.futures
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -565,10 +566,17 @@ def fetch_all_index_returns() -> dict:
     if not symbols:
         return {}
     try:
-        raw = yf.download(
-            tickers=symbols, period='13mo', interval='1d',
-            auto_adjust=True, progress=False, threads=True,
-        )
+        def _run():
+            return yf.download(
+                tickers=symbols, period='13mo', interval='1d',
+                auto_adjust=True, progress=False, threads=False,
+            )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_run)
+            try:
+                raw = fut.result(timeout=30)
+            except Exception:
+                return {}
         if raw.empty:
             return {}
         close = (raw['Close'] if isinstance(raw.columns, pd.MultiIndex)
