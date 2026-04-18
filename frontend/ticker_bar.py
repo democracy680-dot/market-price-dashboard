@@ -1,10 +1,13 @@
 import json
+import sys
 import pandas as pd
 import yfinance as yf
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
+
+_COMPONENTS_HTML_SAFE = sys.version_info < (3, 14)
 
 TICKER_HEIGHT = 52  # px — keep in sync with CSS below
 
@@ -393,4 +396,5 @@ def render_ticker_bar():
 </script>
 """
 
-    components.html(script, height=0, scrolling=False)
+    if _COMPONENTS_HTML_SAFE:
+        components.html(script, height=0, scrolling=False)

@@ -7,9 +7,14 @@ All heavy stock computation happens in the daily refresh job.
 
 import json
 import os
+import sys
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+# components.html() deadlocks on Python 3.14+ due to threading changes.
+# Skip all components.html calls on 3.14+ to prevent the app from hanging.
+_COMPONENTS_HTML_SAFE = sys.version_info < (3, 14)
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -405,9 +410,9 @@ _check_password()
 reset_timings()
 
 # Inject loading overlay — only for authenticated users, after login gate.
-# Kept here (not before auth) because components.html uses internal threading
-# that is unstable on Python 3.14 and would crash before login page renders.
-try:
+# Skipped on Python 3.14+ where components.html() deadlocks (threading changes).
+if _COMPONENTS_HTML_SAFE:
+  try:
     components.html("""
 <script>
 (function() {
@@ -448,7 +453,7 @@ try:
 })();
 </script>
 """, height=0)
-except Exception:
+  except Exception:
     pass
 
 # ---------------------------------------------------------------------------
@@ -2958,7 +2963,7 @@ try:
     # Only on weekdays (Mon=0 … Fri=4), and only if we're before 3:35 PM today
     if _now_ist.weekday() < 5:
         _trigger = _now_ist.replace(hour=16, minute=5, second=0, microsecond=0)
-        if _now_ist < _trigger:
+        if _now_ist < _trigger and _COMPONENTS_HTML_SAFE:
             _ms = int((_trigger - _now_ist).total_seconds() * 1000)
             components.html(
                 f"""<script>
