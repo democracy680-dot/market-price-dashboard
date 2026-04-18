@@ -2999,19 +2999,131 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical,
     "Custom Upload",
 ])
 
-def _page_header(title: str, date=None):
+_TAB_DESCRIPTIONS = {
+    "global_markets": {
+        "what": [
+            "**Session Timeline** — live view of which markets are open across 7 global cities, with a real-time cursor",
+            "**Overnight Futures** — S&P 500, Nasdaq, and Dow futures with USD/INR, displayed outside Indian market hours",
+            "**Overview Bar** — global advance/decline tally, best/worst index, and a cross-asset snapshot (DXY, Brent, Gold, US 10Y, BTC)",
+            "**Regional Index Cards** — price, 1-day change, and intraday sparkline for every major index across 8 regions: India, US, Europe, China/HK, Japan, Korea, Asia-Pacific, and EM & Americas",
+            "**Commodities** — Gold, Silver, WTI, Brent, Copper, Natural Gas, Platinum, Palladium, and agricultural futures",
+            "**Global Bonds** — US Treasury yields (10Y / 20Y / 30Y) and India government bond yields",
+            "**Crypto** — Bitcoin, Ethereum, Solana, XRP, and 8 other major tokens, updated 24/7",
+            "**Interactive Chart** — price history for any tracked symbol across horizons from 1D to 5Y",
+            "**World Heatmap** — choropleth of 1-day index returns across 19 countries",
+        ],
+        "how": "A complete pre-market briefing on one screen. Overnight futures signal the opening mood before NSE opens. Cross-asset data — yields, oil, and the dollar index — explains why Nifty may gap up or down. Commodity prices drive sector rotation calls: rising oil pressures aviation and logistics; rising yields compress banking valuations. The world heatmap instantly identifies which regions are leading or lagging global markets so you can position accordingly.",
+    },
+    "indexes": {
+        "what": [
+            "**Universe Tabs** — Nifty 50, Nifty 500, Nifty Bank, and F&O, each as a separate sub-tab",
+            "**Summary Cards** — index-level 1D / 1M / 1Y return, advance/decline count, and the number of stocks above the 200 DMA",
+            "**Stock Table** — full sortable list with CMP, returns across 1D to 365D, Market Cap, P/E, 50/200 DMA status, 52W High %, and Volume Spike",
+            "**Screener & Chart links** — direct links to Screener.in and TradingView for every stock",
+            "**Analysis sub-tab** — horizontal bar charts of top and bottom performers within each index for any timeframe",
+            "**Breadth sub-tab** — donut charts showing what percentage of stocks trade above their 50 DMA and 200 DMA, with day-over-day delta",
+        ],
+        "how": "The primary screener for index-aware investors. Sort Nifty 50 or Nifty 500 by 30-day return to identify momentum leaders or oversold laggards. The breadth donuts reveal whether a rally is broad-based — which is healthy — or narrow, which often signals fragility. The Analysis sub-tab makes the top and bottom performers immediately visual so you spend less time scanning and more time deciding.",
+    },
+    "sectors": {
+        "what": [
+            "**12 Sector Sub-tabs** — Banks, NBFCs, Pharma, Defence, Auto, Chemicals, Consumer Durables, FMCG, Healthcare, IT, Media, and Metal",
+            "**Per-Sector View** — same layout as Indexes: summary cards plus a fully sortable stock table with all return and valuation columns",
+            "**Analysis sub-tab** — top and bottom performer bar charts per sector across any timeframe",
+            "**Breadth sub-tab** — 50/200 DMA participation donuts per sector with session-over-session changes",
+        ],
+        "how": "Sector rotation is one of the most reliable tools in an active investor's toolkit. This tab lets you compare every stock within a sector on any timeframe — useful for spotting which names are driving the sector move and which are quietly lagging. The breadth view shows whether an entire sector is in a structural uptrend (most stocks above 200 DMA) or entering distribution. Together, Analysis and Breadth give you both the signal and the context.",
+    },
+    "sector_performance": {
+        "what": [
+            "**Sector Summary Table** — all sectors side-by-side with stock count, advance/decline/flat count, and median returns for 1D, 1W, 30D, 60D, 180D, and 365D",
+            "**Horizontal Bar Chart** — median 30-day return by sector, colour-coded from red (negative) to green (positive)",
+            "**Column Visibility Toggle** — show or hide any column to tailor the view",
+        ],
+        "how": "The fastest way to read sector rotation at a glance. Which sectors have led over the past month? Which have been in a multi-month downtrend? Use this view to tilt your portfolio toward structurally strong sectors and reduce exposure to weakening ones. The advance/decline breakdown within each sector tells you whether a move is broad — most stocks participating — or concentrated in just a few names, which changes how much conviction you should place in the signal.",
+    },
+    "themes": {
+        "what": [
+            "**Searchable Theme List** — investment themes such as EV & Battery, Data Centres, and Defence PSUs, sorted by 1W / 1M / 1Y average return",
+            "**Stock Count & Return** — each theme shows the number of constituent stocks and the current average return for the selected period",
+            "**Theme Stock Table** — full breakdown of every stock in the selected theme: CMP, 1D to 1Y returns, Market Cap, P/E, Screener and Chart links",
+            "**Period Toggle** — switch the sorting and display between 1W, 1M, and 1Y performance",
+        ],
+        "how": "Themes cut across traditional sector boundaries — a 'Data Centre' theme spans real estate, power infrastructure, and IT hardware stocks. This view is built for thematic and narrative-driven investors who want to track a macro idea rather than an index. Sort themes by 1-month return to find which narratives the market is currently rewarding. Drill into a theme to identify the strongest and weakest constituents, which helps you concentrate exposure in the right names rather than holding the entire basket.",
+    },
+    "vol_spikes": {
+        "what": [
+            "**Volume Spike Screener** — all stocks where today's volume significantly exceeds their 30-day average, sorted by spike magnitude",
+            "**Spike Threshold Filter** — narrow results to 1.5×, 2×, 3×, or 5× above average volume",
+            "**Sector Filter** — focus on volume anomalies within a specific sector",
+            "**Columns** — Symbol, Name, Sector, CMP, Vol Spike ratio, 1D / 1W / 30D / 1Y returns, Market Cap, P/E, and 52W High %",
+        ],
+        "how": "Volume is the market's most honest signal. A 3× or 5× spike almost always means something is happening — a breakout, institutional accumulation or distribution, a news catalyst, or a stop-loss cascade. Use this screener as a daily watchlist for stocks worth investigating further. A large spike combined with a positive price move suggests a potential breakout with conviction. A spike on a sharp decline may indicate panic selling or a major exit by a large holder, which can present an opportunity or a warning depending on the context.",
+    },
+    "technical": {
+        "what": [
+            "**Full Technical Table** — RSI (14), MACD line/signal/histogram, ADX (14), % from 52W High, 50/200 DMA status, Volume, SMA200 Slope, Volume Ratio, and a composite signal status for every active stock",
+            "**F&O Sub-tab** — the same view filtered to futures and options eligible stocks only",
+            "**Relative Strength** — each stock's excess return vs Nifty 50 across six timeframes (1W, 2W, 1M, 3M, 6M, 1Y), bucketed as Strong / Neutral / Weak",
+            "**Filters** — screen by technical status, RSI range, ADX threshold, signal score, volume ratio, and relative strength bucket",
+            "**Column Visibility Toggle** — show or hide any indicator column",
+        ],
+        "how": "The most granular screener on the platform. RSI highlights overbought (>70) or oversold (<30) conditions. MACD shows momentum direction and the strength of the current move. ADX above 25 confirms a trend is strong enough to trade. The SMA200 slope tells you whether the long-term trend is accelerating or decelerating — a rising slope in an uptrend is a sign of strength. Relative Strength vs Nifty 50 is particularly powerful: stocks persistently outperforming the benchmark are the ones institutions are accumulating, and those are usually the best candidates to hold in a bullish environment or sell short when the market turns.",
+    },
+    "custom_upload": {
+        "what": [
+            "**CSV Upload** — import any custom watchlist containing a `symbol` column with NSE tickers (no `.NS` suffix required)",
+            "**Automatic Matching** — uploaded symbols are validated against the full master stock list; unrecognised tickers are flagged",
+            "**Full Analysis View** — matched stocks immediately display summary cards (1D / 1M / 1Y returns, advance/decline, 200 DMA breadth) and the complete sortable stock table",
+            "**CSV Export** — download the enriched data for any matched stocks",
+        ],
+        "how": "Bring your own watchlist and get the full power of the dashboard applied to it instantly. Useful for analysing a portfolio, a broker's recommended list, an index constituent file, or any curated set of stocks. There is no need to manually search for each ticker — upload once and the platform fetches all available data for every matched symbol from the same date-specific snapshot used by every other tab.",
+    },
+}
+
+
+def _render_tab_description(desc_key: str):
+    desc = _TAB_DESCRIPTIONS.get(desc_key)
+    if not desc:
+        return
+    with st.popover("ⓘ  About this tab", use_container_width=False):
+        st.markdown(
+            "<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
+            "text-transform:uppercase;color:#475569;margin-bottom:6px;'>"
+            "What's included</div>",
+            unsafe_allow_html=True,
+        )
+        for point in desc["what"]:
+            st.markdown(point)
+        st.markdown(
+            "<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
+            "text-transform:uppercase;color:#475569;margin-top:10px;margin-bottom:4px;'>"
+            "How it helps</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(desc["how"])
+
+
+def _page_header(title: str, date=None, desc_key: str | None = None):
     date_str = f" <span style='color:#2d4f8e;font-size:13px;font-weight:500;margin-left:10px;'>{pd.Timestamp(date).strftime('%d %b %Y')}</span>" if date else ""
-    st.markdown(
-        f"<div style='display:flex;align-items:baseline;gap:0;margin-bottom:1rem;'>"
-        f"<span style='font-size:18px;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em;'>{title}</span>"
-        f"{date_str}</div>",
-        unsafe_allow_html=True,
-    )
+    col_title, col_btn = st.columns([7, 1])
+    with col_title:
+        st.markdown(
+            f"<div style='display:flex;align-items:baseline;gap:0;margin-bottom:0.75rem;padding-top:4px;'>"
+            f"<span style='font-size:18px;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em;'>{title}</span>"
+            f"{date_str}</div>",
+            unsafe_allow_html=True,
+        )
+    with col_btn:
+        if desc_key:
+            _render_tab_description(desc_key)
+        else:
+            st.markdown("<div style='margin-bottom:1rem;'></div>", unsafe_allow_html=True)
 
 
 # ── Tab 1: Indexes ──────────────────────────────────────────────────────────
 with tab_idx:
-    _page_header("Broad Market Indexes", selected_date)
+    _page_header("Broad Market Indexes", selected_date, desc_key="indexes")
     sub_tabs = st.tabs([label for _, label in INDEX_TABS] + ["Analysis", "Breadth"])
     for tab, (key, _) in zip(sub_tabs[:len(INDEX_TABS)], INDEX_TABS):
         with tab:
@@ -3023,7 +3135,7 @@ with tab_idx:
 
 # ── Tab 2: Sectors ──────────────────────────────────────────────────────────
 with tab_sec:
-    _page_header("Sector Views", selected_date)
+    _page_header("Sector Views", selected_date, desc_key="sectors")
     sub_tabs2 = st.tabs([label for _, label in SECTOR_TABS] + ["Analysis", "Breadth"])
     for tab, (key, _) in zip(sub_tabs2[:len(SECTOR_TABS)], SECTOR_TABS):
         with tab:
@@ -3035,22 +3147,22 @@ with tab_sec:
 
 # ── Tab 3: Sector Performance ────────────────────────────────────────────────
 with tab_analysis:
-    _page_header("Sector Performance", selected_date)
+    _page_header("Sector Performance", selected_date, desc_key="sector_performance")
     _frag_sector_performance(selected_date)
 
 # ── Tab 4: Themes ────────────────────────────────────────────────────────────
 with tab_themes:
-    _page_header("Themes")
+    _page_header("Themes", desc_key="themes")
     _frag_themes()
 
 # ── Tab 5: Vol Spikes ────────────────────────────────────────────────────────
 with tab_volspike:
-    _page_header("Volume Spike Screener", selected_date)
+    _page_header("Volume Spike Screener", selected_date, desc_key="vol_spikes")
     _frag_volspike(selected_date)
 
 # ── Tab 6: Custom Upload ─────────────────────────────────────────────────────
 with tab_upload:
-    _page_header("Custom Stock List")
+    _page_header("Custom Stock List", desc_key="custom_upload")
 
     uploaded = st.file_uploader("Upload CSV", type=["csv"])
     if not uploaded:
@@ -3120,12 +3232,12 @@ with tab_upload:
 
 # ── Tab 7: Technical Analysis ────────────────────────────────────────────────
 with tab_technical:
-    _page_header("Technical Analysis")
+    _page_header("Technical Analysis", desc_key="technical")
     _frag_technical_analysis()
 
 # ── Tab 8: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
-    _page_header("Global Markets")
+    _page_header("Global Markets", desc_key="global_markets")
     _frag_global_markets()
 
 # PERF: Show timing panel at the bottom — only visible when DEBUG=true
