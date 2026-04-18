@@ -477,7 +477,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def _get_engine():
     try:
         url = st.secrets["SUPABASE_DB_URL"]
