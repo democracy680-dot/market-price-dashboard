@@ -1497,9 +1497,13 @@ def render_themes_view():
     avgs_df = load_theme_averages()
     themes_df = themes_df.merge(avgs_df, on="theme_slug", how="left")
 
-    # Initialise selected theme
+    # Initialise selected theme to the top performer under the current sort period
     if "selected_theme_slug" not in st.session_state:
-        st.session_state["selected_theme_slug"] = themes_df.iloc[0]["theme_slug"]
+        _default_sort_col = _THEME_SORT_OPTIONS.get(
+            st.session_state.get("theme_sort_period", "1M"), ("avg_ret_30d", "")
+        )[0]
+        _sorted_init = themes_df.sort_values(_default_sort_col, ascending=False, na_position="last")
+        st.session_state["selected_theme_slug"] = _sorted_init.iloc[0]["theme_slug"]
 
     left_col, right_col = st.columns([1, 3])
 
@@ -2672,24 +2676,12 @@ def render_technical_analysis_view():
             key="ta_rs_outperf_min",
             help="Show only stocks with excess return above this threshold vs Nifty 50",
         )
-    with fc_op2:
-        rs_outperf_max = st.selectbox(
-            "Max Outperformance %",
-            options=["Any", "<0%", "<-2%", "<-5%", "<-10%", "<-15%", "<-20%"],
-            index=0,
-            key="ta_rs_outperf_max",
-            help="Show only stocks with excess return below this threshold (underperformers)",
-        )
 
     rs_tf_col = _RS_TIMEFRAME_MAP[rs_timeframe]
 
     _OUTPERF_MIN_MAP = {
         "Any": None, ">0%": 0.0, ">2%": 2.0, ">5%": 5.0,
         ">10%": 10.0, ">15%": 15.0, ">20%": 20.0,
-    }
-    _OUTPERF_MAX_MAP = {
-        "Any": None, "<0%": 0.0, "<-2%": -2.0, "<-5%": -5.0,
-        "<-10%": -10.0, "<-15%": -15.0, "<-20%": -20.0,
     }
 
     def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
@@ -2721,10 +2713,6 @@ def render_technical_analysis_view():
         _op_min = _OUTPERF_MIN_MAP[rs_outperf_min]
         if _op_min is not None and _excess_col in df.columns:
             df = df[df[_excess_col].notna() & (df[_excess_col] > _op_min)]
-        # Outperformance % max filter
-        _op_max = _OUTPERF_MAX_MAP[rs_outperf_max]
-        if _op_max is not None and _excess_col in df.columns:
-            df = df[df[_excess_col].notna() & (df[_excess_col] < _op_max)]
         # Search
         if search.strip():
             q = search.strip().lower()
