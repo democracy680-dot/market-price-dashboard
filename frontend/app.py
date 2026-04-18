@@ -308,66 +308,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inject centered loading overlay — runs once per session in the parent window
-components.html("""
-<script>
-(function() {
-    var pdoc = window.parent.document;
-    if (pdoc.getElementById('eq-loader')) return;  // already injected
-
-    /* Keyframes + overlay styles */
-    var style = pdoc.createElement('style');
-    style.textContent = [
-        '@keyframes eq-spin { to { transform: rotate(360deg); } }',
-        '#eq-loader {',
-        '  display: none; position: fixed; inset: 0;',
-        '  background: rgba(8,12,20,0.55);',
-        '  z-index: 99999;',
-        '  align-items: center; justify-content: center;',
-        '  backdrop-filter: blur(3px);',
-        '  -webkit-backdrop-filter: blur(3px);',
-        '}',
-        '#eq-loader.show { display: flex; }',
-        '#eq-spinner {',
-        '  width: 44px; height: 44px;',
-        '  border: 3px solid rgba(59,130,246,0.18);',
-        '  border-top-color: #3b82f6;',
-        '  border-radius: 50%;',
-        '  animation: eq-spin 0.72s linear infinite;',
-        '}',
-    ].join('');
-    pdoc.head.appendChild(style);
-
-    /* Overlay element */
-    var overlay = pdoc.createElement('div');
-    overlay.id = 'eq-loader';
-    overlay.innerHTML = '<div id="eq-spinner"></div>';
-    pdoc.body.appendChild(overlay);
-
-    /* Watch data-stale attribute — Streamlit sets this on content during rerun */
-    var hideTimer;
-    var observer = new MutationObserver(function() {
-        var stale = pdoc.querySelector('[data-stale="true"]');
-        if (stale) {
-            clearTimeout(hideTimer);
-            overlay.classList.add('show');
-        } else {
-            hideTimer = setTimeout(function() {
-                overlay.classList.remove('show');
-            }, 120);
-        }
-    });
-
-    observer.observe(pdoc.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['data-stale']
-    });
-})();
-</script>
-""", height=0)
-
 # ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
@@ -463,6 +403,53 @@ _check_password()
 
 # PERF: Reset timing counters at the start of every full-page render.
 reset_timings()
+
+# Inject loading overlay — only for authenticated users, after login gate.
+# Kept here (not before auth) because components.html uses internal threading
+# that is unstable on Python 3.14 and would crash before login page renders.
+try:
+    components.html("""
+<script>
+(function() {
+    var pdoc = window.parent.document;
+    if (pdoc.getElementById('eq-loader')) return;
+    var style = pdoc.createElement('style');
+    style.textContent = [
+        '@keyframes eq-spin { to { transform: rotate(360deg); } }',
+        '#eq-loader {',
+        '  display: none; position: fixed; inset: 0;',
+        '  background: rgba(8,12,20,0.55);',
+        '  z-index: 99999;',
+        '  align-items: center; justify-content: center;',
+        '  backdrop-filter: blur(3px);',
+        '  -webkit-backdrop-filter: blur(3px);',
+        '}',
+        '#eq-loader.show { display: flex; }',
+        '#eq-spinner {',
+        '  width: 44px; height: 44px;',
+        '  border: 3px solid rgba(59,130,246,0.18);',
+        '  border-top-color: #3b82f6;',
+        '  border-radius: 50%;',
+        '  animation: eq-spin 0.72s linear infinite;',
+        '}',
+    ].join('');
+    pdoc.head.appendChild(style);
+    var overlay = pdoc.createElement('div');
+    overlay.id = 'eq-loader';
+    overlay.innerHTML = '<div id="eq-spinner"></div>';
+    pdoc.body.appendChild(overlay);
+    var hideTimer;
+    var observer = new MutationObserver(function() {
+        var stale = pdoc.querySelector('[data-stale="true"]');
+        if (stale) { clearTimeout(hideTimer); overlay.classList.add('show'); }
+        else { hideTimer = setTimeout(function() { overlay.classList.remove('show'); }, 120); }
+    });
+    observer.observe(pdoc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-stale'] });
+})();
+</script>
+""", height=0)
+except Exception:
+    pass
 
 # ---------------------------------------------------------------------------
 # Live ticker bar — auto-refresh + render (above all tabs)
