@@ -565,31 +565,45 @@ def load_available_dates() -> list:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_index_returns(yf_symbol: str) -> dict:
-    """Fetch 1D, 1M, 1Y returns for a benchmark index via yfinance.
-    Returns an empty dict (and sets a flag in session_state) on failure."""
+def fetch_all_index_returns() -> dict:
+    """Batch fetch 1D/1M/1Y returns for ALL index symbols in one yf.download call.
+    Returns {yf_symbol: {"1D": float|None, "1M": float|None, "1Y": float|None}}.
+    Replaces per-symbol fetch_index_returns to cut cold-start from ~30s to ~3s."""
+    symbols = list({s for s in INDEX_YF_SYMBOL.values() if s is not None})
+    if not symbols:
+        return {}
     try:
-        ticker = yf.Ticker(yf_symbol)
-        hist = ticker.history(period="2y")
-        if hist.empty or len(hist) < 2:
-            return {"_error": f"No data returned for {yf_symbol}"}
-        closes = hist["Close"].dropna()
-        last   = closes.iloc[-1]
-        prev   = closes.iloc[-2]
-        # BUGFIX: `if prev` lets NaN through (NaN is truthy). Use explicit != 0 check.
-        # dropna() above already removes NaN, but 0.0 prices occur on currency pairs.
-        ret_1d = (last / prev - 1) if (pd.notna(prev) and prev != 0) else None
-        # ~21 trading days ≈ 1 month
-        idx_1m = max(0, len(closes) - 22)
-        close_1m = closes.iloc[idx_1m]
-        ret_1m = (last / close_1m - 1) if (pd.notna(close_1m) and close_1m != 0) else None
-        # ~252 trading days ≈ 1 year
-        idx_1y = max(0, len(closes) - 253)
-        close_1y = closes.iloc[idx_1y]
-        ret_1y = (last / close_1y - 1) if (pd.notna(close_1y) and close_1y != 0) else None
-        return {"1D": ret_1d, "1M": ret_1m, "1Y": ret_1y}
+        raw = yf.download(
+            tickers=symbols, period='13mo', interval='1d',
+            auto_adjust=True, progress=False, threads=True,
+        )
+        if raw.empty:
+            return {}
+        close = (raw['Close'] if isinstance(raw.columns, pd.MultiIndex)
+                 else raw[['Close']].rename(columns={'Close': symbols[0]}))
+        result = {}
+        for sym in symbols:
+            try:
+                if sym not in close.columns:
+                    continue
+                prices = close[sym].dropna()
+                if len(prices) < 2:
+                    continue
+                last = float(prices.iloc[-1])
+                prev = float(prices.iloc[-2])
+                ret_1d = (last / prev - 1) if prev != 0 else None
+                idx_1m = max(0, len(prices) - 22)
+                c1m = float(prices.iloc[idx_1m])
+                ret_1m = (last / c1m - 1) if c1m != 0 else None
+                idx_1y = max(0, len(prices) - 253)
+                c1y = float(prices.iloc[idx_1y])
+                ret_1y = (last / c1y - 1) if c1y != 0 else None
+                result[sym] = {"1D": ret_1d, "1M": ret_1m, "1Y": ret_1y}
+            except Exception:
+                pass
+        return result
     except Exception as e:
-        return {"_error": str(e)}
+        return {}
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1242,11 +1256,11 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
     _yf_fetch_error: str | None = None
     yf_sym = INDEX_YF_SYMBOL.get(index_name) if index_name else None
     if yf_sym:
-        # PERF: yfinance fetch — 2yr history download, cached 1h; slow on first call
-        with measure(f"fetch_index_returns__{yf_sym}"):
-            _raw = fetch_index_returns(yf_sym)
-        if "_error" in _raw:
-            _yf_fetch_error = _raw["_error"]
+        with measure("fetch_all_index_returns"):
+            all_rets = fetch_all_index_returns()
+        _raw = all_rets.get(yf_sym)
+        if _raw is None:
+            _yf_fetch_error = f"No data for {yf_sym}"
         else:
             idx_rets = _raw
 
@@ -2247,6 +2261,15 @@ def _frag_volspike(snap_date):
 
 
 @st.fragment
+def _frag_global_markets():
+    if _GM_AVAILABLE:
+        _render_global_markets()
+    else:
+        st.error(f"Global Markets module failed to load: {_GM_ERROR}")
+        st.info("Make sure `frontend/global_markets_tab.py` exists and all dependencies are installed.")
+
+
+@st.fragment
 def _frag_technical_analysis():
     render_technical_analysis_view()
 
@@ -3103,11 +3126,7 @@ with tab_technical:
 # ── Tab 8: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
     _page_header("Global Markets")
-    if _GM_AVAILABLE:
-        _render_global_markets()
-    else:
-        st.error(f"Global Markets module failed to load: {_GM_ERROR}")
-        st.info("Make sure `frontend/global_markets_tab.py` exists and all dependencies are installed.")
+    _frag_global_markets()
 
 # PERF: Show timing panel at the bottom — only visible when DEBUG=true
 show_perf_panel()

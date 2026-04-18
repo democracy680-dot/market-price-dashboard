@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 import yfinance as yf
 import streamlit as st
 import streamlit.components.v1 as components
@@ -25,16 +26,24 @@ def fetch_ticker_data():
     results = []
     symbols = list(TICKER_SYMBOLS.values())
     try:
-        tickers = yf.Tickers(" ".join(symbols))
+        raw = yf.download(
+            tickers=symbols, period='2d', interval='1d',
+            auto_adjust=True, progress=False, threads=True,
+        )
+        close = (raw['Close'] if isinstance(raw.columns, pd.MultiIndex)
+                 else raw[['Close']].rename(columns={'Close': symbols[0]}))
         for display_name, symbol in TICKER_SYMBOLS.items():
             try:
-                info = tickers.tickers[symbol].fast_info
-                last_price = getattr(info, "last_price", None)
-                prev_close = getattr(info, "previous_close", None)
-                if last_price is not None and prev_close is not None and prev_close != 0:
+                prices = close[symbol].dropna()
+                if len(prices) >= 2:
+                    last_price = float(prices.iloc[-1])
+                    prev_close = float(prices.iloc[-2])
                     change_pct = ((last_price - prev_close) / prev_close) * 100
-                else:
+                elif len(prices) == 1:
+                    last_price = float(prices.iloc[-1])
                     change_pct = None
+                else:
+                    last_price, change_pct = None, None
                 results.append({"name": display_name, "price": last_price, "change_pct": change_pct})
             except Exception:
                 results.append({"name": display_name, "price": None, "change_pct": None})
