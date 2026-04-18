@@ -854,8 +854,7 @@ def _render_heatmap(quotes: dict):
 @st.dialog("Index Detail", width="large")
 def _show_detail(sym: str, name: str):
     st.markdown(f"#### {name} ({sym}) — Intraday")
-    with st.spinner("Loading…"):
-        intraday = _fetch_intraday_all()
+    intraday = _fetch_intraday_all()
     prices = intraday.get(sym, [])
     if len(prices) < 2:
         st.info("No intraday data available for this symbol.")
@@ -1009,9 +1008,8 @@ def render_global_markets_tab():
     elapsed_s = int((datetime.now() - st.session_state['gm_last_fetch']).total_seconds())
 
     # ── Fetch data (both calls are cached) ──
-    with st.spinner("Loading global market data…"):
-        quotes, _  = _fetch_quotes()
-        intraday   = _fetch_intraday_all()
+    quotes, _  = _fetch_quotes()
+    intraday   = _fetch_intraday_all()
 
     # Build structured list
     structured = [
@@ -1189,8 +1187,7 @@ def render_global_markets_tab():
 
         if chosen:
             period, interval = HORIZON_OPTIONS[horizon]
-            with st.spinner("Loading chart…"):
-                timestamps, prices = _fetch_chart_data(chosen, period, interval)
+            timestamps, prices = _fetch_chart_data(chosen, period, interval)
             chosen_q = quotes.get(chosen)
 
             if len(prices) >= 2:
