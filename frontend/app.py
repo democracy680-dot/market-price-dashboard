@@ -759,7 +759,11 @@ def load_latest_technicals() -> pd.DataFrame:
                 WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
                 THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
                 ELSE NULL
-            END AS pct_from_52wh
+            END AS pct_from_52wh,
+            rs.rs_excess_1w, rs.rs_excess_2w, rs.rs_excess_1m,
+            rs.rs_excess_3m, rs.rs_excess_6m, rs.rs_excess_1y,
+            rs.rs_bucket_1w, rs.rs_bucket_2w, rs.rs_bucket_1m,
+            rs.rs_bucket_3m, rs.rs_bucket_6m, rs.rs_bucket_1y
         FROM stocks s
         JOIN latest_technicals t ON t.symbol = s.symbol
         LEFT JOIN (
@@ -768,6 +772,7 @@ def load_latest_technicals() -> pd.DataFrame:
             WHERE date >= CURRENT_DATE - INTERVAL '365 days'
             GROUP BY symbol
         ) h52 ON h52.symbol = s.symbol
+        LEFT JOIN latest_relative_strength rs ON rs.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
@@ -793,7 +798,11 @@ def load_latest_technicals() -> pd.DataFrame:
                 WHEN h52.high_52w IS NOT NULL AND h52.high_52w > 0
                 THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
                 ELSE NULL
-            END AS pct_from_52wh
+            END AS pct_from_52wh,
+            rs.rs_excess_1w, rs.rs_excess_2w, rs.rs_excess_1m,
+            rs.rs_excess_3m, rs.rs_excess_6m, rs.rs_excess_1y,
+            rs.rs_bucket_1w, rs.rs_bucket_2w, rs.rs_bucket_1m,
+            rs.rs_bucket_3m, rs.rs_bucket_6m, rs.rs_bucket_1y
         FROM stocks s
         JOIN latest_technicals t ON t.symbol = s.symbol
         LEFT JOIN (
@@ -802,6 +811,7 @@ def load_latest_technicals() -> pd.DataFrame:
             WHERE date >= CURRENT_DATE - INTERVAL '365 days'
             GROUP BY symbol
         ) h52 ON h52.symbol = s.symbol
+        LEFT JOIN latest_relative_strength rs ON rs.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
     """)
@@ -819,7 +829,9 @@ def load_latest_technicals() -> pd.DataFrame:
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
               "adx_14", "sma_50", "sma_200", "signal_score",
               "sma_200_slope", "volume_ratio", "signal_score_v2",
-              "high_52w", "pct_from_52wh"]:
+              "high_52w", "pct_from_52wh",
+              "rs_excess_1w", "rs_excess_2w", "rs_excess_1m",
+              "rs_excess_3m", "rs_excess_6m", "rs_excess_1y"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
@@ -2308,8 +2320,12 @@ def _frag_sector_performance(snap_date):
 _ALL_TECH_COLS = [
     "Ticker", "Name", "CMP", "RSI (14)", "MACD", "ADX (14)",
     "% from 52W High", "50 DMA", "200 DMA", "Volume",
-    "SMA200 Slope", "Vol Ratio", "Chart", "Status",
+    "SMA200 Slope", "Vol Ratio", "Chart", "Status", "Relative Strength",
 ]
+
+_RS_TIMEFRAME_MAP = {
+    "1W": "1w", "2W": "2w", "1M": "1m", "3M": "3m", "6M": "6m", "1Y": "1y",
+}
 
 
 def _fmt_volume_ind(v):
@@ -2407,7 +2423,15 @@ def _style_vol_ratio(val) -> str:
     return ""
 
 
-def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, hidden_cols: set = None):
+def _render_technical_table(
+    df: pd.DataFrame,
+    key: str,
+    show_v1: bool = False,
+    hidden_cols: set = None,
+    rs_timeframe_col: str = "1m",
+    show_rs_value: bool = False,
+    total_before_filter: int = None,
+):
     """Build and render the formatted technical indicators table with pagination."""
     if hidden_cols is None:
         hidden_cols = set()
@@ -2432,7 +2456,11 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
 
     hdr_left, hdr_right = st.columns([4, 1])
     with hdr_left:
-        st.caption(f"{total} stocks" + (f" · page {st.session_state.get(_page_key, 1)} of {pages}" if pages > 1 else ""))
+        if total_before_filter is not None and total_before_filter != total:
+            count_text = f"Showing {total} stocks (filtered from {total_before_filter})"
+        else:
+            count_text = f"{total} stocks"
+        st.caption(count_text + (f" · page {st.session_state.get(_page_key, 1)} of {pages}" if pages > 1 else ""))
     with hdr_right:
         if pages > 1:
             # BUGFIX: use namespaced key ta_page_{key} to avoid collisions between
@@ -2475,6 +2503,21 @@ def _render_technical_table(df: pd.DataFrame, key: str, show_v1: bool = False, h
     disp["Status"]      = df_page["technical_status"]
     if show_v1 and "technical_status_v1" in df_page.columns:
         disp["v1 Signal"] = df_page["technical_status_v1"]
+
+    # Relative Strength column (uses whichever timeframe is selected in the sidebar)
+    _excess_col = f"rs_excess_{rs_timeframe_col}"
+    _bucket_col = f"rs_bucket_{rs_timeframe_col}"
+    if _bucket_col in df_page.columns:
+        if show_rs_value and _excess_col in df_page.columns:
+            disp["Relative Strength"] = df_page.apply(
+                lambda r: f"{r[_bucket_col]} ({r[_excess_col]:+.2f}%)"
+                if pd.notna(r[_bucket_col]) and pd.notna(r[_excess_col]) else "—",
+                axis=1,
+            )
+        else:
+            disp["Relative Strength"] = df_page[_bucket_col].fillna("—")
+    else:
+        disp["Relative Strength"] = "—"
 
     # ── Apply column visibility ────────────────────────────────────────────────
     visible_cols = [c for c in disp.columns if c not in hidden_cols]
@@ -2585,6 +2628,41 @@ def render_technical_analysis_view():
     with fc7:
         show_v1 = st.checkbox("Show v1 signal", value=False, key="ta_show_v1")
 
+    # ── Filters row 3: Relative Strength ─────────────────────────────────────
+    st.markdown("**Relative Strength vs Nifty 50**")
+    fc_rs1, fc_rs2, fc_rs3 = st.columns([1, 2, 1])
+    with fc_rs1:
+        rs_timeframe = st.selectbox(
+            "RS Timeframe",
+            options=["1W", "2W", "1M", "3M", "6M", "1Y"],
+            index=2,
+            key="ta_rs_timeframe",
+            help="Timeframe for comparing stock return vs Nifty 50",
+        )
+    with fc_rs2:
+        rs_filter = st.selectbox(
+            "RS Filter",
+            options=[
+                "All",
+                "🚀 Strong Outperformer",
+                "✅ Outperformer",
+                "⚖️ In-line",
+                "📉 Underperformer",
+                "🔻 Strong Underperformer",
+            ],
+            index=0,
+            key="ta_rs_filter",
+            help="Filter stocks by their RS category",
+        )
+    with fc_rs3:
+        show_rs_value = st.toggle(
+            "Show RS % Value",
+            value=False,
+            key="ta_show_rs_value",
+            help="Display the excess return % alongside the label",
+        )
+    rs_tf_col = _RS_TIMEFRAME_MAP[rs_timeframe]
+
     def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         # RSI filter (exclude rows where RSI is null only if user moved slider away from default)
@@ -2604,6 +2682,11 @@ def render_technical_analysis_view():
         # Volume ratio min filter
         if vol_ratio_min > 0.0 and "volume_ratio" in df.columns:
             df = df[df["volume_ratio"].notna() & (df["volume_ratio"] >= vol_ratio_min)]
+        # RS bucket filter
+        if rs_filter != "All":
+            _bucket_col = f"rs_bucket_{rs_tf_col}"
+            if _bucket_col in df.columns:
+                df = df[df[_bucket_col] == rs_filter]
         # Search
         if search.strip():
             q = search.strip().lower()
@@ -2635,7 +2718,12 @@ def render_technical_analysis_view():
         c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
 
         st.divider()
-        _render_technical_table(_apply_filters(df_all), key="all", show_v1=show_v1, hidden_cols=hidden_cols)
+        _df_all_filtered = _apply_filters(df_all)
+        _render_technical_table(
+            _df_all_filtered, key="all", show_v1=show_v1, hidden_cols=hidden_cols,
+            rs_timeframe_col=rs_tf_col, show_rs_value=show_rs_value,
+            total_before_filter=len(df_all),
+        )
 
     # ── F&O Stocks sub-tab ────────────────────────────────────────────────────
     with tab_fno_stocks:
@@ -2655,7 +2743,12 @@ def render_technical_analysis_view():
         if df_fno.empty:
             st.info("No F&O stocks found. Ensure `index_membership` is seeded with `index_name = 'FNO'`.")
         else:
-            _render_technical_table(_apply_filters(df_fno), key="fno", show_v1=show_v1, hidden_cols=hidden_cols)
+            _df_fno_filtered = _apply_filters(df_fno)
+            _render_technical_table(
+                _df_fno_filtered, key="fno", show_v1=show_v1, hidden_cols=hidden_cols,
+                rs_timeframe_col=rs_tf_col, show_rs_value=show_rs_value,
+                total_before_filter=len(df_fno),
+            )
 
     # ── v1 vs v2 Debug Panel ──────────────────────────────────────────────────
     if "technical_status_v1" in df_all.columns:
