@@ -299,7 +299,7 @@ def _fetch_quotes() -> tuple:
     results  = {s: None for s in all_syms}
     try:
         raw = yf.download(
-            tickers=all_syms, period='2d', interval='1d',
+            tickers=all_syms, period='5d', interval='1d',
             auto_adjust=True, progress=False, threads=True,
         )
         if not raw.empty:
@@ -1010,6 +1010,29 @@ def render_global_markets_tab():
     # ── Fetch data (both calls are cached) ──
     quotes, _  = _fetch_quotes()
     intraday   = _fetch_intraday_all()
+
+    # For open markets, override stale daily price with live intraday price.
+    # This fixes the 0.0 change shown when a market is currently trading and
+    # yfinance's daily bar hasn't yet settled (prev == price).
+    quotes = dict(quotes)  # shallow copy so we don't mutate the cached object
+    for _r in REGIONS:
+        if not _r.get('tz'):
+            continue
+        if _region_status(_r) != 'OPEN':
+            continue
+        for _idx in _r['indices']:
+            _sym  = _idx['sym']
+            _spark = intraday.get(_sym, [])
+            if len(_spark) < 2:
+                continue
+            _q = quotes.get(_sym)
+            if not _q or not _q.get('prev'):
+                continue
+            _live  = _spark[-1]
+            _prev  = _q['prev']
+            _chg   = _live - _prev
+            _pct   = (_chg / _prev * 100) if _prev else 0.0
+            quotes[_sym] = {**_q, 'price': _live, 'change': _chg, 'pct': _pct}
 
     # Build structured list
     structured = [
