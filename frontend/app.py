@@ -751,6 +751,7 @@ def load_latest_technicals() -> pd.DataFrame:
         SELECT
             s.symbol,
             s.name,
+            s.sector,
             t.cmp,
             t.rsi_14,
             t.macd_line,
@@ -794,6 +795,7 @@ def load_latest_technicals() -> pd.DataFrame:
         SELECT
             s.symbol,
             s.name,
+            s.sector,
             t.cmp,
             t.rsi_14,
             t.macd_line,
@@ -2344,7 +2346,7 @@ def _frag_sector_performance(snap_date):
 # ---------------------------------------------------------------------------
 
 _ALL_TECH_COLS = [
-    "Ticker", "Name", "CMP", "RSI (14)", "MACD", "ADX (14)",
+    "Ticker", "Name", "Sector", "CMP", "RSI (14)", "MACD", "ADX (14)",
     "% from 52W High", "50 DMA", "200 DMA", "Volume",
     "SMA200 Slope", "Vol Ratio", "Chart", "Status", "Relative Strength",
 ]
@@ -2508,6 +2510,7 @@ def _render_technical_table(
     disp = pd.DataFrame()
     disp["Ticker"]    = df_page["symbol"]
     disp["Name"]      = df_page["name"]
+    disp["Sector"]    = df_page["sector"].fillna("—") if "sector" in df_page.columns else "—"
     disp["CMP"]       = df_page["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     disp["RSI (14)"]  = df_page["rsi_14"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
     disp["MACD"]      = df_page.apply(
@@ -2639,6 +2642,16 @@ def render_technical_analysis_view():
             key="ta_search", label_visibility="collapsed",
         )
 
+    # ── Filters row 1b: Sector filter ────────────────────────────────────────
+    if "sector" in df_all.columns:
+        all_sectors = sorted(df_all["sector"].dropna().unique().tolist())
+        sel_sectors_ta = st.multiselect(
+            "Sector", all_sectors, default=[],
+            key="ta_sector", placeholder="All sectors",
+        )
+    else:
+        sel_sectors_ta = []
+
     # ── Filters row 2: v2 slope + volume filters ──────────────────────────────
     fc5, fc6, fc7 = st.columns([2, 2, 1])
     with fc5:
@@ -2717,6 +2730,9 @@ def render_technical_analysis_view():
         # Status filter
         if sel_statuses:
             df = df[df["technical_status"].isin(sel_statuses)]
+        # Sector filter
+        if sel_sectors_ta and "sector" in df.columns:
+            df = df[df["sector"].isin(sel_sectors_ta)]
         # SMA200 slope filter
         if slope_filter == "Rising only (>+1%)" and "sma_200_slope" in df.columns:
             df = df[df["sma_200_slope"].notna() & (df["sma_200_slope"] > 1.0)]
