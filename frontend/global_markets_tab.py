@@ -9,6 +9,7 @@ Visual design:
   - Auto-refresh every 5 min with elapsed-time counter
 """
 
+import concurrent.futures
 import logging
 from datetime import datetime, time as dtime
 
@@ -289,53 +290,67 @@ def _status_info(status: str) -> tuple:
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_quotes() -> tuple:
-    """Batch daily quotes for all symbols. Returns (dict, fetched_at)."""
+    """Parallel Ticker.info quotes for all symbols. Returns (dict, fetched_at).
+
+    Uses Ticker.info (regularMarketPrice / regularMarketPreviousClose) instead of
+    batch yf.download() because the batch API omits today's live bar for many
+    regional index symbols (^NSEI, ^NSEBANK, 000001.SS, etc.), causing the change
+    to appear as 0.0% even when the market is open and prices have moved.
+    """
     all_syms = list(dict.fromkeys(
         [i['sym'] for r in REGIONS for i in r['indices']]
         + [c['sym'] for c in COMMODITIES]
         + [b['sym'] for b in BONDS]
         + [c['sym'] for c in CRYPTO]
     ))
-    results  = {s: None for s in all_syms}
+    results = {s: None for s in all_syms}
+
+    def _one(sym):
+        try:
+            info  = yf.Ticker(sym).info
+            price = info.get('regularMarketPrice')
+            prev  = info.get('regularMarketPreviousClose') or info.get('previousClose')
+            if price is None or prev is None:
+                return sym, None
+            chg = price - prev
+            pct = (chg / prev * 100) if prev else 0.0
+            return sym, {'price': price, 'prev': prev, 'change': chg, 'pct': pct}
+        except Exception:
+            return sym, None
+
     try:
-        raw = yf.download(
-            tickers=all_syms, period='5d', interval='1d',
-            auto_adjust=True, progress=False, threads=True,
-        )
-        if not raw.empty:
-            close = (
-                raw['Close'] if isinstance(raw.columns, pd.MultiIndex)
-                else raw[['Close']].rename(columns={'Close': all_syms[0]})
-            )
-            for sym in all_syms:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
+            futures = {ex.submit(_one, s): s for s in all_syms}
+            for fut in concurrent.futures.as_completed(futures, timeout=25):
                 try:
-                    if sym not in close.columns:
-                        continue
-                    prices = close[sym].dropna()
-                    if len(prices) == 0:
-                        continue
-                    price = float(prices.iloc[-1])
-                    prev  = float(prices.iloc[-2]) if len(prices) >= 2 else price
-                    chg   = price - prev
-                    pct   = (chg / prev * 100) if prev else 0.0
-                    results[sym] = {'price': price, 'prev': prev, 'change': chg, 'pct': pct}
+                    sym, q = fut.result()
+                    results[sym] = q
                 except Exception:
                     pass
     except Exception as e:
         logger.error(f"Quote fetch failed: {e}")
+
     return results, datetime.now()
 
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _fetch_intraday_all() -> dict:
-    """Batch 5-min intraday for all symbols. Returns {sym: [close_prices]}."""
+    """Fetch sparkline data for all symbols. Returns {sym: [close_prices]}.
+
+    Strategy:
+      1. Batch 5-min download (fast; works for most US/global symbols + crypto).
+      2. Individual 1h fallback for symbols that returned no 5m data
+         (many regional index symbols like ^NSEI don't expose 5m intraday via Yahoo).
+    """
     all_syms = list(dict.fromkeys(
         [i['sym'] for r in REGIONS for i in r['indices']]
         + [c['sym'] for c in COMMODITIES]
         + [b['sym'] for b in BONDS]
         + [c['sym'] for c in CRYPTO]
     ))
-    result   = {s: [] for s in all_syms}
+    result = {s: [] for s in all_syms}
+
+    # ── Step 1: batch 5m ────────────────────────────────────────────────────
     try:
         raw = yf.download(
             tickers=all_syms, period='1d', interval='5m',
@@ -348,9 +363,40 @@ def _fetch_intraday_all() -> dict:
             )
             for sym in all_syms:
                 if sym in close.columns:
-                    result[sym] = [float(p) for p in close[sym].dropna()]
+                    prices = [float(p) for p in close[sym].dropna()]
+                    if prices:
+                        result[sym] = prices
     except Exception as e:
-        logger.error(f"Intraday batch failed: {e}")
+        logger.error(f"Intraday batch (5m) failed: {e}")
+
+    # ── Step 2: individual 1h fallback for symbols still missing data ────────
+    missing = [s for s in all_syms if not result[s]]
+
+    def _fetch_1h(sym):
+        try:
+            df = yf.Ticker(sym).history(period='5d', interval='1h', auto_adjust=True)
+            prices = df['Close'].dropna()
+            if len(prices) == 0:
+                return sym, []
+            # Keep the last trading session (~8 bars) for the sparkline
+            return sym, [float(p) for p in prices.iloc[-min(len(prices), 8):]]
+        except Exception:
+            return sym, []
+
+    if missing:
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=15) as ex:
+                futures = {ex.submit(_fetch_1h, s): s for s in missing}
+                for fut in concurrent.futures.as_completed(futures, timeout=20):
+                    try:
+                        sym, prices = fut.result()
+                        if prices:
+                            result[sym] = prices
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Intraday fallback (1h) failed: {e}")
+
     return result
 
 
@@ -1010,29 +1056,6 @@ def render_global_markets_tab():
     # ── Fetch data (both calls are cached) ──
     quotes, _  = _fetch_quotes()
     intraday   = _fetch_intraday_all()
-
-    # For open markets, override stale daily price with live intraday price.
-    # This fixes the 0.0 change shown when a market is currently trading and
-    # yfinance's daily bar hasn't yet settled (prev == price).
-    quotes = dict(quotes)  # shallow copy so we don't mutate the cached object
-    for _r in REGIONS:
-        if not _r.get('tz'):
-            continue
-        if _region_status(_r) != 'OPEN':
-            continue
-        for _idx in _r['indices']:
-            _sym  = _idx['sym']
-            _spark = intraday.get(_sym, [])
-            if len(_spark) < 2:
-                continue
-            _q = quotes.get(_sym)
-            if not _q or not _q.get('prev'):
-                continue
-            _live  = _spark[-1]
-            _prev  = _q['prev']
-            _chg   = _live - _prev
-            _pct   = (_chg / _prev * 100) if _prev else 0.0
-            quotes[_sym] = {**_q, 'price': _live, 'change': _chg, 'pct': _pct}
 
     # Build structured list
     structured = [
