@@ -775,6 +775,12 @@ def load_latest_technicals() -> pd.DataFrame:
                 THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
                 ELSE NULL
             END AS pct_from_52wh,
+            ath.all_time_high,
+            CASE
+                WHEN ath.all_time_high IS NOT NULL AND ath.all_time_high > 0
+                THEN (t.cmp - ath.all_time_high) / ath.all_time_high * 100
+                ELSE NULL
+            END AS pct_from_ath,
             rs.rs_excess_1w, rs.rs_excess_2w, rs.rs_excess_1m,
             rs.rs_excess_3m, rs.rs_excess_6m, rs.rs_excess_1y,
             rs.rs_bucket_1w, rs.rs_bucket_2w, rs.rs_bucket_1m,
@@ -787,6 +793,11 @@ def load_latest_technicals() -> pd.DataFrame:
             WHERE date >= CURRENT_DATE - INTERVAL '365 days'
             GROUP BY symbol
         ) h52 ON h52.symbol = s.symbol
+        LEFT JOIN (
+            SELECT symbol, MAX(high) AS all_time_high
+            FROM prices_daily
+            GROUP BY symbol
+        ) ath ON ath.symbol = s.symbol
         LEFT JOIN latest_relative_strength rs ON rs.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
@@ -815,6 +826,12 @@ def load_latest_technicals() -> pd.DataFrame:
                 THEN (t.cmp - h52.high_52w) / h52.high_52w * 100
                 ELSE NULL
             END AS pct_from_52wh,
+            ath.all_time_high,
+            CASE
+                WHEN ath.all_time_high IS NOT NULL AND ath.all_time_high > 0
+                THEN (t.cmp - ath.all_time_high) / ath.all_time_high * 100
+                ELSE NULL
+            END AS pct_from_ath,
             rs.rs_excess_1w, rs.rs_excess_2w, rs.rs_excess_1m,
             rs.rs_excess_3m, rs.rs_excess_6m, rs.rs_excess_1y,
             rs.rs_bucket_1w, rs.rs_bucket_2w, rs.rs_bucket_1m,
@@ -827,6 +844,11 @@ def load_latest_technicals() -> pd.DataFrame:
             WHERE date >= CURRENT_DATE - INTERVAL '365 days'
             GROUP BY symbol
         ) h52 ON h52.symbol = s.symbol
+        LEFT JOIN (
+            SELECT symbol, MAX(high) AS all_time_high
+            FROM prices_daily
+            GROUP BY symbol
+        ) ath ON ath.symbol = s.symbol
         LEFT JOIN latest_relative_strength rs ON rs.symbol = s.symbol
         WHERE s.is_active = true
         ORDER BY s.symbol
@@ -845,7 +867,7 @@ def load_latest_technicals() -> pd.DataFrame:
     for c in ["cmp", "rsi_14", "macd_line", "macd_signal", "macd_histogram",
               "adx_14", "sma_50", "sma_200", "signal_score",
               "sma_200_slope", "volume_ratio", "signal_score_v2",
-              "high_52w", "pct_from_52wh",
+              "high_52w", "pct_from_52wh", "all_time_high", "pct_from_ath",
               "rs_excess_1w", "rs_excess_2w", "rs_excess_1m",
               "rs_excess_3m", "rs_excess_6m", "rs_excess_1y"]:
         if c in df.columns:
@@ -2347,7 +2369,7 @@ def _frag_sector_performance(snap_date):
 
 _ALL_TECH_COLS = [
     "Ticker", "Name", "Sector", "CMP", "RSI (14)", "MACD", "ADX (14)",
-    "% from 52W High", "50 DMA", "200 DMA", "Volume",
+    "% from ATH", "% from 52W High", "50 DMA", "200 DMA", "Volume",
     "SMA200 Slope", "Vol Ratio", "Chart", "Status", "Relative Strength",
 ]
 
@@ -2522,6 +2544,7 @@ def _render_technical_table(
         axis=1,
     )
     disp["ADX (14)"]  = df_page["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    disp["% from ATH"] = df_page["pct_from_ath"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_ath" in df_page.columns else "—"
     disp["% from 52W High"] = df_page["pct_from_52wh"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_52wh" in df_page.columns else "—"
     disp["50 DMA"]    = df_page["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
     disp["200 DMA"]   = df_page["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
@@ -2562,6 +2585,8 @@ def _render_technical_table(
         styled = styled.map(_color_slope,      subset=["SMA200 Slope"])
     if "Vol Ratio" in disp.columns:
         styled = styled.map(_style_vol_ratio,  subset=["Vol Ratio"])
+    if "% from ATH" in disp.columns:
+        styled = styled.map(_color_52wh,       subset=["% from ATH"])
     if "% from 52W High" in disp.columns:
         styled = styled.map(_color_52wh,       subset=["% from 52W High"])
 
