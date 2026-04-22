@@ -689,7 +689,7 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_sector_performance(snap_date) -> pd.DataFrame:
+def load_sector_performance(snap_date, refresh_ts=None) -> pd.DataFrame:
     """Aggregate all sectors live from snapshots_daily so every sector is included."""
     sql = text("""
         SELECT
@@ -745,7 +745,7 @@ def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_latest_technicals() -> pd.DataFrame:
+def load_latest_technicals(refresh_ts=None) -> pd.DataFrame:
     """Load the most recent technical indicators for all active stocks."""
     sql_v2 = text("""
         SELECT
@@ -2234,6 +2234,10 @@ with st.sidebar:
     else:
         st.markdown("<div style='font-size:11.5px;color:#2d3f57;'>No refresh data yet</div>", unsafe_allow_html=True)
 
+    if st.button("↻ Refresh All Tabs", key="refresh_all_btn", use_container_width=True, help="Clear cached data and reload all tabs"):
+        st.cache_data.clear()
+        st.rerun()
+
     st.divider()
 
     st.markdown("<div class='sidebar-section-label'>Data</div>", unsafe_allow_html=True)
@@ -2294,13 +2298,13 @@ def _frag_global_markets():
 
 
 @st.fragment
-def _frag_technical_analysis():
-    render_technical_analysis_view()
+def _frag_technical_analysis(refresh_ts=None):
+    render_technical_analysis_view(refresh_ts)
 
 
 @st.fragment
-def _frag_sector_performance(snap_date):
-    sector_df = load_sector_performance(snap_date)
+def _frag_sector_performance(snap_date, refresh_ts=None):
+    sector_df = load_sector_performance(snap_date, refresh_ts)
     if sector_df.empty:
         st.warning(
             f"No sector data found for **{pd.Timestamp(snap_date).strftime('%d %b %Y')}**. "
@@ -2616,12 +2620,15 @@ def _render_technical_table(
         )
 
 
-def render_technical_analysis_view():
+def render_technical_analysis_view(refresh_ts=None):
     """Render the Technical Analysis tab: filters, summary cards, sub-tabs."""
     # ── Load data ─────────────────────────────────────────────────────────────
     # PERF: ~1500 rows with 52W high join — cached 5 min, ~800ms on cold load
+    if refresh_ts is None:
+        _rs = load_refresh_status()
+        refresh_ts = str(_rs.get("finished_at")) if _rs else None
     with measure("load_latest_technicals"):
-        df_all = load_latest_technicals()
+        df_all = load_latest_technicals(refresh_ts)
 
     if df_all.empty:
         st.info(
@@ -3027,6 +3034,14 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
+# Refresh timestamp — used as cache-bust key for technical/sector tabs.
+# Derived from the last completed daily refresh so that when a new refresh
+# runs, caches for those tabs are invalidated within the next TTL window.
+# ---------------------------------------------------------------------------
+_rs_now = load_refresh_status()
+_refresh_ts_key = str(_rs_now.get("finished_at")) if _rs_now else None
+
+# ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
 tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_upload = st.tabs([
@@ -3189,7 +3204,7 @@ with tab_sec:
 # ── Tab 3: Sector Performance ────────────────────────────────────────────────
 with tab_analysis:
     _page_header("Sector Performance", selected_date, desc_key="sector_performance")
-    _frag_sector_performance(selected_date)
+    _frag_sector_performance(selected_date, _refresh_ts_key)
 
 # ── Tab 4: Themes ────────────────────────────────────────────────────────────
 with tab_themes:
@@ -3274,7 +3289,7 @@ with tab_upload:
 # ── Tab 7: Technical Analysis ────────────────────────────────────────────────
 with tab_technical:
     _page_header("Technical Analysis", desc_key="technical")
-    _frag_technical_analysis()
+    _frag_technical_analysis(_refresh_ts_key)
 
 # ── Tab 8: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
