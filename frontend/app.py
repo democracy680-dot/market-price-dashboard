@@ -2620,6 +2620,137 @@ def _render_technical_table(
         )
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_setup_candidates(as_of_date: str) -> pd.DataFrame:
+    sql = text("""
+        SELECT
+            sc.symbol,
+            s.name,
+            s.sector,
+            sc.pattern_code,
+            sc.pattern_category,
+            sc.setup_strength,
+            sc.cmp,
+            sc.trigger_level,
+            sc.pct_from_trigger,
+            sc.days_in_base,
+            sc.volume_ratio,
+            sc.notes,
+            sc.date
+        FROM setup_candidates_daily sc
+        JOIN stocks s ON s.symbol = sc.symbol
+        WHERE sc.date = :dt
+          AND sc.is_candidate = TRUE
+        ORDER BY sc.pattern_category, sc.setup_strength DESC, sc.symbol
+    """)
+    with _get_engine().connect() as conn:
+        df = pd.read_sql(sql, conn, params={"dt": as_of_date})
+    return df
+
+
+_PATTERN_LABELS = {
+    "BR_52W_RETEST":    "52W High Retest",
+    "BR_ATH_RETEST":    "ATH Retest",
+    "BR_VOLUME_DRYUP":  "Volume Dry-Up",
+    "RV_DIVERGENCE":    "RSI Divergence",
+    "RV_DOUBLE_BOTTOM": "Double Bottom",
+    "RV_MACD_CROSS":    "MACD Crossover",
+}
+
+
+def render_scanner_tab():
+    _page_header("Breakout & Reversal Scanner", desc_key=None)
+
+    engine = _get_engine()
+    with engine.connect() as conn:
+        latest_date = conn.execute(
+            text("SELECT MAX(date) FROM setup_candidates_daily WHERE is_candidate = TRUE")
+        ).scalar()
+
+    if not latest_date:
+        st.info("No scanner data yet. Run `python backend/backfill_setup_candidates.py` first.")
+        return
+
+    st.caption(f"Data as of **{latest_date}**")
+
+    df = load_setup_candidates(str(latest_date))
+    if df.empty:
+        st.info("No candidates found for the latest date.")
+        return
+
+    # ── Filters ──────────────────────────────────────────────────────────────
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        categories = ["All"] + sorted(df["pattern_category"].unique().tolist())
+        cat_filter = st.selectbox("Category", categories, key="scanner_cat")
+    with col2:
+        patterns = ["All"] + sorted(df["pattern_code"].unique().tolist())
+        pat_filter = st.selectbox("Pattern", patterns, key="scanner_pat")
+    with col3:
+        sectors = ["All"] + sorted(df["sector"].dropna().unique().tolist())
+        sec_filter = st.selectbox("Sector", sectors, key="scanner_sec")
+
+    filtered = df.copy()
+    if cat_filter != "All":
+        filtered = filtered[filtered["pattern_category"] == cat_filter]
+    if pat_filter != "All":
+        filtered = filtered[filtered["pattern_code"] == pat_filter]
+    if sec_filter != "All":
+        filtered = filtered[filtered["sector"] == sec_filter]
+
+    # ── Summary cards ────────────────────────────────────────────────────────
+    total = len(filtered)
+    breakouts = len(filtered[filtered["pattern_category"] == "breakout"])
+    reversals = len(filtered[filtered["pattern_category"] == "reversal"])
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Candidates", total)
+    m2.metric("Breakout Setups", breakouts)
+    m3.metric("Reversal Setups", reversals)
+
+    st.divider()
+
+    # ── Table ────────────────────────────────────────────────────────────────
+    display = filtered[[
+        "symbol", "name", "sector", "pattern_code", "pattern_category",
+        "setup_strength", "cmp", "trigger_level", "pct_from_trigger",
+        "days_in_base", "volume_ratio", "notes",
+    ]].copy()
+
+    display["pattern_code"] = display["pattern_code"].map(
+        lambda x: _PATTERN_LABELS.get(x, x)
+    )
+    display.columns = [
+        "Symbol", "Name", "Sector", "Pattern", "Category",
+        "Strength", "CMP", "Trigger", "% from Trigger",
+        "Days in Base", "Vol Ratio", "Notes",
+    ]
+
+    display["CMP"] = display["CMP"].astype(float).round(2)
+    display["Trigger"] = display["Trigger"].astype(float).round(2)
+    display["% from Trigger"] = display["% from Trigger"].astype(float).round(2)
+    display["Vol Ratio"] = display["Vol Ratio"].astype(float).round(2)
+    display["Strength"] = display["Strength"].astype(float)
+
+    st.dataframe(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Strength": st.column_config.ProgressColumn(
+                "Strength", min_value=0, max_value=10, format="%.0f"
+            ),
+            "% from Trigger": st.column_config.NumberColumn(
+                "% from Trigger", format="%.2f%%"
+            ),
+            "Vol Ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2f×"),
+        },
+    )
+
+    csv = display.to_csv(index=False).encode()
+    st.download_button("⬇ CSV", csv, f"scanner_{latest_date}.csv", "text/csv", key="dl_scanner")
+
+
 def render_technical_analysis_view(refresh_ts=None):
     """Render the Technical Analysis tab: filters, summary cards, sub-tabs."""
     # ── Load data ─────────────────────────────────────────────────────────────
@@ -3044,7 +3175,7 @@ _refresh_ts_key = str(_rs_now.get("finished_at")) if _rs_now else None
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_upload = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_scanner, tab_upload = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
@@ -3052,6 +3183,7 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical,
     "Themes",
     "Vol Spikes",
     "🔬 Technical Analysis",
+    "📡 Scanner",
     "Custom Upload",
 ])
 
@@ -3291,7 +3423,11 @@ with tab_technical:
     _page_header("Technical Analysis", desc_key="technical")
     _frag_technical_analysis(_refresh_ts_key)
 
-# ── Tab 8: Global Markets ─────────────────────────────────────────────────────
+# ── Tab 8: Breakout & Reversal Scanner ───────────────────────────────────────
+with tab_scanner:
+    render_scanner_tab()
+
+# ── Tab 9: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:
     _page_header("Global Markets", desc_key="global_markets")
     _frag_global_markets()
