@@ -12,6 +12,7 @@ Called from daily_refresh.py as the final step.
 """
 
 import sys
+import time
 import logging
 from collections import defaultdict
 from datetime import date, timedelta, datetime
@@ -59,12 +60,21 @@ DETECTORS = [
 # ── Data loading ──────────────────────────────────────────────────────────────
 
 def load_active_stocks(engine) -> list[dict]:
+    sql = """
+        SELECT s.symbol,
+               sd.market_cap_cr
+        FROM stocks s
+        LEFT JOIN LATERAL (
+            SELECT market_cap_cr
+            FROM snapshots_daily
+            WHERE symbol = s.symbol
+            ORDER BY date DESC
+            LIMIT 1
+        ) sd ON TRUE
+        WHERE s.is_active = TRUE
+    """
     with engine.connect() as conn:
-        rows = conn.execute(
-            __import__("sqlalchemy").text(
-                "SELECT symbol, market_cap_cr FROM stocks WHERE is_active = TRUE"
-            )
-        ).fetchall()
+        rows = conn.execute(__import__("sqlalchemy").text(sql)).fetchall()
     return [{"symbol": r[0], "market_cap_cr": r[1]} for r in rows]
 
 
@@ -76,12 +86,20 @@ def load_bulk_prices(engine, min_date: date) -> dict[str, pd.DataFrame]:
         WHERE date >= :min_date
         ORDER BY symbol, date
     """
-    with engine.connect() as conn:
-        df = pd.read_sql(
-            __import__("sqlalchemy").text(sql),
-            conn,
-            params={"min_date": min_date},
-        )
+    for attempt in range(1, 4):
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(
+                    __import__("sqlalchemy").text(sql),
+                    conn,
+                    params={"min_date": min_date},
+                )
+            break
+        except Exception as exc:
+            if attempt == 3:
+                raise
+            logger.warning(f"load_bulk_prices attempt {attempt} failed ({exc}); retrying in 10s...")
+            time.sleep(10)
 
     if df.empty:
         return {}
