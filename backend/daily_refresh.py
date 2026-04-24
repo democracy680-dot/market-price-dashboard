@@ -334,13 +334,22 @@ def run():
         # Non-fatal: prices and snapshots are already committed.
         logger.error(f"  Technical refresh failed (non-fatal): {tech_err}", exc_info=True)
 
-    # ── 5c. Relative Strength vs Nifty 50 (final step) ───────────────────────
+    # ── 5c. Relative Strength vs Nifty 50 ────────────────────────────────────
     logger.info("Computing relative strength...")
     try:
         run_rs_refresh()
     except Exception as rs_err:
-        # Non-fatal: does not affect prices, snapshots, or technicals.
         logger.error(f"  RS refresh failed (non-fatal): {rs_err}", exc_info=True)
+
+    # ── 5d. Breakout & Reversal setup candidates ──────────────────────────────
+    logger.info("Computing setup candidates (breakout/reversal scanner)...")
+    try:
+        from compute_setup_candidates import compute_setups_for_all_stocks
+        as_of = snapshots["date"].max() if not snapshots.empty else __import__("datetime").date.today()
+        pattern_counts = compute_setups_for_all_stocks(as_of)
+        logger.info(f"  Setup counts: {pattern_counts}")
+    except Exception as setup_err:
+        logger.error(f"  Setup candidates failed (non-fatal): {setup_err}", exc_info=True)
 
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"
