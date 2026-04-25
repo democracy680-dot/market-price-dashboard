@@ -1823,9 +1823,18 @@ RETURN_COLS = {
 
 _CHART_FONT = "Inter, -apple-system, BlinkMacSystemFont, sans-serif"
 _BG         = "rgba(0,0,0,0)"
-_PLOT_BG    = "#080c14"
-_GRID       = "#111827"
-_ZERO_LINE  = "#1e293b"
+_PLOT_BG    = "rgba(0,0,0,0)" if not _dark else "#080c14"
+_GRID       = "#e2e8f0" if not _dark else "#111827"
+_ZERO_LINE  = "#cbd5e1" if not _dark else "#1e293b"
+# Theme-aware chart colors
+_AXIS_TICK_COLOR  = "#64748b" if not _dark else "#94a3b8"
+_YAXIS_FONT_COLOR = "#374151" if not _dark else "#cbd5e0"
+_BAR_LABEL_COLOR  = "#1e293b" if not _dark else "#e2e8f0"
+_HOVER_BG         = "#f1f5f9" if not _dark else "#1e2535"
+_HOVER_BD         = "#cbd5e1" if not _dark else "#334155"
+_HOVER_TXT        = "#0f172a" if not _dark else "#e2e8f0"
+_DONUT_LINE_COLOR = "#f0f4f8" if not _dark else "#080c14"
+_ANN_COLOR        = "#64748b" if not _dark else "#94a3b8"
 
 
 def _build_ranked_chart(
@@ -1877,7 +1886,7 @@ def _build_ranked_chart(
         height=chart_h,
         plot_bgcolor=_PLOT_BG,
         paper_bgcolor=_BG,
-        font=dict(family=_CHART_FONT, color="#64748b", size=11),
+        font=dict(family=_CHART_FONT, color=_AXIS_TICK_COLOR, size=11),
         margin=dict(l=90, r=72, t=6, b=6),
         bargap=0,
         xaxis=dict(
@@ -1886,7 +1895,7 @@ def _build_ranked_chart(
             gridwidth=1,
             tickformat="+.1f",
             ticksuffix="%",
-            tickfont=dict(size=9, color="#94a3b8"),
+            tickfont=dict(size=9, color=_AXIS_TICK_COLOR),
             zeroline=True,
             zerolinecolor=_ZERO_LINE,
             zerolinewidth=1,
@@ -1897,22 +1906,22 @@ def _build_ranked_chart(
             gridcolor=_GRID,
             tickfont=dict(
                 size=11,
-                color="#cbd5e0",
+                color=_YAXIS_FONT_COLOR,
                 family=_CHART_FONT,
             ),
             showline=False,
         ),
         showlegend=False,
         hoverlabel=dict(
-            bgcolor="#1e2535",
-            bordercolor="#334155",
-            font=dict(family=_CHART_FONT, color="#e2e8f0", size=12),
+            bgcolor=_HOVER_BG,
+            bordercolor=_HOVER_BD,
+            font=dict(family=_CHART_FONT, color=_HOVER_TXT, size=12),
         ),
     )
     fig.update_traces(
         textfont=dict(
             family=_CHART_FONT,
-            color="#e2e8f0",
+            color=_BAR_LABEL_COLOR,
             size=10,
         ),
     )
@@ -1972,10 +1981,11 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
         elif pct >= 35: return "#f59e0b", "Neutral"
         else:           return "#ef4444", "Bearish"
 
+    _pb_track = "#111827" if _dark else "#e2e8f0"
     def _progress_bar(pct: float, color: str) -> str:
         """Thin HTML progress bar."""
         return (
-            f"<div style='background:#111827;border-radius:3px;height:5px;"
+            f"<div style='background:{_pb_track};border-radius:3px;height:5px;"
             f"overflow:hidden;margin:6px 0 2px;'>"
             f"<div style='background:{color};width:{pct:.1f}%;height:100%;"
             f"border-radius:3px;transition:width 0.3s;'></div></div>"
@@ -2052,8 +2062,8 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                             labels=["Above", "Below"] if total else ["No data"],
                             hole=0.74,
                             marker=dict(
-                                colors=["#22c55e", "#ef4444"] if total else ["#1e293b"],
-                                line=dict(color="#080c14", width=3),
+                                colors=["#22c55e", "#ef4444"] if total else ["#cbd5e1" if not _dark else "#1e293b"],
+                                line=dict(color=_DONUT_LINE_COLOR, width=3),
                             ),
                             textinfo="none",
                             hovertemplate=(
@@ -2070,7 +2080,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                     base_anns = list(fig.layout.annotations)   # subplot titles
                     for ann in base_anns:                       # style subplot titles
                         ann.font.size   = 11
-                        ann.font.color  = "#94a3b8"
+                        ann.font.color  = _ANN_COLOR
                         ann.font.family = _CHART_FONT
 
                     for xc, pct, color in zip(
@@ -2088,7 +2098,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                             dict(
                                 text="ABOVE",
                                 x=xc, y=0.38,
-                                font=dict(size=9, color="#94a3b8", family=_CHART_FONT),
+                                font=dict(size=9, color=_ANN_COLOR, family=_CHART_FONT),
                                 showarrow=False, xanchor="center", yanchor="middle",
                             ),
                         ]
@@ -2097,13 +2107,13 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                         height=230,
                         plot_bgcolor="rgba(0,0,0,0)",
                         paper_bgcolor="rgba(0,0,0,0)",
-                        font=dict(family=_CHART_FONT, color="#64748b", size=11),
+                        font=dict(family=_CHART_FONT, color=_AXIS_TICK_COLOR, size=11),
                         margin=dict(l=10, r=10, t=34, b=4),
                         showlegend=False,
                         annotations=base_anns,
                         hoverlabel=dict(
-                            bgcolor="#1e2535", bordercolor="#334155",
-                            font=dict(family=_CHART_FONT, color="#e2e8f0", size=12),
+                            bgcolor=_HOVER_BG, bordercolor=_HOVER_BD,
+                            font=dict(family=_CHART_FONT, color=_HOVER_TXT, size=12),
                         ),
                     )
                     st.plotly_chart(fig, use_container_width=True,
@@ -2116,15 +2126,16 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                         (sc2, a200, b200, t200, pct200, c200, mood200, "200 DMA", _prev200),
                     ]:
                         with sc:
+                            _div_sep_color = "#94a3b8" if _dark else "#64748b"
                             st.markdown(
                                 f"<div style='text-align:center;padding:4px 0 8px;'>"
-                                f"<div style='font-size:12px;font-weight:700;color:#94a3b8;"
+                                f"<div style='font-size:12px;font-weight:700;color:{_ANN_COLOR};"
                                 f"text-transform:uppercase;letter-spacing:0.1em;"
                                 f"margin-bottom:6px;'>{dma_label}</div>"
                                 + _progress_bar(pct, color) +
                                 f"<div style='font-size:13px;margin-top:6px;'>"
                                 f"<span style='color:#22c55e;font-weight:600;'>{above}↑</span>"
-                                f"<span style='color:#475569;'> / </span>"
+                                f"<span style='color:{_div_sep_color};'> / </span>"
                                 f"<span style='color:#ef4444;font-weight:600;'>{below}↓</span>"
                                 f"</div>"
                                 f"<div style='font-size:13px;font-weight:700;"
