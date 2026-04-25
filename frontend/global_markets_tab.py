@@ -1077,42 +1077,42 @@ def render_global_markets_tab():
       }}
 
       /* ── Card fade-in animation ── */
-      @keyframes gmFadeUp {
-        from { opacity: 0; transform: translateY(10px); }
-        to   { opacity: 1; transform: translateY(0); }
-      }
+      @keyframes gmFadeUp {{
+        from {{ opacity: 0; transform: translateY(10px); }}
+        to   {{ opacity: 1; transform: translateY(0); }}
+      }}
 
       /* ── OPEN badge pulse ── */
-      @keyframes gmPulse {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.55; }
-      }
+      @keyframes gmPulse {{
+        0%, 100% {{ opacity: 1; }}
+        50%       {{ opacity: 0.55; }}
+      }}
 
       /* ── Card hover glow ── */
-      @keyframes gmHoverGlow {
-        from { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
-        to   { box-shadow: 0 0 12px 2px rgba(99,102,241,0.18); }
-      }
+      @keyframes gmHoverGlow {{
+        from {{ box-shadow: 0 0 0 0 rgba(99,102,241,0); }}
+        to   {{ box-shadow: 0 0 12px 2px rgba(99,102,241,0.18); }}
+      }}
 
-      .gm-card {
+      .gm-card {{
         animation: gmFadeUp 0.35s ease both;
         transition: transform 0.18s ease, box-shadow 0.18s ease !important;
-      }
-      .gm-card:hover {
+      }}
+      .gm-card:hover {{
         transform: translateY(-3px) !important;
         box-shadow: 0 6px 24px rgba(0,0,0,0.45) !important;
         border-color: #2d3f5e !important;
-      }
-      .gm-badge-open {
+      }}
+      .gm-badge-open {{
         animation: gmPulse 2s ease-in-out infinite;
-      }
+      }}
 
       /* ── Timeline NOW line pulse ── */
-      @keyframes gmNowPulse {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.4; }
-      }
-      .gm-now-line { animation: gmNowPulse 1.4s ease-in-out infinite; }
+      @keyframes gmNowPulse {{
+        0%, 100% {{ opacity: 1; }}
+        50%       {{ opacity: 0.4; }}
+      }}
+      .gm-now-line {{ animation: gmNowPulse 1.4s ease-in-out infinite; }}
     </style>
     """, unsafe_allow_html=True)
 
