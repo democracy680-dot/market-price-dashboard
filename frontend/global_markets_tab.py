@@ -276,14 +276,74 @@ def _fmt_price(price, sym: str = '') -> str:
     return f"{price:,.2f}"
 
 
-def _status_info(status: str) -> tuple:
+def _status_info(status: str, dark: bool = True) -> tuple:
     """Return (label, text_color, bg_color)."""
-    return {
-        'OPEN':    ('Open',        '#22c55e', '#052e16'),
-        'PRE':     ('Pre-Market',  '#f59e0b', '#1c1007'),
-        'AFTER':   ('After-Hours', '#f59e0b', '#1c1007'),
-        'CLOSED':  ('Closed',      '#6b7280', '#1f2937'),
-    }.get(status, ('—', '#6b7280', '#1f2937'))
+    if dark:
+        return {
+            'OPEN':    ('Open',        '#22c55e', '#052e16'),
+            'PRE':     ('Pre-Market',  '#f59e0b', '#1c1007'),
+            'AFTER':   ('After-Hours', '#f59e0b', '#1c1007'),
+            'CLOSED':  ('Closed',      '#6b7280', '#1f2937'),
+        }.get(status, ('—', '#6b7280', '#1f2937'))
+    else:
+        return {
+            'OPEN':    ('Open',        '#16a34a', '#dcfce7'),
+            'PRE':     ('Pre-Market',  '#d97706', '#fef3c7'),
+            'AFTER':   ('After-Hours', '#d97706', '#fef3c7'),
+            'CLOSED':  ('Closed',      '#6b7280', '#f1f5f9'),
+        }.get(status, ('—', '#6b7280', '#f1f5f9'))
+
+
+def _palette(dark: bool) -> dict:
+    """Return theme color tokens for the Global Markets tab."""
+    if dark:
+        return {
+            "bg_timeline":        "#0b0f1a",
+            "bg_card":            "#0f1520",
+            "bg_futures":         "#080e1f",
+            "bd_card":            "#1e2535",
+            "bd_futures":         "#1a3061",
+            "grid":               "#1e2535",
+            "text_primary":       "#f1f5f9",
+            "text_num":           "#f9fafb",
+            "text_secondary":     "#94a3b8",
+            "text_muted":         "#475569",
+            "text_caption":       "#4b5563",
+            "text_subtitle":      "#374151",
+            "text_label":         "#64748b",
+            "exp_summary_bg":     "#0b0f1a",
+            "exp_summary_open":   "#111827",
+            "exp_details_bg":     "#0b0f1a",
+            "exp_border":         "#1e2535",
+            "plot_bg":            "#0b0f1a",
+            "plot_grid":          "#1a2236",
+            "plot_tick":          "#475569",
+            "futures_icon":       "🌙",
+        }
+    else:
+        return {
+            "bg_timeline":        "#f1f5f9",
+            "bg_card":            "#ffffff",
+            "bg_futures":         "#eff6ff",
+            "bd_card":            "#e2e8f0",
+            "bd_futures":         "#bfdbfe",
+            "grid":               "#e2e8f0",
+            "text_primary":       "#0f172a",
+            "text_num":           "#1e293b",
+            "text_secondary":     "#475569",
+            "text_muted":         "#94a3b8",
+            "text_caption":       "#6b7280",
+            "text_subtitle":      "#64748b",
+            "text_label":         "#94a3b8",
+            "exp_summary_bg":     "#f8fafc",
+            "exp_summary_open":   "#f1f5f9",
+            "exp_details_bg":     "#ffffff",
+            "exp_border":         "#e2e8f0",
+            "plot_bg":            "#ffffff",
+            "plot_grid":          "#e2e8f0",
+            "plot_tick":          "#94a3b8",
+            "futures_icon":       "🌙",
+        }
 
 
 # ─── DATA FETCHING ────────────────────────────────────────────────────────────
@@ -436,7 +496,7 @@ def _svg_spark(prices: list, color: str, w: int = 120, h: int = 40) -> str:
 
 # ─── SESSION TIMELINE ─────────────────────────────────────────────────────────
 
-def _html_timeline() -> str:
+def _html_timeline(C: dict) -> str:
     ist   = _ist_now()
     now_h = ist.hour + ist.minute / 60
     SPAN  = 28      # 00:00 → 28:00 IST (i.e. next-day 04:00)
@@ -467,9 +527,9 @@ def _html_timeline() -> str:
         pct   = h / SPAN * 100
         label = f"{h % 24:02d}:00"
         grid  += (f'<div style="position:absolute;left:{pct:.2f}%;top:0;bottom:0;'
-                  f'border-left:1px solid #1e2535;pointer-events:none;"></div>')
+                  f'border-left:1px solid {C["grid"]};pointer-events:none;"></div>')
         ticks += (f'<span style="position:absolute;left:{pct:.2f}%;'
-                  f'transform:translateX(-50%);font-size:11px;font-weight:500;color:#64748b;'
+                  f'transform:translateX(-50%);font-size:11px;font-weight:500;color:{C["text_label"]};'
                   f'white-space:nowrap;">{label}</span>')
 
     # Session bars
@@ -494,12 +554,12 @@ def _html_timeline() -> str:
     )
 
     return f"""
-<div style="background:#0b0f1a;border-radius:10px;padding:16px 20px 14px;margin-top:1rem;">
+<div style="background:{C['bg_timeline']};border:1px solid {C['bd_card']};border-radius:10px;padding:16px 20px 14px;margin-top:1rem;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-    <span style="font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.12em;
+    <span style="font-size:11px;font-weight:700;color:{C['text_label']};letter-spacing:0.12em;
                  text-transform:uppercase;">GLOBAL SESSION TIMELINE (IST)</span>
-    <span style="font-size:11px;font-weight:600;color:#64748b;">
-      Now:&nbsp;<span style="color:#94a3b8;">{ist.strftime('%H:%M')} IST</span>
+    <span style="font-size:11px;font-weight:600;color:{C['text_label']};">
+      Now:&nbsp;<span style="color:{C['text_secondary']};">{ist.strftime('%H:%M')} IST</span>
     </span>
   </div>
   <div style="position:relative;height:{total_h}px;margin-bottom:16px;">
@@ -512,7 +572,7 @@ def _html_timeline() -> str:
 
 # ─── OVERNIGHT FUTURES BAR ────────────────────────────────────────────────────
 
-def _html_futures(quotes: dict) -> str:
+def _html_futures(quotes: dict, C: dict) -> str:
     if _india_open():
         return ''
     labels = [('ES=F', 'S&P FUT'), ('NQ=F', 'NQ FUT'), ('YM=F', 'DOW FUT')]
@@ -525,8 +585,8 @@ def _html_futures(quotes: dict) -> str:
         sign  = '+' if q['pct'] >= 0 else ''
         parts.append(
             f'<span style="margin-right:28px;white-space:nowrap;">'
-            f'<span style="color:#94a3b8;font-size:12px;font-weight:600;">{label}:&nbsp;</span>'
-            f'<span style="color:#f1f5f9;font-size:13px;font-weight:700;">'
+            f'<span style="color:{C["text_secondary"]};font-size:12px;font-weight:600;">{label}:&nbsp;</span>'
+            f'<span style="color:{C["text_primary"]};font-size:13px;font-weight:700;">'
             f'{_fmt_price(q["price"])}&nbsp;</span>'
             f'<span style="color:{color};font-size:13px;font-weight:700;">'
             f'{sign}{q["pct"]:.2f}%</span>'
@@ -537,8 +597,8 @@ def _html_futures(quotes: dict) -> str:
         color = '#ef4444' if usdinr['pct'] > 0 else '#22c55e'
         parts.append(
             f'<span style="white-space:nowrap;">'
-            f'<span style="color:#94a3b8;font-size:12px;font-weight:600;">USD/INR:&nbsp;</span>'
-            f'<span style="color:#f1f5f9;font-size:13px;font-weight:700;">'
+            f'<span style="color:{C["text_secondary"]};font-size:12px;font-weight:600;">USD/INR:&nbsp;</span>'
+            f'<span style="color:{C["text_primary"]};font-size:13px;font-weight:700;">'
             f'₹{usdinr["price"]:.2f}&nbsp;</span>'
             f'<span style="color:{color};font-size:13px;font-weight:700;">'
             f'({usdinr["pct"]:+.2f}%)</span>'
@@ -547,10 +607,10 @@ def _html_futures(quotes: dict) -> str:
     if not parts:
         return ''
     return f"""
-<div style="background:#080e1f;border:1px solid #1a3061;border-radius:8px;
+<div style="background:{C['bg_futures']};border:1px solid {C['bd_futures']};border-radius:8px;
             padding:10px 20px;margin-top:10px;display:flex;align-items:center;
             flex-wrap:wrap;gap:6px;">
-  <span style="color:#475569;font-size:11px;font-weight:700;letter-spacing:0.08em;
+  <span style="color:{C['text_muted']};font-size:11px;font-weight:700;letter-spacing:0.08em;
                text-transform:uppercase;margin-right:14px;">🌙 OVERNIGHT FUTURES</span>
   {''.join(parts)}
 </div>
@@ -559,7 +619,9 @@ def _html_futures(quotes: dict) -> str:
 
 # ─── OVERVIEW BAR ─────────────────────────────────────────────────────────────
 
-def _html_overview(structured: list, quotes: dict, elapsed_s: int) -> str:
+def _html_overview(structured: list, quotes: dict, elapsed_s: int, C: dict = None) -> str:
+    if C is None:
+        C = _palette(True)
     ups = downs = flat = 0
     best_pct, best_name  = -999.0, ''
     worst_pct, worst_name = 999.0, ''
@@ -591,8 +653,8 @@ def _html_overview(structured: list, quotes: dict, elapsed_s: int) -> str:
         c = '#22c55e' if q['pct'] >= 0 else '#ef4444'
         cross_html += (
             f'<span style="margin-left:16px;white-space:nowrap;">'
-            f'<span style="color:#94a3b8;font-size:12px;font-weight:600;">{lbl}:&nbsp;</span>'
-            f'<span style="color:#f1f5f9;font-size:12px;font-weight:700;">'
+            f'<span style="color:{C["text_secondary"]};font-size:12px;font-weight:600;">{lbl}:&nbsp;</span>'
+            f'<span style="color:{C["text_primary"]};font-size:12px;font-weight:700;">'
             f'{_fmt_price(q["price"], sym)}&nbsp;</span>'
             f'<span style="color:{c};font-size:12px;font-weight:700;">({q["pct"]:+.2f}%)</span>'
             f'</span>'
@@ -607,31 +669,33 @@ def _html_overview(structured: list, quotes: dict, elapsed_s: int) -> str:
 <div style="display:flex;align-items:center;justify-content:space-between;
             flex-wrap:wrap;gap:4px;padding:8px 2px;">
   <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0;">
-    <span style="color:#94a3b8;font-size:12px;font-weight:600;margin-right:6px;">Global:</span>
+    <span style="color:{C['text_secondary']};font-size:12px;font-weight:600;margin-right:6px;">Global:</span>
     <span style="color:#22c55e;font-size:12px;font-weight:700;margin-right:8px;">● {ups} Up</span>
     <span style="color:#ef4444;font-size:12px;font-weight:700;margin-right:8px;">● {downs} Down</span>
-    <span style="color:#64748b;font-size:12px;font-weight:600;margin-right:12px;">● {flat} Flat</span>
-    <span style="color:#475569;font-size:12px;margin-right:12px;">│</span>
+    <span style="color:{C['text_label']};font-size:12px;font-weight:600;margin-right:12px;">● {flat} Flat</span>
+    <span style="color:{C['text_muted']};font-size:12px;margin-right:12px;">│</span>
     <span style="margin-right:12px;white-space:nowrap;">
-      <span style="color:#94a3b8;font-size:12px;font-weight:600;">Best:&nbsp;</span>
+      <span style="color:{C['text_secondary']};font-size:12px;font-weight:600;">Best:&nbsp;</span>
       <span style="color:{bc};font-size:12px;font-weight:700;">{best_name} {best_pct:+.2f}%</span>
     </span>
-    <span style="color:#475569;font-size:12px;margin-right:12px;">│</span>
+    <span style="color:{C['text_muted']};font-size:12px;margin-right:12px;">│</span>
     <span style="white-space:nowrap;">
-      <span style="color:#94a3b8;font-size:12px;font-weight:600;">Worst:&nbsp;</span>
+      <span style="color:{C['text_secondary']};font-size:12px;font-weight:600;">Worst:&nbsp;</span>
       <span style="color:{wc};font-size:12px;font-weight:700;">{worst_name} {worst_pct:+.2f}%</span>
     </span>
     {cross_html}
   </div>
-  <span style="font-size:11px;color:#475569;white-space:nowrap;">↻ Updated {elapsed_str}</span>
+  <span style="font-size:11px;color:{C['text_muted']};white-space:nowrap;">↻ Updated {elapsed_str}</span>
 </div>
 """
 
 
 # ─── INDEX CARD HTML ─────────────────────────────────────────────────────────
 
-def _card_html(idx: dict, q, spark_prices: list, status: str, anim_delay: float = 0.0) -> str:
-    lbl, txt_clr, bg_clr = _status_info(status)
+def _card_html(idx: dict, q, spark_prices: list, status: str, anim_delay: float = 0.0, C: dict = None, dark: bool = True) -> str:
+    if C is None:
+        C = _palette(dark)
+    lbl, txt_clr, bg_clr = _status_info(status, dark=dark)
     badge_extra = ' gm-badge-open' if status == 'OPEN' else ''
 
     if q:
@@ -646,39 +710,41 @@ def _card_html(idx: dict, q, spark_prices: list, status: str, anim_delay: float 
     else:
         price_str = '—'
         prev_str  = '—'
-        pct_clr   = '#64748b'
-        spark_clr = '#334155'
+        pct_clr   = C["text_label"]
+        spark_clr = C["bd_card"]
         chg_line  = '—'
 
     spark_svg = _svg_spark(spark_prices, spark_clr) if spark_prices else _svg_spark([], spark_clr)
 
     return f"""
-<div class="gm-card" style="background:#0f1520;border:1px solid #1e2535;border-radius:10px;
+<div class="gm-card" style="background:{C['bg_card']};border:1px solid {C['bd_card']};border-radius:10px;
             padding:13px 13px 10px;position:relative;margin-bottom:4px;
             animation-delay:{anim_delay:.2f}s;">
   <span class="{badge_extra}" style="position:absolute;top:9px;right:9px;background:{bg_clr};
                color:{txt_clr};font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;
                letter-spacing:0.04em;">{lbl}</span>
-  <div style="font-size:15px;font-weight:700;color:#f1f5f9;padding-right:54px;
+  <div style="font-size:15px;font-weight:700;color:{C['text_primary']};padding-right:54px;
               margin-bottom:1px;white-space:nowrap;overflow:hidden;
               text-overflow:ellipsis;">{idx['short']}</div>
-  <div style="font-size:10px;color:#6b7280;margin-bottom:9px;white-space:nowrap;
+  <div style="font-size:10px;color:{C['text_caption']};margin-bottom:9px;white-space:nowrap;
               overflow:hidden;text-overflow:ellipsis;">{idx['name']}</div>
-  <div style="font-size:20px;font-weight:700;color:#f9fafb;
+  <div style="font-size:20px;font-weight:700;color:{C['text_num']};
               font-family:'JetBrains Mono','Courier New',monospace;
               letter-spacing:-0.01em;line-height:1.1;">{price_str}</div>
   <div style="font-size:12px;font-weight:600;color:{pct_clr};margin-top:3px;">{chg_line}</div>
   <div style="margin:8px 0 5px;">{spark_svg}</div>
-  <div style="font-size:10px;color:#4b5563;">Prev&nbsp;{prev_str}</div>
+  <div style="font-size:10px;color:{C['text_caption']};">Prev&nbsp;{prev_str}</div>
 </div>
 """
 
 
 # ─── REGION SECTION ──────────────────────────────────────────────────────────
 
-def _render_region(region: dict, intraday: dict):
+def _render_region(region: dict, intraday: dict, C: dict = None, dark: bool = True):
+    if C is None:
+        C = _palette(dark)
     status          = region['status']
-    lbl, txt_c, _   = _status_info(status)
+    lbl, txt_c, _   = _status_info(status, dark=dark)
     code            = region.get('code', '')
     flag            = region['flag']
     name            = region['name']
@@ -697,7 +763,7 @@ def _render_region(region: dict, intraday: dict):
                 delay = (row_idx * per_row + col_idx) * 0.06
                 spark = intraday.get(idx['sym'], [])
                 with col:
-                    st.markdown(_card_html(idx, idx['q'], spark, status, delay),
+                    st.markdown(_card_html(idx, idx['q'], spark, status, delay, C=C, dark=dark),
                                 unsafe_allow_html=True)
             # Vertical gap between rows of cards
             st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
@@ -721,8 +787,12 @@ def _render_asset_section(
     status: str,
     expanded: bool = False,
     note: str = '',
+    C: dict = None,
+    dark: bool = True,
 ):
     """Renders a commodity / bond / crypto section as a collapsible card grid."""
+    if C is None:
+        C = _palette(dark)
     label = f"{flag}  {title}"
     with st.expander(label, expanded=expanded):
         if note:
@@ -737,7 +807,7 @@ def _render_asset_section(
                 q     = quotes.get(item['sym'])
                 with col:
                     st.markdown(
-                        _card_html(item, q, spark, status, delay),
+                        _card_html(item, q, spark, status, delay, C=C, dark=dark),
                         unsafe_allow_html=True,
                     )
             st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
@@ -913,12 +983,14 @@ def _show_detail(sym: str, name: str):
             line=dict(color=lc, width=2),
             fill='tozeroy', fillcolor=fc,
         ))
+        _dialog_dark = st.session_state.get("dark_mode", False)
+        _dialog_C    = _palette(_dialog_dark)
         fig.update_layout(
-            plot_bgcolor='#0f1117', paper_bgcolor='#0f1117',
-            font_color='#cbd5e0', height=280, showlegend=False,
+            plot_bgcolor=_dialog_C['plot_bg'], paper_bgcolor=_dialog_C['plot_bg'],
+            font_color=_dialog_C['text_secondary'], height=280, showlegend=False,
             margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(gridcolor='#1a2236', showgrid=True, showline=False),
-            yaxis=dict(gridcolor='#1a2236', showgrid=True, showline=False),
+            xaxis=dict(gridcolor=_dialog_C['plot_grid'], showgrid=True, showline=False),
+            yaxis=dict(gridcolor=_dialog_C['plot_grid'], showgrid=True, showline=False),
         )
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     quotes, _ = _fetch_quotes()
@@ -965,41 +1037,44 @@ def _fetch_chart_data(sym: str, period: str, interval: str):
 def render_global_markets_tab():
     """Entry point called from app.py."""
 
-    # ── Inject tab-scoped CSS ──
-    st.markdown("""
+    dark = st.session_state.get("dark_mode", False)
+    C    = _palette(dark)
+
+    # ── Inject tab-scoped CSS (theme-aware) ──
+    st.markdown(f"""
     <style>
       /* Remove top padding inside this tab's columns for card layout */
-      div[data-testid="column"] > div[data-testid="stVerticalBlock"] {
+      div[data-testid="column"] > div[data-testid="stVerticalBlock"] {{
         gap: 0.5rem;
-      }
+      }}
 
       /* ── Region expander styling ── */
-      div[data-testid="stExpander"] > details > summary {
-        background: #0b0f1a !important;
-        border: 1px solid #1e2535 !important;
+      div[data-testid="stExpander"] > details > summary {{
+        background: {C['exp_summary_bg']} !important;
+        border: 1px solid {C['exp_border']} !important;
         border-radius: 8px !important;
         padding: 10px 16px !important;
         font-size: 14px !important;
         font-weight: 700 !important;
-        color: #e2e8f0 !important;
+        color: {C['text_primary']} !important;
         transition: background 0.2s ease, border-color 0.2s ease !important;
-      }
-      div[data-testid="stExpander"] > details[open] > summary {
+      }}
+      div[data-testid="stExpander"] > details[open] > summary {{
         border-radius: 8px 8px 0 0 !important;
-        border-bottom-color: #0b0f1a !important;
-        background: #111827 !important;
-      }
-      div[data-testid="stExpander"] > details > summary:hover {
-        background: #111827 !important;
-        border-color: #2d3f5e !important;
-      }
-      div[data-testid="stExpander"] > details > div[data-testid="stExpanderDetails"] {
-        background: #0b0f1a !important;
-        border: 1px solid #1e2535 !important;
+        border-bottom-color: {C['exp_summary_bg']} !important;
+        background: {C['exp_summary_open']} !important;
+      }}
+      div[data-testid="stExpander"] > details > summary:hover {{
+        background: {C['exp_summary_open']} !important;
+        border-color: {C['exp_border']} !important;
+      }}
+      div[data-testid="stExpander"] > details > div[data-testid="stExpanderDetails"] {{
+        background: {C['exp_details_bg']} !important;
+        border: 1px solid {C['exp_border']} !important;
         border-top: none !important;
         border-radius: 0 0 8px 8px !important;
         padding: 12px 8px !important;
-      }
+      }}
 
       /* ── Card fade-in animation ── */
       @keyframes gmFadeUp {
@@ -1079,9 +1154,9 @@ def render_global_markets_tab():
     with col_h:
         st.markdown(
             f'<div style="margin-bottom:2px;">'
-            f'<span style="font-size:22px;font-weight:700;color:#f1f5f9;'
+            f'<span style="font-size:22px;font-weight:700;color:{C["text_primary"]};'
             f'letter-spacing:-0.02em;">Global Markets</span></div>'
-            f'<div style="font-size:12px;color:#374151;">'
+            f'<div style="font-size:12px;color:{C["text_subtitle"]};">'
             f'15-20 min delayed &nbsp;·&nbsp; {n_regions} regions &nbsp;·&nbsp; {n_indices} indices'
             f'</div>',
             unsafe_allow_html=True,
@@ -1097,7 +1172,7 @@ def render_global_markets_tab():
 
         with ctrl_left:
             st.markdown(
-                f'<div style="padding-top:10px;font-size:12px;color:#4a5568;">'
+                f'<div style="padding-top:10px;font-size:12px;color:{C["text_muted"]};">'
                 f'{dot}{e_str}</div>',
                 unsafe_allow_html=True,
             )
@@ -1131,15 +1206,15 @@ def render_global_markets_tab():
                 st.rerun()
 
     # ── SESSION TIMELINE ──
-    st.markdown(_html_timeline(), unsafe_allow_html=True)
+    st.markdown(_html_timeline(C), unsafe_allow_html=True)
 
     # ── OVERNIGHT FUTURES BAR ──
-    futures_html = _html_futures(quotes)
+    futures_html = _html_futures(quotes, C)
     if futures_html:
         st.markdown(futures_html, unsafe_allow_html=True)
 
     # ── OVERVIEW / STATS BAR ──
-    st.markdown(_html_overview(structured, quotes, elapsed_s), unsafe_allow_html=True)
+    st.markdown(_html_overview(structured, quotes, elapsed_s, C), unsafe_allow_html=True)
 
     st.divider()
 
@@ -1161,7 +1236,7 @@ def render_global_markets_tab():
         for region_data in structured:
             if region_data['id'] == 'cross_asset':
                 continue
-            _render_region(region_data, intraday)
+            _render_region(region_data, intraday, C=C, dark=dark)
             st.markdown('<div style="margin-bottom:4px;"></div>', unsafe_allow_html=True)
 
         # ── COMMODITIES ──
@@ -1174,6 +1249,8 @@ def render_global_markets_tab():
             status=_asset_status(always_open=False),
             expanded=False,
             note='Futures prices · CME/COMEX · 10-15 min delayed',
+            C=C,
+            dark=dark,
         )
         st.markdown('<div style="margin-bottom:4px;"></div>', unsafe_allow_html=True)
 
@@ -1187,6 +1264,8 @@ def render_global_markets_tab():
             status=_asset_status(always_open=False),
             expanded=False,
             note='Yields in % · US bonds via CBOE; India bonds may show — if unavailable on Yahoo Finance',
+            C=C,
+            dark=dark,
         )
         st.markdown('<div style="margin-bottom:4px;"></div>', unsafe_allow_html=True)
 
@@ -1200,6 +1279,8 @@ def render_global_markets_tab():
             status=_asset_status(always_open=True),
             expanded=False,
             note='USD prices · 24 / 7 · near real-time',
+            C=C,
+            dark=dark,
         )
         st.markdown('<div style="margin-bottom:4px;"></div>', unsafe_allow_html=True)
 
@@ -1209,8 +1290,8 @@ def render_global_markets_tab():
         chart_sym_col, chart_hz_col = st.columns([5, 4])
         with chart_sym_col:
             st.markdown(
-                '<span style="font-size:11px;font-weight:700;color:#4a5568;'
-                'letter-spacing:0.08em;text-transform:uppercase;">View Chart</span>',
+                f'<span style="font-size:11px;font-weight:700;color:{C["text_muted"]};'
+                f'letter-spacing:0.08em;text-transform:uppercase;">View Chart</span>',
                 unsafe_allow_html=True,
             )
             chosen = st.selectbox(
@@ -1220,8 +1301,8 @@ def render_global_markets_tab():
             )
         with chart_hz_col:
             st.markdown(
-                '<span style="font-size:11px;font-weight:700;color:#4a5568;'
-                'letter-spacing:0.08em;text-transform:uppercase;">Horizon</span>',
+                f'<span style="font-size:11px;font-weight:700;color:{C["text_muted"]};'
+                f'letter-spacing:0.08em;text-transform:uppercase;">Horizon</span>',
                 unsafe_allow_html=True,
             )
             horizon = st.pills(
@@ -1270,21 +1351,21 @@ def render_global_markets_tab():
                     hovertemplate='<b>%{y:,.4g}</b>  %{x}<extra></extra>',
                 ))
                 fig.update_layout(
-                    plot_bgcolor='#0b0f1a', paper_bgcolor='#0b0f1a',
-                    font_color='#94a3b8', height=320, showlegend=False,
+                    plot_bgcolor=C['plot_bg'], paper_bgcolor=C['plot_bg'],
+                    font_color=C['text_secondary'], height=320, showlegend=False,
                     margin=dict(l=10, r=10, t=10, b=10),
                     hovermode='x unified',
                     xaxis=dict(
                         showgrid=False, showline=False, zeroline=False,
                         tickformat=tick_fmt,
-                        tickfont=dict(size=10, color='#475569'),
+                        tickfont=dict(size=10, color=C['plot_tick']),
                         nticks=8,
                     ),
                     yaxis=dict(
                         showgrid=False, showline=False, zeroline=False,
                         range=[y_lo, y_hi],
                         tickformat=y_fmt,
-                        tickfont=dict(size=10, color='#475569'),
+                        tickfont=dict(size=10, color=C['plot_tick']),
                         side='right',
                     ),
                 )
@@ -1323,7 +1404,7 @@ def render_global_markets_tab():
     ist = _ist_now()
     note = "Auto-refresh: 5 min" if _HAS_AUTOREFRESH else "pip install streamlit-autorefresh for live auto-refresh"
     st.markdown(
-        f'<div style="margin-top:1.2rem;font-size:10px;color:#1f2937;text-align:right;">'
+        f'<div style="margin-top:1.2rem;font-size:10px;color:{C["text_label"]};text-align:right;">'
         f'Data: Yahoo Finance · 15-20 min delayed · '
         f'{ist.strftime("%d %b %Y %H:%M IST")} · {note}'
         f'</div>',
