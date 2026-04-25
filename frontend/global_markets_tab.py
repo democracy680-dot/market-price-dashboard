@@ -852,7 +852,10 @@ def _interpolate_colorscale(colorscale, t: float) -> str:
     return stops[-1][1]
 
 
-def _render_heatmap(quotes: dict):
+def _render_heatmap(quotes: dict, C: dict = None, dark: bool = True):
+    if C is None:
+        C = _palette(dark)
+
     rows = [
         {'iso': iso, 'country': c, 'sym': sym,
          'pct': quotes[sym]['pct'] if quotes.get(sym) else None}
@@ -862,17 +865,46 @@ def _render_heatmap(quotes: dict):
     df['pct_fill'] = df['pct'].fillna(0)
     df['label']    = df['pct'].apply(lambda x: f"{x:+.2f}%" if x is not None else "N/A")
 
-    color_scale = [
-        [0.00, '#7f1d1d'],
-        [0.20, '#dc2626'],
-        [0.40, '#b91c1c'],
-        [0.46, '#374151'],
-        [0.50, '#1e293b'],
-        [0.54, '#374151'],
-        [0.60, '#15803d'],
-        [0.80, '#16a34a'],
-        [1.00, '#14532d'],
-    ]
+    if dark:
+        color_scale = [
+            [0.00, '#7f1d1d'],
+            [0.20, '#dc2626'],
+            [0.40, '#b91c1c'],
+            [0.46, '#374151'],
+            [0.50, '#1e293b'],
+            [0.54, '#374151'],
+            [0.60, '#15803d'],
+            [0.80, '#16a34a'],
+            [1.00, '#14532d'],
+        ]
+        no_data_color  = '#1e293b'
+        land_color     = '#e8edf5'
+        ocean_color    = '#080c14'
+        coast_color    = '#1e293b'
+        country_color  = '#0d1117'
+        marker_line    = '#0d1117'
+        paper_bg       = '#080c14'
+        geo_bg         = '#080c14'
+    else:
+        color_scale = [
+            [0.00, '#7f1d1d'],
+            [0.20, '#ef4444'],
+            [0.40, '#fca5a5'],
+            [0.46, '#e2e8f0'],
+            [0.50, '#f1f5f9'],
+            [0.54, '#e2e8f0'],
+            [0.60, '#86efac'],
+            [0.80, '#22c55e'],
+            [1.00, '#15803d'],
+        ]
+        no_data_color  = '#cbd5e1'
+        land_color     = '#e8edf5'
+        ocean_color    = '#dbeafe'
+        coast_color    = '#cbd5e1'
+        country_color  = '#cbd5e1'
+        marker_line    = '#ffffff'
+        paper_bg       = '#f0f4f8'
+        geo_bg         = '#f0f4f8'
 
     # Compute India's current color so disputed territories match exactly
     india_pct = next((r['pct'] for r in rows if r['iso'] == 'IND'), None)
@@ -880,7 +912,7 @@ def _render_heatmap(quotes: dict):
         t = max(0.0, min(1.0, (india_pct + 3) / 6.0))
         kashmir_color = _interpolate_colorscale(color_scale, t)
     else:
-        kashmir_color = '#1e293b'   # neutral grey when no data
+        kashmir_color = no_data_color
 
     fig = go.Figure(go.Choropleth(
         locations=df['iso'],
@@ -896,14 +928,14 @@ def _render_heatmap(quotes: dict):
         colorscale=color_scale,
         zmin=-3, zmax=3,
         locationmode='ISO-3',
-        marker_line_color='#0d1117',
+        marker_line_color=marker_line,
         marker_line_width=0.6,
         colorbar=dict(
-            title=dict(text='1D %', font=dict(color='#64748b', size=11)),
-            tickfont=dict(color='#64748b', size=10),
+            title=dict(text='1D %', font=dict(color=C['text_label'], size=11)),
+            tickfont=dict(color=C['text_label'], size=10),
             len=0.55, thickness=10,
             x=1.01, y=0.5,
-            bgcolor='rgba(11,15,26,0)',
+            bgcolor='rgba(0,0,0,0)',
             borderwidth=0,
             tickvals=[-3, -2, -1, 0, 1, 2, 3],
             ticktext=['-3%', '-2%', '-1%', '0', '+1%', '+2%', '+3%'],
@@ -927,7 +959,7 @@ def _render_heatmap(quotes: dict):
             mode='lines',
             fill='toself',
             fillcolor=kashmir_color,
-            line=dict(color='#0d1117', width=0.5),
+            line=dict(color=marker_line, width=0.5),
             hovertemplate=hover_txt + '<extra></extra>',
             showlegend=False,
         ))
@@ -936,29 +968,29 @@ def _render_heatmap(quotes: dict):
         geo=dict(
             showframe=False,
             showcoastlines=True,
-            coastlinecolor='#1e293b',
+            coastlinecolor=coast_color,
             coastlinewidth=0.5,
-            bgcolor='#080c14',
-            landcolor='#161e2e',
+            bgcolor=geo_bg,
+            landcolor=land_color,
             showocean=True,
-            oceancolor='#080c14',
+            oceancolor=ocean_color,
             showlakes=False,
             showrivers=False,
             showcountries=True,
-            countrycolor='#0d1117',
+            countrycolor=country_color,
             countrywidth=0.4,
             projection_type='natural earth',
             resolution=50,
         ),
-        paper_bgcolor='#080c14',
-        font_color='#94a3b8',
+        paper_bgcolor=paper_bg,
+        font_color=C['text_secondary'],
         margin=dict(l=0, r=40, t=4, b=0),
         height=460,
     )
 
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     st.markdown(
-        '<div style="font-size:11px;color:#374151;text-align:right;margin-top:-8px;">'
+        f'<div style="font-size:11px;color:{C["text_label"]};text-align:right;margin-top:-8px;">'
         'Colour = 1-day change &nbsp;·&nbsp; Grey = no tracked index &nbsp;·&nbsp; '
         'Boundaries per India\'s official claim</div>',
         unsafe_allow_html=True,
@@ -1220,7 +1252,7 @@ def render_global_markets_tab():
 
     # ── CARD VIEW or HEATMAP ──
     if view == 'Heatmap':
-        _render_heatmap(quotes)
+        _render_heatmap(quotes, C=C, dark=dark)
     else:
         # Build symbol list for chart selector (regions + commodities + crypto)
         all_idx = (
