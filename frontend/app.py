@@ -69,8 +69,58 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
-# Custom CSS
+# Custom CSS — theme-aware via CSS custom properties
 # ---------------------------------------------------------------------------
+_dark = st.session_state.get("dark_mode", True)
+
+# Inline color tokens for f-string markdown (CSS vars can't reach inline styles)
+_T = {
+    "text_primary":   "#f1f5f9" if _dark else "#0f172a",
+    "text_secondary": "#e2e8f0" if _dark else "#1e293b",
+    "text_muted":     "#8b97a8" if _dark else "#64748b",
+    "text_soft":      "#4a5568" if _dark else "#64748b",
+    "text_label":     "#374151" if _dark else "#6b7280",
+    "text_section":   "#475569" if _dark else "#64748b",
+    "text_date_badge":"#2d4f8e" if _dark else "#3b82f6",
+    "text_as_of":     "#2d4f6e" if _dark else "#64748b",
+    "text_accent":    "#60a5fa" if _dark else "#1d4ed8",
+    "text_hint":      "#1e3a5f" if _dark else "#3b82f6",
+    "text_no_data":   "#2d3f57" if _dark else "#6b7280",
+    "bg_tag":         "#0f1f3d" if _dark else "#dbeafe",
+    "bg_code":        "#111827" if _dark else "#f1f5f9",
+    "bd_tag":         "#1e3a5f" if _dark else "#bfdbfe",
+    "bd_card":        "#1e2d45" if _dark else "#e2e8f0",
+    "code_text":      "#94a3b8" if _dark else "#475569",
+    "card_title":     "#f1f5f9" if _dark else "#0f172a",
+    "card_subtitle":  "#64748b" if _dark else "#94a3b8",
+    "sb_name":        "#f1f5f9" if _dark else "#0f172a",
+}
+
+# Inject CSS custom properties — swapped on every rerun when theme changes
+st.markdown(f"""<style>:root {{
+    --bg-main:           {"#080c14" if _dark else "#f0f4f8"};
+    --bg-secondary:      {"#0b0f1a" if _dark else "#e8edf5"};
+    --bg-card-start:     {"#0f1729" if _dark else "#ffffff"};
+    --bg-card-end:       {"#111827" if _dark else "#f0f4f8"};
+    --bg-accent:         {"#1e3a5f" if _dark else "#dbeafe"};
+    --border:            {"#1a2236" if _dark else "#cbd5e1"};
+    --border-tab:        {"#1e2d45" if _dark else "#e2e8f0"};
+    --border-accent:     {"#2d5a9e" if _dark else "#3b82f6"};
+    --border-hover:      {"#2a3a5c" if _dark else "#94a3b8"};
+    --text-primary:      {"#f1f5f9" if _dark else "#0f172a"};
+    --text-secondary:    {"#e2e8f0" if _dark else "#1e293b"};
+    --text-muted:        {"#4a5568" if _dark else "#64748b"};
+    --text-tab:          {"#475569" if _dark else "#64748b"};
+    --text-caption:      {"#374151" if _dark else "#6b7280"};
+    --tab-active-text:   {"#e2e8f0" if _dark else "#1e40af"};
+    --sidebar-label:     {"#1e3050" if _dark else "#64748b"};
+    --btn-primary-bg:    {"#1d3461" if _dark else "#1d4ed8"};
+    --btn-primary-bd:    {"#2d4f8e" if _dark else "#3b82f6"};
+    --radio-checked-bg:  {"#1d3461" if _dark else "#1d4ed8"};
+    --radio-checked-bd:  {"#3b82f6" if _dark else "#3b82f6"};
+    --radio-checked-txt: {"#e2e8f0" if _dark else "#ffffff"};
+}}</style>""", unsafe_allow_html=True)
+
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -89,7 +139,7 @@ st.markdown("""
     iframe[title="st_autorefresh.st_autorefresh"] { display: none !important; }
 
     /* Main background */
-    .stApp { background-color: #080c14; }
+    .stApp { background-color: var(--bg-main); }
 
     .block-container,
     [data-testid="block-container"],
@@ -101,12 +151,12 @@ st.markdown("""
 
     /* ── Sidebar ── */
     [data-testid="stSidebar"] {
-        background-color: #0b0f1a;
-        border-right: 1px solid #1a2236;
+        background-color: var(--bg-secondary);
+        border-right: 1px solid var(--border);
     }
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stCaption {
-        color: #4a5568;
+        color: var(--text-muted);
         font-size: 11px;
     }
 
@@ -114,7 +164,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] {
         gap: 4px;
         background: transparent;
-        border-bottom: 1px solid #1e2d45;
+        border-bottom: 1px solid var(--border-tab);
         padding: 0 0 8px 0;
         align-items: flex-end;
     }
@@ -122,7 +172,7 @@ st.markdown("""
         padding: 7px 16px;
         font-size: 11.5px;
         font-weight: 600;
-        color: #475569;
+        color: var(--text-tab);
         border-radius: 4px;
         background: transparent;
         border: none;
@@ -131,13 +181,13 @@ st.markdown("""
         transition: color 0.15s, background 0.15s;
     }
     .stTabs [data-baseweb="tab"]:hover {
-        color: #cbd5e1;
+        color: var(--text-secondary);
         background: transparent;
     }
     .stTabs [aria-selected="true"] {
-        color: #e2e8f0 !important;
-        background: #1e3a5f !important;
-        border: 1px solid #2d5a9e !important;
+        color: var(--tab-active-text) !important;
+        background: var(--bg-accent) !important;
+        border: 1px solid var(--border-accent) !important;
         border-radius: 4px !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
@@ -146,26 +196,26 @@ st.markdown("""
 
     /* ── Metric cards ── */
     [data-testid="metric-container"] {
-        background: linear-gradient(135deg, #0f1729 0%, #111827 100%);
-        border: 1px solid #1a2236;
+        background: linear-gradient(135deg, var(--bg-card-start) 0%, var(--bg-card-end) 100%);
+        border: 1px solid var(--border);
         border-radius: 12px;
         padding: 16px 20px;
         transition: border-color 0.2s;
     }
     [data-testid="metric-container"]:hover {
-        border-color: #2a3a5c;
+        border-color: var(--border-hover);
     }
     [data-testid="stMetricLabel"] {
         font-size: 11px !important;
         font-weight: 600 !important;
-        color: #4a5568 !important;
+        color: var(--text-muted) !important;
         text-transform: uppercase;
         letter-spacing: 0.08em;
     }
     [data-testid="stMetricValue"] {
         font-size: 22px !important;
         font-weight: 700 !important;
-        color: #f1f5f9 !important;
+        color: var(--text-primary) !important;
         letter-spacing: -0.02em;
     }
     [data-testid="stMetricDelta"] {
@@ -183,18 +233,18 @@ st.markdown("""
     }
     .stButton button[kind="secondary"] {
         background: transparent;
-        border: 1px solid #1a2236;
-        color: #64748b;
+        border: 1px solid var(--border);
+        color: var(--text-muted);
     }
     .stButton button[kind="secondary"]:hover {
-        background: #0f1729;
-        border-color: #2a3a5c;
-        color: #94a3b8;
+        background: var(--bg-card-start);
+        border-color: var(--border-hover);
+        color: var(--text-secondary);
     }
     .stButton button[kind="primary"] {
-        background: #1d3461;
-        border: 1px solid #2d4f8e;
-        color: #e2e8f0;
+        background: var(--btn-primary-bg);
+        border: 1px solid var(--btn-primary-bd);
+        color: var(--tab-active-text);
     }
 
     /* ── Theme picker buttons (left panel) ── */
@@ -210,13 +260,13 @@ st.markdown("""
 
     /* ── Dataframe ── */
     [data-testid="stDataFrame"] {
-        border: 1px solid #1a2236;
+        border: 1px solid var(--border);
         border-radius: 10px;
         overflow: hidden;
     }
     [data-testid="stDataFrame"] th {
-        background-color: #0b0f1a !important;
-        color: #4a5568 !important;
+        background-color: var(--bg-secondary) !important;
+        color: var(--text-muted) !important;
         font-size: 11px !important;
         font-weight: 600 !important;
         text-transform: uppercase;
@@ -228,10 +278,10 @@ st.markdown("""
 
     /* ── Input / Select ── */
     .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-        background-color: #0b0f1a;
-        border: 1px solid #1a2236;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border);
         border-radius: 8px;
-        color: #e2e8f0;
+        color: var(--text-secondary);
         font-size: 13px;
     }
     .stTextInput input:focus {
@@ -254,32 +304,32 @@ st.markdown("""
         flex-direction: row;
     }
     .stRadio label {
-        background: #0b0f1a;
-        border: 1px solid #1a2236;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
         border-radius: 6px;
         padding: 4px 12px;
         font-size: 12px;
         font-weight: 500;
-        color: #4a5568;
+        color: var(--text-muted);
         cursor: pointer;
         transition: all 0.15s;
     }
     .stRadio label:has(input:checked) {
-        background: #1d3461;
-        border-color: #3b82f6;
-        color: #e2e8f0;
+        background: var(--radio-checked-bg);
+        border-color: var(--radio-checked-bd);
+        color: var(--radio-checked-txt);
     }
 
     /* ── Divider ── */
     hr {
         border: none;
-        border-top: 1px solid #1a2236;
+        border-top: 1px solid var(--border);
         margin: 12px 0;
     }
 
     /* ── Captions & helpers ── */
     .stCaption, .stCaption p {
-        color: #374151;
+        color: var(--text-caption);
         font-size: 11.5px;
     }
 
@@ -291,9 +341,9 @@ st.markdown("""
 
     /* ── Scrollbar (webkit) ── */
     ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: #080c14; }
-    ::-webkit-scrollbar-thumb { background: #1a2236; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #2a3a5c; }
+    ::-webkit-scrollbar-track { background: var(--bg-main); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
 
     /* ── Suppress Streamlit's content-dim during rerun ── */
     [data-stale="true"] {
@@ -308,7 +358,7 @@ st.markdown("""
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
-        color: #1e3050;
+        color: var(--sidebar-label);
         margin: 2px 0 8px 0;
     }
 </style>
@@ -1125,18 +1175,18 @@ def _render_chart_body(symbol: str, name: str):
     _sym_row  = _sym_info[_sym_info["symbol"] == symbol]
     _sector   = _sym_row.iloc[0]["sector"] if not _sym_row.empty and pd.notna(_sym_row.iloc[0]["sector"]) else None
     _sector_tag = (
-        f"<span style='font-size:11px;font-weight:600;color:#60a5fa;"
-        f"background:#0f1f3d;padding:2px 8px;border-radius:4px;"
-        f"border:1px solid #1e3a5f;white-space:nowrap;'>{_sector}</span>"
+        f"<span style='font-size:11px;font-weight:600;color:{_T['text_accent']};"
+        f"background:{_T['bg_tag']};padding:2px 8px;border-radius:4px;"
+        f"border:1px solid {_T['bd_tag']};white-space:nowrap;'>{_sector}</span>"
         if _sector else ""
     )
 
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;'>"
-        f"<span style='font-size:20px;font-weight:700;color:#e2e8f0'>{symbol}</span>"
-        f"<span style='color:#8b97a8;font-size:13px'>{name}</span>"
+        f"<span style='font-size:20px;font-weight:700;color:{_T['text_secondary']}'>{symbol}</span>"
+        f"<span style='color:{_T['text_muted']};font-size:13px'>{name}</span>"
         f"{_sector_tag}"
-        f"<span style='font-size:26px;font-weight:700;color:#e2e8f0;margin-left:4px;'>₹{last['close']:,.2f}</span>"
+        f"<span style='font-size:26px;font-weight:700;color:{_T['text_secondary']};margin-left:4px;'>₹{last['close']:,.2f}</span>"
         f"<span style='font-size:14px;font-weight:600;color:{chg_color}'>"
         f"{arrow} {abs(day_chg_pct):.2f}%</span>"
         f"</div>",
@@ -1318,7 +1368,7 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
 
     if snap_date:
         st.markdown(
-            f"<div style='font-size:10.5px;color:#2d4f6e;margin-top:2px;"
+            f"<div style='font-size:10.5px;color:{_T['text_as_of']};margin-top:2px;"
             f"letter-spacing:0.04em;'>As of market close · "
             f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}</div>",
             unsafe_allow_html=True,
@@ -1551,8 +1601,8 @@ def render_themes_view():
             st.session_state["theme_sort_period"] = "1M"
 
         st.markdown(
-            "<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
-            "text-transform:uppercase;color:#374151;margin-bottom:6px;'>"
+            f"<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
+            f"text-transform:uppercase;color:{_T['text_label']};margin-bottom:6px;'>"
             "Return Period</div>",
             unsafe_allow_html=True,
         )
@@ -1799,7 +1849,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
     Renders a 2-column card grid; each card pairs both donuts in one figure.
     """
     st.markdown(
-        "<div style='font-size:11px;color:#475569;margin-bottom:20px;'>"
+        f"<div style='font-size:11px;color:{_T['text_section']};margin-bottom:20px;'>"
         "Market breadth tracks how many stocks are trading above their key moving averages. "
         "High breadth (≥65%) signals broad participation. "
         "Low breadth (&lt;35%) warns of a narrow or deteriorating rally."
@@ -1895,13 +1945,13 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                     st.markdown(
                         f"<div style='display:flex;align-items:center;gap:12px;"
                         f"margin-bottom:4px;padding-bottom:12px;"
-                        f"border-bottom:1px solid #1e2d45;'>"
+                        f"border-bottom:1px solid {_T['bd_card']};'>"
                         f"<div style='width:4px;height:34px;background:{dominant_color};"
                         f"border-radius:2px;flex-shrink:0;opacity:0.85;'></div>"
                         f"<div>"
-                        f"<div style='font-size:17px;font-weight:700;color:#f1f5f9;"
+                        f"<div style='font-size:17px;font-weight:700;color:{_T['card_title']};"
                         f"letter-spacing:-0.02em;line-height:1.2;'>{label}</div>"
-                        f"<div style='font-size:11px;color:#64748b;font-weight:500;"
+                        f"<div style='font-size:11px;color:{_T['card_subtitle']};font-weight:500;"
                         f"letter-spacing:0.07em;text-transform:uppercase;margin-top:2px;'>"
                         f"{dma_note}</div>"
                         f"</div>"
@@ -2078,8 +2128,8 @@ def render_analysis_tab(snap_date, universes: list, section_key: str):
 
     # ── Timeframe pill selector ───────────────────────────────────────────────
     st.markdown(
-        "<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
-        "text-transform:uppercase;color:#374151;margin-bottom:8px;'>"
+        f"<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
+        f"text-transform:uppercase;color:{_T['text_label']};margin-bottom:8px;'>"
         "Timeframe</div>",
         unsafe_allow_html=True,
     )
@@ -2112,9 +2162,9 @@ def render_analysis_tab(snap_date, universes: list, section_key: str):
         st.markdown(
             f"<div style='display:flex;align-items:baseline;gap:10px;"
             f"margin-bottom:6px;'>"
-            f"<span style='font-size:14px;font-weight:700;color:#e2e8f0;"
+            f"<span style='font-size:14px;font-weight:700;color:{_T['text_secondary']};"
             f"letter-spacing:-0.01em;'>{label}</span>"
-            f"<span style='font-size:10px;color:#374151;font-weight:500;"
+            f"<span style='font-size:10px;color:{_T['text_label']};font-weight:500;"
             f"letter-spacing:0.04em;'>{valid_count} stocks · {selected_tf}</span>"
             f"</div>",
             unsafe_allow_html=True,
@@ -2190,7 +2240,7 @@ def render_universe_view(index_name: str, snap_date):
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("""
+    st.markdown(f"""
         <div style="padding: 8px 0 16px 0; display:flex; align-items:center; gap:10px;">
             <div style="width:34px;height:34px;border-radius:8px;
                         background:linear-gradient(135deg,#1d4ed8 0%,#3b82f6 100%);
@@ -2203,7 +2253,7 @@ with st.sidebar:
                     <polyline points="16 7 22 7 22 13"/>
                 </svg>
             </div>
-            <div style="font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;">
+            <div style="font-size:20px;font-weight:800;color:{_T['sb_name']};letter-spacing:-0.04em;">
                 Stock<span style="color:#3b82f6;">Stack</span>
             </div>
         </div>
@@ -2225,14 +2275,14 @@ with st.sidebar:
         dot_color = "#22c55e" if s == "success" else "#f59e0b"
         status_text = f"{ok}/{tot} stocks" if s == "success" else s.title()
         st.markdown(
-            f"<div style='font-size:11.5px;color:#4a5568;display:flex;align-items:center;gap:6px;'>"
+            f"<div style='font-size:11.5px;color:{_T['text_soft']};display:flex;align-items:center;gap:6px;'>"
             f"<span style='width:6px;height:6px;border-radius:50%;background:{dot_color};"
             f"display:inline-block;flex-shrink:0;'></span>"
             f"<span>{status_text} · {ts}</span></div>",
             unsafe_allow_html=True,
         )
     else:
-        st.markdown("<div style='font-size:11.5px;color:#2d3f57;'>No refresh data yet</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:11.5px;color:{_T['text_no_data']};'>No refresh data yet</div>", unsafe_allow_html=True)
 
     if st.button("↻ Refresh All Tabs", key="refresh_all_btn", use_container_width=True, help="Clear cached data and reload all tabs"):
         st.cache_data.clear()
@@ -2258,6 +2308,13 @@ with st.sidebar:
     st.divider()
     st.markdown("<div class='sidebar-section-label'>Tips</div>", unsafe_allow_html=True)
     st.caption("Use the 📈 column in any table to open a chart on TradingView.")
+
+    st.divider()
+    _theme_icon = "☀️" if _dark else "🌙"
+    _theme_label = "Light Mode" if _dark else "Dark Mode"
+    if st.button(f"{_theme_icon}  {_theme_label}", key="theme_toggle_btn", use_container_width=True):
+        st.session_state["dark_mode"] = not _dark
+        st.rerun()
 
 # ---------------------------------------------------------------------------
 # Fragment wrappers — isolate each view so button clicks only rerun their
@@ -3044,7 +3101,7 @@ def render_volspike_view(snap_date):
                                     placeholder="All sectors")
     with fc3:
         st.markdown(
-            "<div style='font-size:11px;color:#374151;padding-top:28px;'>"
+            f"<div style='font-size:11px;color:{_T['text_label']};padding-top:28px;'>"
             "Stocks where today's volume significantly exceeds the 30-day average — "
             "often signals unusual activity, breakouts, or news-driven moves.</div>",
             unsafe_allow_html=True,
@@ -3063,7 +3120,7 @@ def render_volspike_view(snap_date):
         return
 
     st.markdown(
-        f"<div style='font-size:11.5px;color:#4a5568;margin:4px 0 8px;'>"
+        f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
         f"{total} stocks · sorted highest Vol Spike first"
         f"</div>",
         unsafe_allow_html=True,
@@ -3276,16 +3333,16 @@ def _render_tab_description(desc_key: str):
         return
     with st.popover("ⓘ  About this tab", use_container_width=False):
         st.markdown(
-            "<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
-            "text-transform:uppercase;color:#475569;margin-bottom:6px;'>"
+            f"<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
+            f"text-transform:uppercase;color:{_T['text_section']};margin-bottom:6px;'>"
             "What's included</div>",
             unsafe_allow_html=True,
         )
         for point in desc["what"]:
             st.markdown(point)
         st.markdown(
-            "<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
-            "text-transform:uppercase;color:#475569;margin-top:10px;margin-bottom:4px;'>"
+            f"<div style='font-size:11px;font-weight:700;letter-spacing:0.10em;"
+            f"text-transform:uppercase;color:{_T['text_section']};margin-top:10px;margin-bottom:4px;'>"
             "How it helps</div>",
             unsafe_allow_html=True,
         )
@@ -3293,12 +3350,12 @@ def _render_tab_description(desc_key: str):
 
 
 def _page_header(title: str, date=None, desc_key: str | None = None):
-    date_str = f" <span style='color:#2d4f8e;font-size:13px;font-weight:500;margin-left:10px;'>{pd.Timestamp(date).strftime('%d %b %Y')}</span>" if date else ""
+    date_str = f" <span style='color:{_T['text_date_badge']};font-size:13px;font-weight:500;margin-left:10px;'>{pd.Timestamp(date).strftime('%d %b %Y')}</span>" if date else ""
     col_title, col_btn = st.columns([7, 1])
     with col_title:
         st.markdown(
             f"<div style='display:flex;align-items:baseline;gap:0;margin-bottom:0.75rem;padding-top:4px;'>"
-            f"<span style='font-size:18px;font-weight:700;color:#e2e8f0;letter-spacing:-0.02em;'>{title}</span>"
+            f"<span style='font-size:18px;font-weight:700;color:{_T['text_secondary']};letter-spacing:-0.02em;'>{title}</span>"
             f"{date_str}</div>",
             unsafe_allow_html=True,
         )
@@ -3354,10 +3411,10 @@ with tab_upload:
 
     uploaded = st.file_uploader("Upload CSV", type=["csv"])
     if not uploaded:
-        st.markdown("""
+        st.markdown(f"""
         <div style="
-            background: linear-gradient(135deg, #0c1220 0%, #0f1729 100%);
-            border: 1px dashed #1e2d45;
+            background: linear-gradient(135deg, {_T['bg_tag']} 0%, {_T['bd_card']} 100%);
+            border: 1px dashed {_T['bd_card']};
             border-radius: 16px;
             padding: 48px 32px;
             text-align: center;
@@ -3374,17 +3431,17 @@ with tab_upload:
                     <polyline points='10 9 9 9 8 9'/>
                 </svg>
             </div>
-            <div style="font-size:15px; font-weight:600; color:#e2e8f0; margin-bottom:8px;">
+            <div style="font-size:15px; font-weight:600; color:{_T['card_title']}; margin-bottom:8px;">
                 Analyse a custom watchlist
             </div>
-            <div style="font-size:13px; color:#4a5568; max-width:380px; margin:0 auto 20px; line-height:1.6;">
+            <div style="font-size:13px; color:{_T['text_soft']}; max-width:380px; margin:0 auto 20px; line-height:1.6;">
                 Upload a CSV with a
-                <code style="background:#111827; padding:2px 7px; border-radius:4px; color:#94a3b8; font-size:12px;">symbol</code>
+                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">symbol</code>
                 column containing NSE tickers — no
-                <code style="background:#111827; padding:2px 7px; border-radius:4px; color:#94a3b8; font-size:12px;">.NS</code>
+                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">.NS</code>
                 suffix needed.
             </div>
-            <div style="font-size:11px; color:#1e3a5f; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">
+            <div style="font-size:11px; color:{_T['text_hint']}; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">
                 Example &nbsp;·&nbsp; RELIANCE &nbsp;·&nbsp; TCS &nbsp;·&nbsp; INFY &nbsp;·&nbsp; HDFCBANK
             </div>
         </div>
