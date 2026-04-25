@@ -277,17 +277,39 @@ st.markdown("""
     }
 
     /* ── Input / Select ── */
-    .stTextInput input, .stSelectbox div[data-baseweb="select"] {
-        background-color: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        color: var(--text-secondary);
-        font-size: 13px;
+    .stTextInput input {
+        background-color: var(--bg-secondary) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 8px !important;
+        color: var(--text-secondary) !important;
+        font-size: 13px !important;
     }
     .stTextInput input:focus {
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59,130,246,0.15) !important;
     }
+
+    /* Selectbox & Multiselect — target the inner control div that BaseUI renders */
+    .stSelectbox div[data-baseweb="select"] > div:first-child,
+    .stMultiSelect div[data-baseweb="select"] > div:first-child {
+        background-color: var(--bg-secondary) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 8px !important;
+        color: var(--text-secondary) !important;
+        font-size: 13px !important;
+        min-height: 38px !important;
+    }
+    .stSelectbox div[data-baseweb="select"] > div:first-child:hover,
+    .stMultiSelect div[data-baseweb="select"] > div:first-child:hover {
+        border-color: var(--border-hover) !important;
+    }
+    /* Value text color inside selects */
+    .stSelectbox div[data-baseweb="select"] [data-testid="stSelectboxVirtualDropdown"],
+    .stSelectbox div[data-baseweb="select"] div[class*="singleValue"],
+    .stSelectbox div[data-baseweb="select"] div[class*="placeholder"] {
+        color: var(--text-secondary) !important;
+    }
+
     /* pointer cursor on all selectbox triggers */
     .stSelectbox div[data-baseweb="select"],
     .stSelectbox div[data-baseweb="select"] * {
