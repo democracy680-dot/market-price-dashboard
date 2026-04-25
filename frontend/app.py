@@ -71,7 +71,7 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 # Custom CSS — theme-aware via CSS custom properties
 # ---------------------------------------------------------------------------
-_dark = st.session_state.get("dark_mode", True)
+_dark = st.session_state.get("dark_mode", False)
 
 # Inline color tokens for f-string markdown (CSS vars can't reach inline styles)
 _T = {
@@ -320,6 +320,19 @@ st.markdown("""
         color: var(--radio-checked-txt);
     }
 
+    /* ── Theme toggle icon button ── */
+    [data-testid="stMainBlockContainer"] > div:first-child .stButton button,
+    button[kind="secondary"][data-testid*="theme_toggle_main"] {
+        padding: 4px 10px !important;
+        font-size: 16px !important;
+        border-radius: 20px !important;
+        border: 1px solid var(--border) !important;
+        background: var(--bg-card-start) !important;
+        color: var(--text-primary) !important;
+        line-height: 1.4 !important;
+        min-height: unset !important;
+    }
+
     /* ── Divider ── */
     hr {
         border: none;
@@ -360,6 +373,69 @@ st.markdown("""
         text-transform: uppercase;
         color: var(--sidebar-label);
         margin: 2px 0 8px 0;
+    }
+
+    /* ── Popover (About this tab) ── */
+    div[data-baseweb="popover"] > div,
+    div[data-baseweb="popover"] > div > div {
+        background-color: var(--bg-card-start) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        color: var(--text-secondary) !important;
+    }
+    div[data-baseweb="popover"] p,
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="popover"] span {
+        color: var(--text-secondary) !important;
+    }
+
+    /* ── Selectbox / Multiselect dropdown menus ── */
+    ul[data-baseweb="menu"],
+    div[data-baseweb="menu"] {
+        background-color: var(--bg-card-start) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 8px !important;
+    }
+    li[role="option"],
+    div[role="option"] {
+        background-color: var(--bg-card-start) !important;
+        color: var(--text-secondary) !important;
+    }
+    li[role="option"]:hover,
+    div[role="option"]:hover,
+    li[aria-selected="true"],
+    div[aria-selected="true"] {
+        background-color: var(--bg-accent) !important;
+        color: var(--text-primary) !important;
+    }
+
+    /* ── AG Grid (st.dataframe) dark/light theming ── */
+    .ag-theme-streamlit {
+        --ag-background-color: var(--bg-card-start) !important;
+        --ag-odd-row-background-color: var(--bg-secondary) !important;
+        --ag-header-background-color: var(--bg-secondary) !important;
+        --ag-foreground-color: var(--text-secondary) !important;
+        --ag-header-foreground-color: var(--text-muted) !important;
+        --ag-border-color: var(--border) !important;
+        --ag-row-hover-color: var(--bg-accent) !important;
+        --ag-selected-row-background-color: var(--bg-accent) !important;
+        --ag-modal-overlay-background-color: var(--bg-card-start) !important;
+    }
+    .ag-theme-streamlit .ag-root-wrapper {
+        border: 1px solid var(--border) !important;
+        border-radius: 10px !important;
+        overflow: hidden !important;
+    }
+    .ag-theme-streamlit .ag-header-cell-text {
+        color: var(--text-muted) !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+    }
+    .ag-theme-streamlit .ag-cell {
+        color: var(--text-secondary) !important;
+        font-size: 13px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -3232,6 +3308,12 @@ _refresh_ts_key = str(_rs_now.get("finished_at")) if _rs_now else None
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
+_tc_space, _tc_btn = st.columns([20, 1])
+with _tc_btn:
+    if st.button("☀️" if _dark else "🌙", key="theme_toggle_main", help="Switch to light mode" if _dark else "Switch to dark mode"):
+        st.session_state["dark_mode"] = not _dark
+        st.rerun()
+
 tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_scanner, tab_upload = st.tabs([
     "Global Markets",
     "Indexes",
