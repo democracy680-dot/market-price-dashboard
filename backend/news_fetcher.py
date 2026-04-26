@@ -28,6 +28,7 @@ from html.parser import HTMLParser
 
 import feedparser
 import psycopg2
+import requests
 from psycopg2.extras import execute_values
 from sqlalchemy import text
 
@@ -93,15 +94,31 @@ def load_feeds(engine) -> list[dict]:
     return [{"source_id": r[0], "display_name": r[1], "feed_url": r[2]} for r in rows]
 
 
+_HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; StockStack-NewsBot/1.0)",
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+}
+
+
+def _fetch_feed_bytes(url: str) -> bytes | None:
+    try:
+        r = requests.get(url, headers=_HTTP_HEADERS, timeout=FEED_TIMEOUT)
+        r.raise_for_status()
+        return r.content
+    except Exception as exc:
+        logger.warning(f"  HTTP fetch failed for {url}: {exc}")
+        return None
+
+
 def parse_feed(source: dict) -> list[dict]:
     articles = []
     for attempt in range(FEED_RETRIES):
         try:
-            parsed = feedparser.parse(
-                source["feed_url"],
-                agent="StockStack-NewsBot/1.0",
-                request_headers={"Accept": "application/rss+xml, application/xml, text/xml"},
-            )
+            raw = _fetch_feed_bytes(source["feed_url"])
+            if raw is None:
+                continue
+            # Pass raw bytes — feedparser auto-detects encoding from XML declaration
+            parsed = feedparser.parse(raw)
             if parsed.bozo and not parsed.entries:
                 logger.warning(f"  {source['source_id']}: bozo error — {parsed.bozo_exception}")
                 continue
