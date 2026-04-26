@@ -557,12 +557,12 @@ def _check_password():
         }
         .lp-name span { color: #60a5fa; }
         .lp-tagline {
-            font-size: 12px; color: #1e3a5f; letter-spacing: 0.1em;
+            font-size: 12px; color: #f1f5f9; letter-spacing: 0.1em;
             text-transform: uppercase; font-weight: 500; margin-bottom: 24px;
         }
         .lp-divider { border: none; border-top: 1px solid rgba(59,130,246,0.12); margin: 0 0 20px; }
         .lp-footer {
-            text-align: center; font-size: 11px; color: #1e3a5f;
+            text-align: center; font-size: 11px; color: #f1f5f9;
             margin-top: 12px; letter-spacing: 0.02em;
         }
         /* ── Creator card — fixed bottom-left ── */
@@ -621,7 +621,7 @@ def _check_password():
             border: 2px solid rgba(59,130,246,0.35);
         }
         .lp-footer {
-            text-align: center; font-size: 11px; color: #1e3a5f;
+            text-align: center; font-size: 11px; color: #f1f5f9;
             margin-top: 12px; letter-spacing: 0.02em;
         }
     </style>
