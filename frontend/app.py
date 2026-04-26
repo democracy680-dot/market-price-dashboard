@@ -558,15 +558,79 @@ def _check_password():
             text-align: center; font-size: 11px; color: #1e3a5f;
             margin-top: 12px; letter-spacing: 0.02em;
         }
-        .lp-credit {
-            text-align: center; margin-top: 10px; font-size: 11px; color: #1e3a5f;
-            line-height: 1.8;
+        /* ── Creator card — fixed bottom-left ── */
+        .creator-card {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            width: 260px;
+            background: rgba(10, 16, 28, 0.88);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(59,130,246,0.18);
+            border-radius: 16px;
+            padding: 16px 16px 16px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            z-index: 9999;
         }
-        .lp-credit a {
-            color: #3b82f6; text-decoration: none; font-weight: 600;
+        .creator-info { flex: 1; min-width: 0; }
+        .creator-heading {
+            font-size: 9px; font-weight: 700; color: #3b82f6;
+            text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 5px;
         }
-        .lp-credit a:hover { text-decoration: underline; }
+        .creator-name {
+            font-size: 14px; font-weight: 800; color: #f1f5f9;
+            letter-spacing: -0.02em; margin-bottom: 5px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .creator-link {
+            display: flex; align-items: center; gap: 5px;
+            font-size: 10px; color: #60a5fa; text-decoration: none;
+            font-weight: 500; margin-bottom: 3px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .creator-link:hover { color: #93c5fd; text-decoration: underline; }
+        .creator-email {
+            display: flex; align-items: center; gap: 5px;
+            font-size: 10px; color: #64748b;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .creator-avatar {
+            width: 64px; height: 64px; border-radius: 12px; flex-shrink: 0;
+            background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px; font-weight: 800; color: #fff;
+            letter-spacing: -0.03em;
+            box-shadow: 0 4px 16px rgba(37,99,235,0.35);
+            border: 2px solid rgba(59,130,246,0.3);
+        }
+        .lp-footer {
+            text-align: center; font-size: 11px; color: #1e3a5f;
+            margin-top: 12px; letter-spacing: 0.02em;
+        }
     </style>
+    """, unsafe_allow_html=True)
+
+    # Creator card — fixed bottom-left, outside the centre column
+    st.markdown("""
+    <div class="creator-card">
+        <div class="creator-info">
+            <div class="creator-heading">Created By</div>
+            <div class="creator-name">Sumit Meena</div>
+            <a class="creator-link" href="https://linkedin.com/in/sumit-meena-9559422a8" target="_blank">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                linkedin.com/in/sumit-meena-9559422a8
+            </a>
+            <div class="creator-email">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                sumitmeena680@gmail.com
+            </div>
+        </div>
+        <div class="creator-avatar">SM</div>
+    </div>
     """, unsafe_allow_html=True)
 
     st.markdown("<div style='min-height:10vh'></div>", unsafe_allow_html=True)
@@ -596,14 +660,10 @@ def _check_password():
                     st.rerun()
                 else:
                     st.error("Incorrect password.")
-            st.markdown("""
-                <div class='lp-footer'>Restricted access · Authorised users only</div>
-                <div class='lp-credit'>
-                    Built by <a href='https://linkedin.com/in/sumit-meena-9559422a8' target='_blank'>Sumit Meena</a>
-                    &nbsp;·&nbsp;
-                    <a href='mailto:sumitmeena680@gmail.com'>sumitmeena680@gmail.com</a>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                "<div class='lp-footer'>Restricted access · Authorised users only</div>",
+                unsafe_allow_html=True,
+            )
     st.stop()
 
 
