@@ -498,7 +498,12 @@ def _check_password():
         /* hide "Press Enter to apply" hint on password field */
         .stTextInput div[data-baseweb="input"] ~ div small,
         .stTextInput [class*="InputInstructions"],
-        .stTextInput ~ div > small { display: none !important; }
+        .stTextInput ~ div > small,
+        .stTextInput small,
+        [data-testid="InputInstructions"],
+        .stTextInput [data-testid="InputInstructions"],
+        .stTextInput div[role="status"],
+        .stTextInput + div small { display: none !important; }
 
         /* Frosted glass card */
         [data-testid="stVerticalBlockBorderWrapper"] {
