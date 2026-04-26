@@ -5,8 +5,10 @@ Reads primarily from Supabase. yfinance is used for live benchmark index returns
 All heavy stock computation happens in the daily refresh job.
 """
 
+import base64
 import json
 import os
+import pathlib
 import sys
 import concurrent.futures
 import pandas as pd
@@ -607,6 +609,12 @@ def _check_password():
             box-shadow: 0 4px 16px rgba(37,99,235,0.35);
             border: 2px solid rgba(59,130,246,0.3);
         }
+        .creator-avatar-img {
+            width: 72px; height: 72px; border-radius: 12px; flex-shrink: 0;
+            object-fit: cover; object-position: center top;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            border: 2px solid rgba(59,130,246,0.35);
+        }
         .lp-footer {
             text-align: center; font-size: 11px; color: #1e3a5f;
             margin-top: 12px; letter-spacing: 0.02em;
@@ -615,7 +623,14 @@ def _check_password():
     """, unsafe_allow_html=True)
 
     # Creator card — fixed bottom-left, outside the centre column
-    st.markdown("""
+    _photo_path = pathlib.Path(__file__).parent / "assets" / "sumit_meena.jpg"
+    if _photo_path.exists():
+        _photo_b64 = base64.b64encode(_photo_path.read_bytes()).decode()
+        _avatar_html = f'<img src="data:image/jpeg;base64,{_photo_b64}" class="creator-avatar-img">'
+    else:
+        _avatar_html = '<div class="creator-avatar">SM</div>'
+
+    st.markdown(f"""
     <div class="creator-card">
         <div class="creator-info">
             <div class="creator-heading">Created By</div>
@@ -629,7 +644,7 @@ def _check_password():
                 sumitmeena680@gmail.com
             </div>
         </div>
-        <div class="creator-avatar">SM</div>
+        {_avatar_html}
     </div>
     """, unsafe_allow_html=True)
 
