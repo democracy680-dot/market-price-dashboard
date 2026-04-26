@@ -740,23 +740,6 @@ if _COMPONENTS_HTML_SAFE:
     pass
 
 # ---------------------------------------------------------------------------
-# Live ticker bar — auto-refresh + render (above all tabs)
-# ---------------------------------------------------------------------------
-try:
-    from ticker_bar import is_market_open, render_ticker_bar
-    try:
-        from streamlit_autorefresh import st_autorefresh
-        _refresh_interval = 60_000 if is_market_open() else 300_000  # ms
-        st_autorefresh(interval=_refresh_interval, key="market_ticker_refresh", limit=None)
-    except Exception:
-        pass  # autorefresh optional — ticker bar still renders
-    # PERF: Measure ticker bar fetch + render time (includes yfinance calls)
-    with measure("ticker_bar_render"):
-        render_ticker_bar()
-except Exception:
-    pass
-
-# ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)

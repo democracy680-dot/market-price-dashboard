@@ -7,8 +7,7 @@ import streamlit as st
 from sqlalchemy import text
 
 NEWS_TICKER_HEIGHT  = 28
-STOCK_TICKER_HEIGHT = 52
-TOTAL_HEADER_HEIGHT = STOCK_TICKER_HEIGHT + NEWS_TICKER_HEIGHT  # 80px
+TOTAL_HEADER_HEIGHT = NEWS_TICKER_HEIGHT
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -55,7 +54,7 @@ def render_news_ticker(engine):
 <style>
 #news-ticker {{
   position: fixed;
-  top: {STOCK_TICKER_HEIGHT}px;
+  top: 0;
   left: 0; right: 0;
   z-index: 999998;
   height: {NEWS_TICKER_HEIGHT}px;
