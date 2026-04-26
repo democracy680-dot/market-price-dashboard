@@ -590,14 +590,14 @@ def _check_password():
         }
         .creator-link {
             display: flex; align-items: center; gap: 5px;
-            font-size: 10px; color: #60a5fa; text-decoration: none;
+            font-size: 11px; color: #60a5fa; text-decoration: none;
             font-weight: 500; margin-bottom: 3px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .creator-link:hover { color: #93c5fd; text-decoration: underline; }
         .creator-email {
             display: flex; align-items: center; gap: 5px;
-            font-size: 10px; color: #64748b;
+            font-size: 11px; color: #64748b;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .creator-avatar {
