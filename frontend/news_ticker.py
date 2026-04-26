@@ -1,15 +1,13 @@
 """
-news_ticker.py — Scrolling news headline ticker bar.
-
-Renders a fixed bar below the stock price ticker using st.markdown
-(no iframe injection). Falls back silently if news_articles is empty.
+news_ticker.py — Scrolling news headline ticker bar (below stock ticker).
+Uses st.html() for direct HTML injection without markdown processing.
 """
 
 import streamlit as st
 from sqlalchemy import text
 
-NEWS_TICKER_HEIGHT  = 28   # px
-STOCK_TICKER_HEIGHT = 52   # must match ticker_bar.TICKER_HEIGHT
+NEWS_TICKER_HEIGHT  = 28
+STOCK_TICKER_HEIGHT = 52
 TOTAL_HEADER_HEIGHT = STOCK_TICKER_HEIGHT + NEWS_TICKER_HEIGHT  # 80px
 
 
@@ -41,19 +39,19 @@ def render_news_ticker(engine):
     items_html = ""
     for h in headlines:
         src   = h["source_name"]
-        title = h["title"].replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+        title = h["title"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
         url   = h["url"].replace('"', "%22")
         items_html += (
-            f'<span class="nt-item">'
-            f'  <span class="nt-src">{src}</span>'
-            f'  <a class="nt-link" href="{url}" target="_blank" rel="noopener noreferrer">{title}</a>'
+            f'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 10px;height:100%">'
+            f'<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:#f59e0b;text-transform:uppercase;white-space:nowrap;flex-shrink:0">{src}</span>'
+            f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="font-size:10.5px;font-weight:500;color:#94a3b8;text-decoration:none;white-space:nowrap">{title}</a>'
             f'</span>'
-            f'<span class="nt-sep">·</span>'
+            f'<span style="font-size:9px;color:rgba(245,158,11,0.35);padding:0 4px;flex-shrink:0">&#183;</span>'
         )
 
-    scroll_html = items_html * 2  # duplicate for seamless loop
+    scroll_html = items_html * 2
 
-    st.markdown(f"""
+    html = f"""
 <style>
 #news-ticker {{
   position: fixed;
@@ -62,80 +60,45 @@ def render_news_ticker(engine):
   z-index: 999998;
   height: {NEWS_TICKER_HEIGHT}px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  pointer-events: auto;
 }}
-.nt-outer {{
+#nt-outer {{
   width: 100%; height: {NEWS_TICKER_HEIGHT}px;
   background: #0a1628;
-  position: relative;
-  display: flex; align-items: center; overflow: hidden;
+  display: flex; align-items: center; overflow: hidden; position: relative;
 }}
-.nt-outer::after {{
+#nt-outer::after {{
   content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg,
-    transparent 0%, rgba(245,158,11,0.2) 15%,
-    rgba(245,158,11,0.5) 50%, rgba(245,158,11,0.2) 85%, transparent 100%);
+  position: absolute; bottom: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(245,158,11,0.5) 50%, transparent 100%);
 }}
-.nt-label {{
-  flex-shrink: 0;
-  font-size: 8px; font-weight: 800; letter-spacing: 1.4px;
-  color: #f59e0b; padding: 0 12px; white-space: nowrap;
-}}
-.nt-divider-v {{
-  width: 1px; height: 14px;
-  background: rgba(245,158,11,0.25); flex-shrink: 0;
-}}
-.nt-track {{
+#nt-track {{
   flex: 1; overflow: hidden; height: 100%; position: relative;
   -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 2%, #000 98%, transparent 100%);
   mask-image: linear-gradient(to right, transparent 0%, #000 2%, #000 98%, transparent 100%);
 }}
-.nt-scroll {{
+#nt-scroll {{
   display: inline-flex; align-items: center; height: 100%; white-space: nowrap;
-  animation: nt-marquee 120s linear infinite;
+  animation: nt-marquee 180s linear infinite;
   will-change: transform;
 }}
-.nt-scroll:hover {{ animation-play-state: paused; }}
+#nt-scroll:hover {{ animation-play-state: paused; }}
 @keyframes nt-marquee {{
   0%   {{ transform: translateX(0); }}
   100% {{ transform: translateX(-50%); }}
 }}
-.nt-item {{
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 10px; height: 100%;
-}}
-.nt-src {{
-  font-size: 7.5px; font-weight: 700; letter-spacing: 0.8px;
-  color: #f59e0b; text-transform: uppercase; white-space: nowrap; flex-shrink: 0;
-}}
-.nt-link {{
-  font-size: 10.5px; font-weight: 500; color: #94a3b8;
-  text-decoration: none; white-space: nowrap; transition: color 0.15s;
-}}
-.nt-link:hover {{ color: #e2e8f0; text-decoration: underline; }}
-.nt-sep {{
-  font-size: 9px; color: rgba(245,158,11,0.3); padding: 0 4px; flex-shrink: 0;
-}}
-
-/* ── Push Streamlit content below both bars ── */
-[data-testid="stAppViewContainer"] {{
-  padding-top: {TOTAL_HEADER_HEIGHT}px !important;
-}}
-header[data-testid="stHeader"] {{
-  top: {TOTAL_HEADER_HEIGHT}px !important;
-}}
+#nt-scroll a:hover {{ color: #e2e8f0 !important; text-decoration: underline !important; }}
+[data-testid="stAppViewContainer"] {{ padding-top: {TOTAL_HEADER_HEIGHT}px !important; }}
+header[data-testid="stHeader"]     {{ top: {TOTAL_HEADER_HEIGHT}px !important; }}
 </style>
 
 <div id="news-ticker">
-  <div class="nt-outer">
-    <div class="nt-label">NEWS</div>
-    <div class="nt-divider-v"></div>
-    <div class="nt-track">
-      <div class="nt-scroll">{scroll_html}</div>
+  <div id="nt-outer">
+    <div style="flex-shrink:0;font-size:8px;font-weight:800;letter-spacing:1.4px;color:#f59e0b;padding:0 12px;white-space:nowrap">NEWS</div>
+    <div style="width:1px;height:14px;background:rgba(245,158,11,0.25);flex-shrink:0"></div>
+    <div id="nt-track">
+      <div id="nt-scroll">{scroll_html}</div>
     </div>
   </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+    st.html(html)
