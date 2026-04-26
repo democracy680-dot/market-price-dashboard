@@ -1,14 +1,9 @@
-import json
-import sys
 import concurrent.futures
 import pandas as pd
 import yfinance as yf
 import streamlit as st
-import streamlit.components.v1 as components
 from datetime import datetime
 import pytz
-
-_COMPONENTS_HTML_SAFE = sys.version_info < (3, 14)
 
 TICKER_HEIGHT = 52  # px — keep in sync with CSS below
 
@@ -26,7 +21,6 @@ TICKER_SYMBOLS = {
 
 
 def _yf_download_safe(symbols, period, interval, timeout=12):
-    """Run yf.download with a hard timeout; returns empty DataFrame on hang/error."""
     def _run():
         return yf.download(
             tickers=symbols, period=period, interval=interval,
@@ -138,7 +132,23 @@ def render_ticker_bar():
 
     scroll_html = items_html * 2  # duplicate for seamless loop
 
-    # ── Left-side brand + badge markup ─────────────────────────────────────
+    if market_open:
+        badge_html = (
+            f'<div class="stk-meta">'
+            f'  <span class="dot-live"></span>'
+            f'  <span class="badge live-badge">LIVE</span>'
+            f'  <span class="stk-clock">{time_str}</span>'
+            f'</div>'
+        )
+    else:
+        badge_html = (
+            f'<div class="stk-meta">'
+            f'  <span class="dot-off"></span>'
+            f'  <span class="badge off-badge">CLOSED</span>'
+            f'  <span class="stk-clock">{time_str}</span>'
+            f'</div>'
+        )
+
     brand_html = """
 <div class="stk-brand">
   <div class="stk-logo-icon">
@@ -154,43 +164,16 @@ def render_ticker_bar():
 <div class="stk-divider-v"></div>
 """
 
-    if market_open:
-        badge_html = (
-            f'<div class="stk-meta">'
-            f'  <span class="dot-live"></span>'
-            f'  <span class="badge live-badge">LIVE</span>'
-            f'  <span class="stk-clock" id="stk-clock">{time_str}</span>'
-            f'</div>'
-        )
-    else:
-        badge_html = (
-            f'<div class="stk-meta">'
-            f'  <span class="dot-off"></span>'
-            f'  <span class="badge off-badge">CLOSED</span>'
-            f'  <span class="stk-clock" id="stk-clock">{time_str}</span>'
-            f'</div>'
-        )
-
-    # ── Full ticker markup ──────────────────────────────────────────────────
-    ticker_html = (
-        f'<div class="stk-outer">'
-        f'  {brand_html}'
-        f'  {badge_html}'
-        f'  <div class="stk-divider-v"></div>'
-        f'  <div class="stk-track">'
-        f'    <div class="stk-scroll">{scroll_html}</div>'
-        f'  </div>'
-        f'</div>'
-    )
-
-    # ── CSS ─────────────────────────────────────────────────────────────────
-    ticker_css = f"""
+    st.markdown(f"""
+<style>
+/* ── Fixed ticker bar ── */
 #stk-ticker {{
   position: fixed;
   top: 0; left: 0; right: 0;
   z-index: 999999;
   height: {TICKER_HEIGHT}px;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  pointer-events: auto;
 }}
 .stk-outer {{
   width: 100%; height: {TICKER_HEIGHT}px;
@@ -204,22 +187,14 @@ def render_ticker_bar():
   bottom: 0; left: 0; right: 0;
   height: 1px;
   background: linear-gradient(90deg,
-    transparent 0%,
-    #1e3a5f 15%,
-    #2d5a9e 40%,
-    #3b82f6 50%,
-    #2d5a9e 60%,
-    #1e3a5f 85%,
-    transparent 100%);
+    transparent 0%, #1e3a5f 15%, #2d5a9e 40%,
+    #3b82f6 50%, #2d5a9e 60%, #1e3a5f 85%, transparent 100%);
   opacity: 0.6;
 }}
-
-/* ── Brand ── */
 .stk-brand {{
   flex-shrink: 0;
   display: flex; align-items: center; gap: 9px;
-  padding: 0 20px;
-  height: 100%;
+  padding: 0 20px; height: 100%;
 }}
 .stk-logo-icon {{
   width: 24px; height: 24px; border-radius: 6px;
@@ -232,23 +207,16 @@ def render_ticker_bar():
   font-size: 13.5px; font-weight: 700; color: #cbd5e1;
   letter-spacing: -0.03em; white-space: nowrap;
 }}
-.stk-brand-name em {{
-  color: #3b82f6; font-style: normal;
-}}
-
-/* ── Vertical divider ── */
+.stk-brand-name em {{ color: #3b82f6; font-style: normal; }}
 .stk-divider-v {{
   width: 1px; height: 22px;
   background: linear-gradient(180deg, transparent, #1e2d45, transparent);
   flex-shrink: 0;
 }}
-
-/* ── Meta (badge + clock) ── */
 .stk-meta {{
   flex-shrink: 0;
   display: flex; align-items: center; gap: 8px;
-  padding: 0 16px;
-  height: 100%;
+  padding: 0 16px; height: 100%;
 }}
 .badge {{
   font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px;
@@ -279,15 +247,12 @@ def render_ticker_bar():
 }}
 .stk-clock {{
   font-size: 10.5px; font-weight: 500; color: #374151;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
 }}
-
-/* ── Scrolling track ── */
 .stk-track {{
   flex: 1; overflow: hidden; height: 100%; position: relative;
   -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
-  mask-image:         linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0%, #000 3%, #000 97%, transparent 100%);
 }}
 .stk-scroll {{
   display: inline-flex; align-items: center; height: 100%; white-space: nowrap;
@@ -299,12 +264,9 @@ def render_ticker_bar():
   0%   {{ transform: translateX(0); }}
   100% {{ transform: translateX(-50%); }}
 }}
-
-/* ── Ticker items ── */
 .t-item {{
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 0 18px; height: 100%;
-  cursor: default;
+  padding: 0 18px; height: 100%; cursor: default;
   transition: background 0.15s;
 }}
 .t-item:hover {{ background: rgba(255,255,255,.03); }}
@@ -315,7 +277,6 @@ def render_ticker_bar():
 .t-price {{
   font-size: 13px; font-weight: 600; color: #c8d3e0;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
 }}
 .t-chg {{
   font-size: 10.5px; font-weight: 600;
@@ -327,89 +288,27 @@ def render_ticker_bar():
 .dn      {{ color: #ef4444; }}
 .neutral {{ color: #475569; }}
 .t-sep {{
-  width: 1px; height: 14px;
-  background: #131d2e;
-  flex-shrink: 0;
+  width: 1px; height: 14px; background: #131d2e; flex-shrink: 0;
 }}
 .t-unavail {{ font-size: 12px; color: #64748b; padding: 0 24px; }}
-"""
 
-    # ── JS: inject fixed bar into parent document ───────────────────────────
-    html_json = json.dumps(ticker_html)
-    css_json  = json.dumps(ticker_css)
+/* ── Push Streamlit content below both bars ── */
+[data-testid="stAppViewContainer"] {{
+  padding-top: {TICKER_HEIGHT}px !important;
+}}
+header[data-testid="stHeader"] {{
+  top: {TICKER_HEIGHT}px !important;
+}}
+</style>
 
-    script = f"""
-<script>
-(function() {{
-  var HTML = {html_json};
-  var CSS  = {css_json};
-  var H    = {TICKER_HEIGHT};
-
-  function collapseOwnIframe() {{
-    var p = window.parent.document;
-    var frames = p.querySelectorAll('iframe');
-    for (var i = 0; i < frames.length; i++) {{
-      try {{
-        if (frames[i].contentWindow === window) {{
-          var iframe = frames[i];
-          var s = 'height:0!important;min-height:0!important;max-height:0!important;' +
-                  'margin:0!important;padding:0!important;border:none!important;overflow:hidden!important;';
-          iframe.style.cssText = s;
-          var parent = iframe.parentElement;
-          if (parent && parent !== p.body) parent.style.cssText += s;
-          break;
-        }}
-      }} catch(e) {{}}
-    }}
-  }}
-
-  function startClock(p) {{
-    var el = p.getElementById('stk-clock');
-    if (!el) return;
-    function tick() {{
-      var now = new Date();
-      var ist = new Date(now.toLocaleString('en-US', {{timeZone: 'Asia/Kolkata'}}));
-      var h = String(ist.getHours()).padStart(2, '0');
-      var m = String(ist.getMinutes()).padStart(2, '0');
-      if (el) el.textContent = h + ':' + m + ' IST';
-    }}
-    tick();
-    setInterval(tick, 30000);
-  }}
-
-  function inject() {{
-    var p = window.parent.document;
-    if (!p) return;
-
-    var old = p.getElementById('stk-ticker');
-    if (old) old.remove();
-    var oldCss = p.getElementById('stk-ticker-css');
-    if (oldCss) oldCss.remove();
-
-    var style = p.createElement('style');
-    style.id = 'stk-ticker-css';
-    style.textContent = CSS;
-    p.head.appendChild(style);
-
-    var wrap = p.createElement('div');
-    wrap.id = 'stk-ticker';
-    wrap.innerHTML = HTML;
-    p.body.insertBefore(wrap, p.body.firstChild);
-
-    var root = p.querySelector('[data-testid="stAppViewContainer"]')
-            || p.querySelector('.stApp')
-            || p.querySelector('#root');
-    if (root) root.style.paddingTop = H + 'px';
-
-    startClock(p);
-    collapseOwnIframe();
-  }}
-
-  inject();
-  setTimeout(inject, 200);
-}})();
-</script>
-"""
-
-    if _COMPONENTS_HTML_SAFE:
-        components.html(script, height=0, scrolling=False)
+<div id="stk-ticker">
+  <div class="stk-outer">
+    {brand_html}
+    {badge_html}
+    <div class="stk-divider-v"></div>
+    <div class="stk-track">
+      <div class="stk-scroll">{scroll_html}</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
