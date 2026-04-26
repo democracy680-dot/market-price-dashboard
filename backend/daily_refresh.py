@@ -40,6 +40,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def mark_inactive_stocks(engine) -> int:
+    """
+    Mark stocks that have had no price data for 30+ days as inactive.
+    Returns the count of stocks marked inactive.
+    """
+    with engine.begin() as conn:
+        result = conn.execute(text("""
+            UPDATE stocks s
+            SET is_active = FALSE
+            WHERE s.is_active = TRUE
+            AND NOT EXISTS (
+                SELECT 1 FROM prices_daily p
+                WHERE p.symbol = s.symbol
+                AND p.date > CURRENT_DATE - INTERVAL '30 days'
+            )
+        """))
+        count = result.rowcount
+    if count:
+        logger.info(f"  Marked {count} stale stocks as inactive (no data for 30+ days)")
+    return count
+
+
 def load_active_stocks(conn) -> pd.DataFrame:
     result = conn.execute(
         text("SELECT symbol, yahoo_symbol, sector FROM stocks WHERE is_active = TRUE")
@@ -350,6 +372,13 @@ def run():
         logger.info(f"  Setup counts: {pattern_counts}")
     except Exception as setup_err:
         logger.error(f"  Setup candidates failed (non-fatal): {setup_err}", exc_info=True)
+
+    # ── 5e. Mark delisted / stale stocks as inactive ──────────────────────────
+    logger.info("Marking stale stocks inactive...")
+    try:
+        mark_inactive_stocks(engine)
+    except Exception as inactive_err:
+        logger.error(f"  mark_inactive_stocks failed (non-fatal): {inactive_err}", exc_info=True)
 
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"

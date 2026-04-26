@@ -38,6 +38,12 @@ from indicators import (
     compute_sma_slope,
     compute_volume_ratio,
     compute_technical_status_v2,
+    compute_bollinger_bands,
+    compute_atr,
+    compute_stochastic,
+    compute_obv_trend,
+    compute_supertrend,
+    compute_technical_status_v3,
 )
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -65,35 +71,48 @@ def _clean(v):
 
 def _fetch_all_ohlcv(engine) -> dict:
     """
-    Single query for all OHLCV data needed to compute indicators.
-    Returns {symbol: [(date, open, high, low, close, volume), ...]} sorted ascending by date.
+    Fetch OHLCV data in symbol batches to avoid connection drop on large result sets.
+    Returns {symbol: [{date, open, high, low, close, volume}, ...]} sorted ascending by date.
 
-    We fetch 380 calendar days to ensure ~260+ trading days of history.
+    We fetch 410 calendar days to ensure ~260+ trading days of history.
     """
-    logger.info("Fetching bulk OHLCV from prices_daily (last 410 calendar days)...")
-    sql = text("""
-        SELECT symbol, date, open, high, low, close, volume
-        FROM prices_daily
-        WHERE date >= CURRENT_DATE - INTERVAL '410 days'
-        ORDER BY symbol, date ASC
-    """)
+    logger.info("Fetching active symbols...")
     with engine.connect() as conn:
-        rows = conn.execute(sql).fetchall()
+        symbols = [r[0] for r in conn.execute(
+            text("SELECT symbol FROM stocks WHERE is_active = TRUE ORDER BY symbol")
+        ).fetchall()]
 
-    # Group by symbol
+    logger.info(f"Fetching OHLCV from prices_daily for {len(symbols)} symbols in batches...")
+    BATCH = 100
     ohlcv_by_symbol = defaultdict(list)
-    for row in rows:
-        symbol, date, o, h, l, c, vol = row
-        ohlcv_by_symbol[symbol].append({
-            "date":   date,
-            "open":   float(o)   if o   is not None else None,
-            "high":   float(h)   if h   is not None else None,
-            "low":    float(l)   if l   is not None else None,
-            "close":  float(c)   if c   is not None else None,
-            "volume": int(vol)   if vol is not None else None,
-        })
+    total_rows = 0
 
-    logger.info(f"  Loaded {len(rows):,} OHLCV rows across {len(ohlcv_by_symbol)} symbols")
+    for i in range(0, len(symbols), BATCH):
+        batch = symbols[i:i + BATCH]
+        sql = text("""
+            SELECT symbol, date, open, high, low, close, volume
+            FROM prices_daily
+            WHERE symbol = ANY(:syms)
+              AND date >= CURRENT_DATE - INTERVAL '410 days'
+            ORDER BY symbol, date ASC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(sql, {"syms": batch}).fetchall()
+
+        for row in rows:
+            symbol, date, o, h, l, c, vol = row
+            ohlcv_by_symbol[symbol].append({
+                "date":   date,
+                "open":   float(o)   if o   is not None else None,
+                "high":   float(h)   if h   is not None else None,
+                "low":    float(l)   if l   is not None else None,
+                "close":  float(c)   if c   is not None else None,
+                "volume": int(vol)   if vol is not None else None,
+            })
+        total_rows += len(rows)
+        logger.info(f"  Batch {i // BATCH + 1}/{(len(symbols) + BATCH - 1) // BATCH} — {total_rows:,} rows so far")
+
+    logger.info(f"  Loaded {total_rows:,} OHLCV rows across {len(ohlcv_by_symbol)} symbols")
     return dict(ohlcv_by_symbol)
 
 
@@ -157,6 +176,19 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
         "volume_ratio":         None,
         "signal_score_v2":      0,
         "technical_status_v1":  "⚪ Insufficient Data",
+        # New indicators (v3)
+        "bb_upper":             None,
+        "bb_lower":             None,
+        "bb_position":          None,
+        "atr_14":               None,
+        "atr_pct":              None,
+        "stoch_k":              None,
+        "stoch_d":              None,
+        "obv_trend":            None,
+        "supertrend_direction": None,
+        "supertrend_level":     None,
+        "signal_score_v3":      0,
+        "technical_status_v3":  "⚪ Insufficient Data",
     }
 
     if not bars:
@@ -186,7 +218,7 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
     highs_trim  = highs[-min_len:]
     lows_trim   = lows[-min_len:]
 
-    # ── Compute indicators ────────────────────────────────────────────────────
+    # ── Compute core indicators ───────────────────────────────────────────────
     rsi   = compute_rsi(closes_trim)
     macd  = compute_macd(closes_trim)
     adx_r = compute_adx(highs_trim, lows_trim, closes_trim)
@@ -208,7 +240,28 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
     all_volumes = [b["volume"] for b in relevant]
     vol_ratio = compute_volume_ratio(all_volumes, lookback=20)
 
-    # ── Dual scoring ─────────────────────────────────────────────────────────
+    # ── New indicators (v3) ───────────────────────────────────────────────────
+    bb = compute_bollinger_bands(closes_trim)
+    atr_r = compute_atr(highs_trim, lows_trim, closes_trim)
+    stoch = compute_stochastic(highs_trim, lows_trim, closes_trim)
+    obv_tr = compute_obv_trend(closes_trim, all_volumes)
+    st_r = compute_supertrend(highs_trim, lows_trim, closes_trim)
+
+    bb_upper    = bb["upper"]    if bb else None
+    bb_lower    = bb["lower"]    if bb else None
+    bb_pos      = bb["position"] if bb else None
+    atr_14      = atr_r["atr"]     if atr_r else None
+    atr_pct     = atr_r["atr_pct"] if atr_r else None
+    stoch_k     = stoch["k"] if stoch else None
+    stoch_d     = stoch["d"] if stoch else None
+    st_dir      = st_r["direction"] if st_r else None
+    st_level    = st_r["level"]     if st_r else None
+
+    # 52W high/low from the relevant bars
+    high_52w = max((b["high"] for b in relevant if b["high"] is not None), default=None)
+    low_52w  = min((b["low"]  for b in relevant if b["low"]  is not None), default=None)
+
+    # ── Triple scoring ────────────────────────────────────────────────────────
     v1_score, v1_label = compute_technical_status_v1(
         cmp=base["cmp"], rsi=rsi,
         sma_50=sma50, sma_200=sma200,
@@ -220,6 +273,14 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
         sma_50=sma50, sma_200=sma200, sma_200_slope=slope,
         macd_line=macd_line, macd_signal=macd_sig, macd_histogram=macd_hist,
         adx=adx_val, volume_ratio=vol_ratio,
+    )
+    v3_score, v3_label = compute_technical_status_v3(
+        cmp=base["cmp"], rsi=rsi,
+        sma_50=sma50, sma_200=sma200, sma_200_slope=slope,
+        macd_line=macd_line, macd_signal=macd_sig, macd_histogram=macd_hist,
+        adx=adx_val, volume_ratio=vol_ratio,
+        high_52w=high_52w, low_52w=low_52w,
+        obv_trend=obv_tr,
     )
 
     return {
@@ -236,12 +297,25 @@ def _compute_for_symbol(symbol: str, bars: list, target_date) -> dict:
         "minus_di_14":          _clean(minus_di),
         "sma_50":               _clean(sma50),
         "sma_200":              _clean(sma200),
-        "signal_score":         v2_score,       # v2 is now primary
-        "technical_status":     v2_label,
+        "signal_score":         v3_score,       # v3 is now primary
+        "technical_status":     v3_label,
         "sma_200_slope":        _clean(slope),
         "volume_ratio":         _clean(vol_ratio),
         "signal_score_v2":      v2_score,
         "technical_status_v1":  v1_label,
+        # New v3 columns
+        "bb_upper":             _clean(bb_upper),
+        "bb_lower":             _clean(bb_lower),
+        "bb_position":          _clean(bb_pos),
+        "atr_14":               _clean(atr_14),
+        "atr_pct":              _clean(atr_pct),
+        "stoch_k":              _clean(stoch_k),
+        "stoch_d":              _clean(stoch_d),
+        "obv_trend":            obv_tr,
+        "supertrend_direction": st_dir,
+        "supertrend_level":     _clean(st_level),
+        "signal_score_v3":      v3_score,
+        "technical_status_v3":  v3_label,
     }
 
 
@@ -252,6 +326,11 @@ _UPSERT_COLS = [
     "sma_50", "sma_200",
     "signal_score", "technical_status",
     "sma_200_slope", "volume_ratio", "signal_score_v2", "technical_status_v1",
+    "bb_upper", "bb_lower", "bb_position",
+    "atr_14", "atr_pct",
+    "stoch_k", "stoch_d",
+    "obv_trend", "supertrend_direction", "supertrend_level",
+    "signal_score_v3", "technical_status_v3",
     "computed_at",
 ]
 
@@ -263,6 +342,11 @@ _UPSERT_SQL = """
          sma_50, sma_200,
          signal_score, technical_status,
          sma_200_slope, volume_ratio, signal_score_v2, technical_status_v1,
+         bb_upper, bb_lower, bb_position,
+         atr_14, atr_pct,
+         stoch_k, stoch_d,
+         obv_trend, supertrend_direction, supertrend_level,
+         signal_score_v3, technical_status_v3,
          computed_at)
     VALUES %s
     ON CONFLICT (symbol, date) DO UPDATE SET
@@ -283,6 +367,18 @@ _UPSERT_SQL = """
         volume_ratio         = EXCLUDED.volume_ratio,
         signal_score_v2      = EXCLUDED.signal_score_v2,
         technical_status_v1  = EXCLUDED.technical_status_v1,
+        bb_upper             = EXCLUDED.bb_upper,
+        bb_lower             = EXCLUDED.bb_lower,
+        bb_position          = EXCLUDED.bb_position,
+        atr_14               = EXCLUDED.atr_14,
+        atr_pct              = EXCLUDED.atr_pct,
+        stoch_k              = EXCLUDED.stoch_k,
+        stoch_d              = EXCLUDED.stoch_d,
+        obv_trend            = EXCLUDED.obv_trend,
+        supertrend_direction = EXCLUDED.supertrend_direction,
+        supertrend_level     = EXCLUDED.supertrend_level,
+        signal_score_v3      = EXCLUDED.signal_score_v3,
+        technical_status_v3  = EXCLUDED.technical_status_v3,
         computed_at          = EXCLUDED.computed_at
 """
 
@@ -300,6 +396,11 @@ def _batch_upsert(rows: list):
             r["signal_score"], r["technical_status"],
             r["sma_200_slope"], r["volume_ratio"],
             r["signal_score_v2"], r["technical_status_v1"],
+            r.get("bb_upper"), r.get("bb_lower"), r.get("bb_position"),
+            r.get("atr_14"), r.get("atr_pct"),
+            r.get("stoch_k"), r.get("stoch_d"),
+            r.get("obv_trend"), r.get("supertrend_direction"), r.get("supertrend_level"),
+            r.get("signal_score_v3", 0), r.get("technical_status_v3", "⚪ Insufficient Data"),
             now,
         ))
 

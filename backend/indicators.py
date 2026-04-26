@@ -13,6 +13,12 @@ Functions:
     compute_sma_slope            — SMA200 percent change over N trading days
     compute_volume_ratio         — Today's volume / N-day average volume
     compute_technical_status_v2  — Improved score with slope awareness + volume confirmation
+    compute_bollinger_bands      — Bollinger Bands (20, 2): upper, lower, position 0-100
+    compute_atr                  — Average True Range (14): ATR and ATR as % of price
+    compute_stochastic           — Stochastic Oscillator (14,3): %K and %D
+    compute_obv_trend            — On-Balance Volume trend: rising/flat/falling
+    compute_supertrend           — Supertrend (10, 3): direction and level
+    compute_technical_status_v3  — Signal v3: adds RS bonus, 52W high/low, OBV confirmation
 """
 
 import math
@@ -420,6 +426,308 @@ def compute_technical_status_v2(
     # of real signals should remain roughly similar.
     if score >= 5:
         return (score, "🚀 Strong Buy (Trend + Momentum)")
+    if score >= 3:
+        return (score, "✅ Buy / Accumulate")
+    if score >= 1:
+        return (score, "📈 Mild Bullish")
+    if score <= -3:
+        return (score, "🔻 Sell / Avoid")
+    if score <= -1:
+        return (score, "📉 Mild Bearish")
+    return (score, "⚖️ Neutral / Hold")
+
+
+# ── Bollinger Bands ───────────────────────────────────────────────────────────
+
+def compute_bollinger_bands(closes: list, period: int = 20, num_std: float = 2.0):
+    """
+    Bollinger Bands (period, num_std).
+
+    Returns {"upper": float, "lower": float, "mid": float, "position": float}
+    where position is 0-100 (0 = at lower band, 100 = at upper band).
+    Returns None if insufficient data.
+    """
+    if len(closes) < period:
+        return None
+    window = closes[-period:]
+    mid = sum(window) / period
+    variance = sum((x - mid) ** 2 for x in window) / period
+    std = math.sqrt(variance)
+    upper = mid + num_std * std
+    lower = mid - num_std * std
+    cmp = closes[-1]
+    band_width = upper - lower
+    position = ((cmp - lower) / band_width * 100.0) if band_width > 0 else 50.0
+    position = max(0.0, min(100.0, position))
+    return {"upper": upper, "lower": lower, "mid": mid, "position": position}
+
+
+# ── ATR ───────────────────────────────────────────────────────────────────────
+
+def compute_atr(highs: list, lows: list, closes: list, period: int = 14):
+    """
+    Average True Range (Wilder's smoothing).
+
+    Returns {"atr": float, "atr_pct": float} or None if insufficient data.
+    atr_pct = ATR as % of the last close price.
+    """
+    n = len(closes)
+    if n < period + 1 or n != len(highs) or n != len(lows):
+        return None
+
+    tr_list = []
+    for i in range(1, n):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        tr_list.append(tr)
+
+    if len(tr_list) < period:
+        return None
+
+    atr = sum(tr_list[:period]) / period
+    for tr in tr_list[period:]:
+        atr = (atr * (period - 1) + tr) / period
+
+    if not math.isfinite(atr) or closes[-1] == 0:
+        return None
+
+    atr_pct = atr / closes[-1] * 100.0
+    return {"atr": atr, "atr_pct": atr_pct}
+
+
+# ── Stochastic Oscillator ─────────────────────────────────────────────────────
+
+def compute_stochastic(highs: list, lows: list, closes: list, k_period: int = 14, d_period: int = 3):
+    """
+    Stochastic Oscillator (%K, %D).
+
+    Returns {"k": float, "d": float} or None if insufficient data.
+    %K = (close - lowest_low) / (highest_high - lowest_low) * 100
+    %D = 3-period SMA of %K
+    """
+    n = len(closes)
+    if n < k_period + d_period - 1 or n != len(highs) or n != len(lows):
+        return None
+
+    k_series = []
+    for i in range(k_period - 1, n):
+        window_h = highs[i - k_period + 1 : i + 1]
+        window_l = lows[i - k_period + 1 : i + 1]
+        hh = max(window_h)
+        ll = min(window_l)
+        if hh == ll:
+            k_series.append(50.0)
+        else:
+            k_series.append((closes[i] - ll) / (hh - ll) * 100.0)
+
+    if len(k_series) < d_period:
+        return None
+
+    k = k_series[-1]
+    d = sum(k_series[-d_period:]) / d_period
+    return {"k": k, "d": d}
+
+
+# ── OBV Trend ─────────────────────────────────────────────────────────────────
+
+def compute_obv_trend(closes: list, volumes: list, lookback: int = 10) -> str:
+    """
+    On-Balance Volume trend direction based on OBV slope over `lookback` bars.
+
+    Returns: "rising" | "falling" | "flat" | None
+    """
+    n = len(closes)
+    if n < lookback + 2 or n != len(volumes):
+        return None
+
+    segment = list(zip(closes[-(lookback + 1):], volumes[-(lookback + 1):]))
+    obv = 0.0
+    obv_series = []
+    for i, (c, v) in enumerate(segment):
+        if i == 0:
+            obv_series.append(0.0)
+            continue
+        prev_c = segment[i - 1][0]
+        if c > prev_c:
+            obv += v
+        elif c < prev_c:
+            obv -= v
+        obv_series.append(obv)
+
+    if len(obv_series) < 2:
+        return None
+
+    slope = obv_series[-1] - obv_series[0]
+    avg_abs = sum(abs(x) for x in obv_series) / len(obv_series)
+    if avg_abs == 0:
+        return "flat"
+    rel_slope = slope / avg_abs
+    if rel_slope > 0.1:
+        return "rising"
+    if rel_slope < -0.1:
+        return "falling"
+    return "flat"
+
+
+# ── Supertrend ────────────────────────────────────────────────────────────────
+
+def compute_supertrend(highs: list, lows: list, closes: list, period: int = 10, multiplier: float = 3.0):
+    """
+    Supertrend indicator.
+
+    Returns {"direction": "bullish" | "bearish", "level": float} or None.
+    """
+    n = len(closes)
+    if n < period + 2 or n != len(highs) or n != len(lows):
+        return None
+
+    tr_list = []
+    for i in range(1, n):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        tr_list.append(tr)
+
+    if len(tr_list) < period:
+        return None
+
+    atr_series = [None] * (period - 1)
+    atr_val = sum(tr_list[:period]) / period
+    atr_series.append(atr_val)
+    for tr in tr_list[period:]:
+        atr_val = (atr_val * (period - 1) + tr) / period
+        atr_series.append(atr_val)
+
+    hl2 = [(highs[i] + lows[i]) / 2 for i in range(n)]
+
+    direction = 1
+    upper_band = None
+    lower_band = None
+
+    for i in range(1, n):
+        atr_i = atr_series[i - 1]
+        if atr_i is None:
+            continue
+        basic_upper = hl2[i] + multiplier * atr_i
+        basic_lower = hl2[i] - multiplier * atr_i
+
+        if upper_band is None:
+            upper_band = basic_upper
+            lower_band = basic_lower
+        else:
+            upper_band = min(basic_upper, upper_band) if closes[i - 1] < upper_band else basic_upper
+            lower_band = max(basic_lower, lower_band) if closes[i - 1] > lower_band else basic_lower
+
+        if direction == 1 and closes[i] < lower_band:
+            direction = -1
+        elif direction == -1 and closes[i] > upper_band:
+            direction = 1
+
+    level = lower_band if direction == 1 else upper_band
+    if level is None or not math.isfinite(level):
+        return None
+
+    return {
+        "direction": "bullish" if direction == 1 else "bearish",
+        "level": level,
+    }
+
+
+# ── Technical Status v3 ───────────────────────────────────────────────────────
+
+def compute_technical_status_v3(
+    cmp, rsi, sma_50, sma_200, sma_200_slope,
+    macd_line, macd_signal, macd_histogram,
+    adx, volume_ratio,
+    high_52w=None, low_52w=None,
+    obv_trend=None,
+) -> tuple:
+    """
+    v3 scoring: extends v2 with 52W high/low proximity and OBV trend confirmation.
+
+    Scoring bands:
+      ≥ 7  🟢 Strong Bullish
+      5-6  🟡 Moderately Bullish
+      3-4  ✅ Buy / Accumulate
+      1-2  📈 Mild Bullish
+      ≤ -3 🔻 Sell / Avoid
+      ≤ -1 📉 Mild Bearish
+         0  ⚖️ Neutral / Hold
+
+    Returns (score: float, label: str).
+    """
+    if any(x is None for x in [cmp, rsi, sma_50, sma_200, macd_line, macd_signal, macd_histogram]):
+        return (0, "⚪ Insufficient Data")
+
+    score = 0.0
+
+    # --- 1. TREND (identical to v2) ---
+    if cmp > sma_50 > sma_200:
+        score += 3.0 if (sma_200_slope is not None and sma_200_slope > 1.0) else 2.0
+    elif cmp > sma_200:
+        if sma_200_slope is not None:
+            if sma_200_slope > 1.0:
+                score += 1.5
+            elif sma_200_slope < -1.0:
+                score += 0.0
+            else:
+                score += 0.5
+        else:
+            score += 1.0
+    elif cmp < sma_200:
+        score -= 3.0 if (sma_200_slope is not None and sma_200_slope < -1.0) else 2.0
+
+    # --- 2. MOMENTUM (MACD) ---
+    if macd_histogram > 0 and macd_line > 0:
+        score += 2.0
+    elif macd_histogram > 0:
+        score += 1.0
+    elif macd_histogram < 0 and macd_line < 0:
+        score -= 2.0
+    elif macd_histogram < 0:
+        score -= 1.0
+
+    # --- 3. ADX amplifier ---
+    if adx is not None and adx > 25:
+        score = score * 1.3
+
+    # --- 4. VOLUME CONFIRMATION ---
+    if volume_ratio is not None:
+        if volume_ratio >= 1.5 and score > 0:
+            score += 1.0
+        elif volume_ratio >= 1.5 and score < 0:
+            score -= 1.0
+
+    # --- 5. 52W HIGH PROXIMITY (new in v3) ---
+    if high_52w is not None and high_52w > 0:
+        pct_from_high = (high_52w - cmp) / high_52w * 100.0
+        if pct_from_high <= 10.0:
+            score += 1.0
+        elif pct_from_high >= 30.0:
+            score -= 1.0
+
+    # --- 6. OBV TREND CONFIRMATION (new in v3) ---
+    if obv_trend == "rising" and score > 0:
+        score += 1.0
+    elif obv_trend == "falling" and score < 0:
+        score -= 1.0
+
+    # --- 7. RSI OVERRIDE ---
+    if rsi >= 80 and score < 2:
+        return (score, "⚠️ Overbought – Risk of Pullback")
+    if rsi <= 20 and score > -2:
+        return (score, "🔥 Oversold – Possible Bounce")
+
+    # --- 8. V3 LABEL MAPPING ---
+    if score >= 7:
+        return (score, "🟢 Strong Bullish")
+    if score >= 5:
+        return (score, "🟡 Moderately Bullish")
     if score >= 3:
         return (score, "✅ Buy / Accumulate")
     if score >= 1:

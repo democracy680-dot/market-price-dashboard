@@ -1164,6 +1164,17 @@ def render_global_markets_tab():
     quotes, _  = _fetch_quotes()
     intraday   = _fetch_intraday_all()
 
+    # Stale-data fallback: persist last successful fetch and warn when current is empty
+    all_none = all(v is None for v in quotes.values())
+    if not all_none:
+        st.session_state['gm_last_good_data'] = {'quotes': quotes, 'intraday': intraday, 'at': datetime.now()}
+    elif 'gm_last_good_data' in st.session_state:
+        cached = st.session_state['gm_last_good_data']
+        quotes   = cached['quotes']
+        intraday = cached['intraday']
+        ago = int((datetime.now() - cached['at']).total_seconds() // 60)
+        st.warning(f"⚠️ Live market data unavailable — showing cached values from {ago} minute(s) ago")
+
     # Build structured list
     structured = [
         {

@@ -1,5 +1,5 @@
 """
-fetcher.py — yfinance wrapper with batching and error handling.
+fetcher.py — yfinance wrapper with batching, retry logic, and error handling.
 
 Fetches OHLCV data for batches of NSE stocks. Never aborts on a single
 bad ticker — logs and continues.
@@ -7,6 +7,7 @@ bad ticker — logs and continues.
 
 import time
 import logging
+from functools import wraps
 import concurrent.futures
 import pandas as pd
 import yfinance as yf
@@ -23,6 +24,37 @@ def _chunks(lst: list, n: int):
         yield lst[i : i + n]
 
 
+def with_retry(max_attempts: int = 3, backoff: float = 2.0):
+    """Decorator that retries a function on failure with exponential backoff.
+    Skips retry if the result is non-None and non-empty.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            last_exc = None
+            for attempt in range(max_attempts):
+                try:
+                    result = fn(*args, **kwargs)
+                    # Accept result if it's non-None and non-empty
+                    is_empty = hasattr(result, "empty") and result.empty
+                    if result is not None and not is_empty:
+                        return result
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < max_attempts - 1:
+                        wait = backoff ** attempt
+                        logger.warning(
+                            f"{fn.__name__} attempt {attempt + 1}/{max_attempts} failed: {exc}. "
+                            f"Retrying in {wait:.0f}s..."
+                        )
+                        time.sleep(wait)
+            if last_exc:
+                raise last_exc
+            return result
+        return wrapper
+    return decorator
+
+
 def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
     """
     Fetch 2 years of daily OHLCV for all yahoo_symbols.
@@ -35,19 +67,23 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
     batches = list(_chunks(yahoo_symbols, BATCH_SIZE))
     logger.info(f"Fetching {len(yahoo_symbols)} symbols in {len(batches)} batches")
 
+    @with_retry(max_attempts=3, backoff=2.0)
+    def _download_batch(batch):
+        return yf.download(
+            tickers=batch,
+            period="2y",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=True,
+        )
+
     for i, batch in enumerate(batches, 1):
         logger.info(f"  Batch {i}/{len(batches)} ({len(batch)} symbols)...")
         try:
-            raw = yf.download(
-                tickers=batch,
-                period="2y",          # 2 years → ~500 trading days, enough for 200DMA + 365D return
-                interval="1d",
-                auto_adjust=False,    # unadjusted Close matches NSE/screener prices
-                progress=False,
-                threads=True,
-            )
+            raw = _download_batch(batch)
         except Exception as e:
-            logger.warning(f"  Batch {i} failed entirely: {e}")
+            logger.warning(f"  Batch {i} failed entirely after retries: {e}")
             continue
 
         if raw.empty:

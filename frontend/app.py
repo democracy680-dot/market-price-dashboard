@@ -538,7 +538,7 @@ def _check_password():
                 <hr class="lp-divider">
             </div>
             """, unsafe_allow_html=True)
-            pw = st.text_input("", type="password", placeholder="Enter password…",
+            pw = st.text_input("Password", type="password", placeholder="Enter password…",
                                label_visibility="collapsed")
             if st.button("Sign In →", use_container_width=True, type="primary"):
                 if pw == correct:
@@ -651,6 +651,17 @@ def _get_engine():
 # PERF: Engine is cached via @st.cache_resource — near-zero on warm runs
 with measure("get_engine"):
     engine = _get_engine()
+
+# Health check endpoint — ?health=true returns JSON status without rendering the full app
+if st.query_params.get("health") == "true":
+    try:
+        with engine.connect() as _hc_conn:
+            _hc_conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    st.json({"status": "ok" if db_ok else "degraded", "version": "2.0.0", "db": db_ok})
+    st.stop()
 
 # ---------------------------------------------------------------------------
 # Universe definitions
@@ -1481,6 +1492,9 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
 
 
 def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
+    if df.empty:
+        st.info("No stocks match the current filters. Try relaxing the RSI range, removing the sector filter, or switching to a broader index.")
+        return
     total = len(df)
     pages = max(1, (total + page_size - 1) // page_size)
 
@@ -2875,6 +2889,10 @@ def render_scanner_tab():
     m3.metric("Reversal Setups", reversals)
 
     st.divider()
+
+    if filtered.empty:
+        st.info("No setup candidates match the current filters. Try selecting 'All' for Category, Pattern, or Sector.")
+        return
 
     # ── Table ────────────────────────────────────────────────────────────────
     display = filtered[[
