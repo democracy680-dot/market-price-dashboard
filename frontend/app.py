@@ -756,13 +756,6 @@ try:
 except Exception:
     pass
 
-# News headline ticker bar (below stock price ticker)
-try:
-    from news_ticker import render_news_ticker
-    render_news_ticker(engine)
-except Exception:
-    pass
-
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -792,6 +785,13 @@ def _get_engine():
 # PERF: Engine is cached via @st.cache_resource — near-zero on warm runs
 with measure("get_engine"):
     engine = _get_engine()
+
+# News headline ticker bar (below stock price ticker) — needs engine
+try:
+    from news_ticker import render_news_ticker
+    render_news_ticker(engine)
+except Exception:
+    pass
 
 # Health check endpoint — ?health=true returns JSON status without rendering the full app
 if st.query_params.get("health") == "true":
