@@ -2738,7 +2738,8 @@ def _render_news_card(row, col):
         title   = row.get("title", "")
         url     = row.get("url", "#")
         summary = row.get("summary", "") or ""
-        symbols = row.get("symbols", "") or ""
+        _sym_raw = row.get("symbols")
+        symbols  = "" if _sym_raw is None or (isinstance(_sym_raw, float) and _sym_raw != _sym_raw) else str(_sym_raw)
         age     = _fmt_news_age(row.get("published_at"))
 
         # Symbol pills
