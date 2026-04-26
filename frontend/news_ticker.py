@@ -6,7 +6,7 @@ Uses st.html() for direct HTML injection without markdown processing.
 import streamlit as st
 from sqlalchemy import text
 
-NEWS_TICKER_HEIGHT  = 28
+NEWS_TICKER_HEIGHT  = 36
 TOTAL_HEADER_HEIGHT = NEWS_TICKER_HEIGHT
 
 
@@ -42,8 +42,8 @@ def render_news_ticker(engine):
         url   = h["url"].replace('"', "%22")
         items_html += (
             f'<span style="display:inline-flex;align-items:center;gap:6px;padding:0 10px;height:100%">'
-            f'<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:#f59e0b;text-transform:uppercase;white-space:nowrap;flex-shrink:0">{src}</span>'
-            f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="font-size:10.5px;font-weight:500;color:#94a3b8;text-decoration:none;white-space:nowrap">{title}</a>'
+            f'<span style="font-size:10px;font-weight:700;letter-spacing:0.8px;color:#f59e0b;text-transform:uppercase;white-space:nowrap;flex-shrink:0">{src}</span>'
+            f'<a href="{url}" target="_blank" rel="noopener noreferrer" style="font-size:13px;font-weight:500;color:#94a3b8;text-decoration:none;white-space:nowrap">{title}</a>'
             f'</span>'
             f'<span style="font-size:9px;color:rgba(245,158,11,0.35);padding:0 4px;flex-shrink:0">&#183;</span>'
         )
@@ -92,7 +92,7 @@ header[data-testid="stHeader"]     {{ top: {TOTAL_HEADER_HEIGHT}px !important; }
 
 <div id="news-ticker">
   <div id="nt-outer">
-    <div style="flex-shrink:0;font-size:8px;font-weight:800;letter-spacing:1.4px;color:#f59e0b;padding:0 12px;white-space:nowrap">NEWS</div>
+    <div style="flex-shrink:0;font-size:11px;font-weight:800;letter-spacing:1.4px;color:#f59e0b;padding:0 14px;white-space:nowrap">NEWS</div>
     <div style="width:1px;height:14px;background:rgba(245,158,11,0.25);flex-shrink:0"></div>
     <div id="nt-track">
       <div id="nt-scroll">{scroll_html}</div>
