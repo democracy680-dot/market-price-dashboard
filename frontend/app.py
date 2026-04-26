@@ -480,53 +480,103 @@ def _check_password():
     st.markdown("""
     <style>
         [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stAppViewContainer"] {
+            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%) !important;
+            background-attachment: fixed !important;
+        }
+        [data-testid="stAppViewContainer"]::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/G%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 0;
+        }
 
         /* hide "Press Enter to apply" hint on password field */
         .stTextInput div[data-baseweb="input"] ~ div small,
         .stTextInput [class*="InputInstructions"],
         .stTextInput ~ div > small { display: none !important; }
 
-        /* Style the login card (st.container with border=True) */
+        /* Frosted glass card */
         [data-testid="stVerticalBlockBorderWrapper"] {
-            background: #0c1220 !important;
-            border: 1px solid #1e2d45 !important;
+            background: rgba(12, 18, 32, 0.82) !important;
+            backdrop-filter: blur(24px) !important;
+            -webkit-backdrop-filter: blur(24px) !important;
+            border: 1px solid rgba(59, 130, 246, 0.22) !important;
             border-radius: 24px !important;
-            box-shadow: 0 32px 80px rgba(0,0,0,0.6) !important;
+            box-shadow: 0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.06) !important;
         }
         [data-testid="stVerticalBlockBorderWrapper"] > div {
             padding: 12px 32px 24px !important;
         }
+
+        /* Input field styling */
+        .stTextInput input {
+            background: rgba(255,255,255,0.05) !important;
+            border: 1px solid rgba(59,130,246,0.2) !important;
+            border-radius: 10px !important;
+            color: #94a3b8 !important;
+        }
+        .stTextInput input:focus {
+            border-color: rgba(59,130,246,0.5) !important;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
+        }
+
+        /* Sign In button */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(90deg, #1d4ed8, #3b82f6) !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+            box-shadow: 0 4px 20px rgba(37,99,235,0.35) !important;
+            transition: box-shadow 0.2s !important;
+        }
+        .stButton > button[kind="primary"]:hover {
+            box-shadow: 0 6px 28px rgba(37,99,235,0.55) !important;
+        }
+
         .lp-logo-icon {
-            width: 56px; height: 56px; border-radius: 14px;
+            width: 60px; height: 60px; border-radius: 16px;
             background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
             display: inline-flex; align-items: center; justify-content: center;
             margin: 8px auto 18px;
+            box-shadow: 0 8px 32px rgba(37,99,235,0.4);
         }
         .lp-name {
             font-size: 32px; font-weight: 800; color: #f1f5f9;
             letter-spacing: -0.05em; margin: 0 0 6px;
         }
-        .lp-name span { color: #3b82f6; }
+        .lp-name span { color: #60a5fa; }
         .lp-tagline {
-            font-size: 12px; color: #334155; letter-spacing: 0.08em;
+            font-size: 12px; color: #1e3a5f; letter-spacing: 0.1em;
             text-transform: uppercase; font-weight: 500; margin-bottom: 24px;
         }
-        .lp-divider { border: none; border-top: 1px solid #1a2740; margin: 0 0 20px; }
+        .lp-divider { border: none; border-top: 1px solid rgba(59,130,246,0.12); margin: 0 0 20px; }
         .lp-footer {
-            text-align: center; font-size: 11px; color: #2d3f57;
+            text-align: center; font-size: 11px; color: #1e3a5f;
             margin-top: 12px; letter-spacing: 0.02em;
         }
+        .lp-credit {
+            text-align: center; margin-top: 10px; font-size: 11px; color: #1e3a5f;
+            line-height: 1.8;
+        }
+        .lp-credit a {
+            color: #3b82f6; text-decoration: none; font-weight: 600;
+        }
+        .lp-credit a:hover { text-decoration: underline; }
     </style>
     """, unsafe_allow_html=True)
 
-    st.markdown("<div style='min-height:12vh'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='min-height:10vh'></div>", unsafe_allow_html=True)
     _, col, _ = st.columns([1, 1.4, 1])
     with col:
         with st.container(border=True):
             st.markdown("""
             <div style="text-align:center; padding-top:12px;">
                 <div class="lp-logo-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24"
+                    <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"
                          fill="none" stroke="white" stroke-width="2.5"
                          stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
@@ -546,10 +596,14 @@ def _check_password():
                     st.rerun()
                 else:
                     st.error("Incorrect password.")
-            st.markdown(
-                "<div class='lp-footer'>Restricted access · Authorised users only</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown("""
+                <div class='lp-footer'>Restricted access · Authorised users only</div>
+                <div class='lp-credit'>
+                    Built by <a href='https://linkedin.com/in/sumit-meena-9559422a8' target='_blank'>Sumit Meena</a>
+                    &nbsp;·&nbsp;
+                    <a href='mailto:sumitmeena680@gmail.com'>sumitmeena680@gmail.com</a>
+                </div>
+            """, unsafe_allow_html=True)
     st.stop()
 
 
