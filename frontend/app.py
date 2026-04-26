@@ -756,6 +756,13 @@ try:
 except Exception:
     pass
 
+# News headline ticker bar (below stock price ticker)
+try:
+    from news_ticker import render_news_ticker
+    render_news_ticker(engine)
+except Exception:
+    pass
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -2616,6 +2623,263 @@ def _frag_technical_analysis(refresh_ts=None):
     render_technical_analysis_view(refresh_ts)
 
 
+# ---------------------------------------------------------------------------
+# News helpers
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_news(query: str, sources_tuple: tuple, symbol: str) -> pd.DataFrame:
+    from datetime import timezone as _tz
+    try:
+        sources_list = list(sources_tuple)
+        params: dict = {
+            "query":        query.strip(),
+            "sources_json": sources_list,
+            "symbol":       symbol.strip(),
+        }
+        with engine.connect() as conn:
+            if not query.strip() and not sources_list and not symbol.strip():
+                sql = text("""
+                    SELECT a.article_id, a.title, a.url,
+                           ns.display_name AS source_name,
+                           a.published_at, a.summary,
+                           STRING_AGG(nas.symbol, ', ' ORDER BY nas.symbol) AS symbols
+                    FROM news_articles a
+                    JOIN news_sources ns ON ns.source_id = a.source_id
+                    LEFT JOIN news_article_symbols nas ON nas.article_id = a.article_id
+                    WHERE a.published_at >= NOW() - INTERVAL '7 days'
+                    GROUP BY a.article_id, a.title, a.url, ns.display_name, a.published_at, a.summary
+                    ORDER BY a.published_at DESC
+                    LIMIT 100
+                """)
+                df = pd.read_sql(sql, conn)
+            else:
+                conditions = ["a.published_at >= NOW() - INTERVAL '7 days'"]
+                if query.strip():
+                    conditions.append("a.ts_vector @@ plainto_tsquery('english', :query)")
+                if sources_list:
+                    conditions.append("ns.display_name = ANY(:sources_arr)")
+                if symbol.strip():
+                    conditions.append(
+                        "EXISTS (SELECT 1 FROM news_article_symbols x "
+                        "WHERE x.article_id = a.article_id AND x.symbol = :symbol)"
+                    )
+                where = " AND ".join(conditions)
+                raw_params: dict = {}
+                if query.strip():
+                    raw_params["query"] = query.strip()
+                if sources_list:
+                    raw_params["sources_arr"] = sources_list
+                if symbol.strip():
+                    raw_params["symbol"] = symbol.strip()
+                sql = text(f"""
+                    SELECT a.article_id, a.title, a.url,
+                           ns.display_name AS source_name,
+                           a.published_at, a.summary,
+                           STRING_AGG(nas.symbol, ', ' ORDER BY nas.symbol) AS symbols
+                    FROM news_articles a
+                    JOIN news_sources ns ON ns.source_id = a.source_id
+                    LEFT JOIN news_article_symbols nas ON nas.article_id = a.article_id
+                    WHERE {where}
+                    GROUP BY a.article_id, a.title, a.url, ns.display_name, a.published_at, a.summary
+                    ORDER BY a.published_at DESC
+                    LIMIT 100
+                """)
+                df = pd.read_sql(sql, conn, params=raw_params)
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _load_news_source_stats() -> pd.DataFrame:
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(
+                text("""
+                    SELECT ns.display_name AS source_name, COUNT(*) AS article_count
+                    FROM news_articles a
+                    JOIN news_sources ns ON ns.source_id = a.source_id
+                    WHERE a.published_at >= NOW() - INTERVAL '24 hours'
+                    GROUP BY ns.display_name
+                    ORDER BY article_count DESC
+                """),
+                conn,
+            )
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def _fmt_news_age(published_at) -> str:
+    from datetime import datetime, timezone
+    if published_at is None:
+        return ""
+    try:
+        now = datetime.now(timezone.utc)
+        if hasattr(published_at, "tzinfo") and published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        delta = now - published_at
+        secs = delta.total_seconds()
+        if secs < 3600:
+            return f"{int(secs / 60)}m ago"
+        if secs < 86400:
+            return f"{int(secs / 3600)}h ago"
+        if secs < 172800:
+            return "Yesterday"
+        return published_at.strftime("%b %-d")
+    except Exception:
+        return ""
+
+
+def _render_news_card(row, col):
+    with col:
+        src     = row.get("source_name", "")
+        title   = row.get("title", "")
+        url     = row.get("url", "#")
+        summary = row.get("summary", "") or ""
+        symbols = row.get("symbols", "") or ""
+        age     = _fmt_news_age(row.get("published_at"))
+
+        # Symbol pills
+        sym_pills = ""
+        if symbols:
+            for sym in symbols.split(", ")[:5]:
+                sym_pills += (
+                    f"<span style='background:{_T['bg_tag']};color:{_T['text_accent']};"
+                    f"border:1px solid {_T['bd_tag']};border-radius:4px;"
+                    f"font-size:9px;font-weight:700;padding:1px 6px;margin-right:4px;"
+                    f"letter-spacing:0.5px;'>{sym}</span>"
+                )
+
+        card_html = f"""
+<div style='background:{"#0f1729" if _dark else "#ffffff"};
+     border:1px solid {_T["bd_card"]};border-radius:10px;
+     padding:14px 16px 12px;margin-bottom:10px;'>
+  <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>
+    <span style='font-size:9px;font-weight:800;letter-spacing:1.2px;
+          color:#f59e0b;text-transform:uppercase;'>{src}</span>
+    <span style='font-size:10px;color:{_T["text_muted"]};'>{age}</span>
+  </div>
+  <div style='margin-bottom:6px;'>
+    <a href='{url}' target='_blank' rel='noopener noreferrer'
+       style='font-size:13.5px;font-weight:600;color:{_T["card_title"]};
+              text-decoration:none;line-height:1.45;'>
+      {title}
+    </a>
+  </div>
+  <div style='font-size:11.5px;color:{_T["text_muted"]};line-height:1.55;
+       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+       overflow:hidden;margin-bottom:8px;'>
+    {summary[:300]}
+  </div>
+  <div style='display:flex;align-items:center;justify-content:space-between;'>
+    <div>{sym_pills}</div>
+    <a href='{url}' target='_blank' rel='noopener noreferrer'
+       style='font-size:10px;color:{_T["text_accent"]};text-decoration:none;
+              font-weight:600;'>Read →</a>
+  </div>
+</div>"""
+        st.markdown(card_html, unsafe_allow_html=True)
+
+
+@st.fragment
+def _frag_news():
+    _ALL_SOURCES = [
+        "Economic Times", "Moneycontrol", "Business Standard",
+        "Livemint", "Financial Express", "NDTV Profit", "Business Line",
+    ]
+
+    sub_all, sub_company, sub_source = st.tabs(["All News", "By Company", "By Source"])
+
+    # ── All News ─────────────────────────────────────────────────────────────
+    with sub_all:
+        col_q, col_src, col_sym = st.columns([3, 2, 2])
+        with col_q:
+            query = st.text_input(
+                "Search", placeholder="RBI, Nifty, earnings, SEBI…",
+                label_visibility="collapsed", key="news_search",
+            )
+        with col_src:
+            sel_sources = st.multiselect(
+                "Sources", _ALL_SOURCES, placeholder="All sources", key="news_sources",
+                label_visibility="collapsed",
+            )
+        with col_sym:
+            syms_df = load_all_symbols()
+            sym_opts = [""] + sorted(syms_df["symbol"].tolist())
+            sel_sym = st.selectbox(
+                "Company", sym_opts,
+                format_func=lambda x: x if x else "All companies",
+                key="news_sym", label_visibility="collapsed",
+            )
+
+        df = _load_news(query, tuple(sel_sources), sel_sym)
+
+        if df.empty:
+            st.info("No articles found. News refreshes every 2 hours — check back soon.")
+        else:
+            st.caption(f"{len(df)} articles (last 7 days)")
+            col_a, col_b = st.columns(2)
+            for i, (_, row) in enumerate(df.iterrows()):
+                _render_news_card(row, col_a if i % 2 == 0 else col_b)
+
+    # ── By Company ───────────────────────────────────────────────────────────
+    with sub_company:
+        syms_df2 = load_all_symbols()
+        sym_opts2 = [""] + sorted(syms_df2["symbol"].tolist())
+        sel_sym2  = st.selectbox(
+            "Select company / symbol", sym_opts2,
+            format_func=lambda x: x if x else "Choose a company…",
+            key="news_company_sym",
+        )
+        if sel_sym2:
+            df2 = _load_news("", (), sel_sym2)
+            if df2.empty:
+                st.info(f"No recent articles mentioning **{sel_sym2}**.")
+            else:
+                st.caption(f"{len(df2)} articles mentioning {sel_sym2}")
+                col_a2, col_b2 = st.columns(2)
+                for i, (_, row) in enumerate(df2.iterrows()):
+                    _render_news_card(row, col_a2 if i % 2 == 0 else col_b2)
+        else:
+            st.info("Select a company to see all related news articles.")
+
+    # ── By Source ────────────────────────────────────────────────────────────
+    with sub_source:
+        stats_df = _load_news_source_stats()
+        if not stats_df.empty:
+            fig = px.bar(
+                stats_df, x="article_count", y="source_name",
+                orientation="h", text="article_count",
+                color_discrete_sequence=["#f59e0b"],
+                labels={"article_count": "Articles (last 24h)", "source_name": ""},
+            )
+            fig.update_layout(
+                height=240, margin=dict(l=0, r=20, t=10, b=10),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color=_T["text_muted"], size=11),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False),
+            )
+            fig.update_traces(textposition="outside", textfont_size=11)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        sel_src_only = st.selectbox(
+            "Filter by source", ["All"] + _ALL_SOURCES, key="news_src_only",
+        )
+        src_filter = [] if sel_src_only == "All" else [sel_src_only]
+        df3 = _load_news("", tuple(src_filter), "")
+        if df3.empty:
+            st.info("No articles for this source in the last 7 days.")
+        else:
+            st.caption(f"{len(df3)} articles")
+            col_a3, col_b3 = st.columns(2)
+            for i, (_, row) in enumerate(df3.iterrows()):
+                _render_news_card(row, col_a3 if i % 2 == 0 else col_b3)
+
+
 @st.fragment
 def _frag_sector_performance(snap_date, refresh_ts=None):
     sector_df = load_sector_performance(snap_date, refresh_ts)
@@ -3499,7 +3763,7 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_scanner, tab_upload = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
@@ -3509,6 +3773,7 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical,
     "🔬 Technical Analysis",
     "📡 Scanner",
     "Custom Upload",
+    "📰 News",
 ])
 
 _TAB_DESCRIPTIONS = {
@@ -3590,6 +3855,18 @@ _TAB_DESCRIPTIONS = {
             "**CSV Export** — download the enriched data for any matched stocks",
         ],
         "how": "Bring your own watchlist and get the full power of the dashboard applied to it instantly. Useful for analysing a portfolio, a broker's recommended list, an index constituent file, or any curated set of stocks. There is no need to manually search for each ticker — upload once and the platform fetches all available data for every matched symbol from the same date-specific snapshot used by every other tab.",
+    },
+    "news": {
+        "what": [
+            "**7 Live Feeds** — Economic Times, Moneycontrol, Business Standard, Livemint, Financial Express, NDTV Profit, and Business Line — refreshed every 2 hours",
+            "**Stock-Linked Articles** — articles are auto-tagged with the NSE symbols mentioned in their title or summary",
+            "**Full-Text Search** — search across all article titles and summaries (company name, topic, keyword)",
+            "**Source Filter** — focus on one or more specific publications",
+            "**Company Filter** — see every article mentioning a specific NSE-listed stock",
+            "**Article Cards** — source, publication time, headline, 2-line summary, and a direct link to the original article",
+            "**Scrolling Headline Ticker** — the amber bar at the top of every page shows the latest headlines at all times",
+        ],
+        "how": "News is the fastest-moving input for short-term traders. Use the company filter to pull all recent coverage of a stock before taking a position. The headline ticker keeps you aware of breaking stories even while you are on other tabs. Articles are matched to ~1500 NSE-listed companies using keyword and symbol detection, so filtering by RELIANCE or HDFCBANK instantly surfaces only relevant articles.",
     },
 }
 
@@ -3755,6 +4032,11 @@ with tab_scanner:
 with tab_gm:
     _page_header("Global Markets", desc_key="global_markets")
     _frag_global_markets()
+
+# ── Tab 10: News ──────────────────────────────────────────────────────────────
+with tab_news:
+    _page_header("Market News", desc_key="news")
+    _frag_news()
 
 # PERF: Show timing panel at the bottom — only visible when DEBUG=true
 show_perf_panel()

@@ -1,0 +1,33 @@
+name: News Refresh
+
+on:
+  schedule:
+    # Every 2 hours, every day (news runs 7 days a week)
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+    # Manual trigger via GitHub UI for testing
+
+jobs:
+  news:
+    name: Fetch and store news articles
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run news fetcher
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        working-directory: backend
+        run: python news_fetcher.py
