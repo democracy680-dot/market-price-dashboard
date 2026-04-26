@@ -23,8 +23,8 @@ CREATE INDEX IF NOT EXISTS idx_technicals_signal_date
 -- already exist in schema_themes.sql — skipping to avoid conflicts.
 
 -- Relative strength sorting
-CREATE INDEX IF NOT EXISTS idx_rs_score_date
-    ON relative_strength_daily(score_1m DESC, date DESC);
+-- Note: idx_rs_daily_date, idx_rs_daily_symbol, idx_rs_daily_bucket_* already
+-- exist in schema_relative_strength.sql — skipping to avoid conflicts.
 
 -- Prices lookups (used by compute pipeline)
 CREATE INDEX IF NOT EXISTS idx_prices_daily_symbol_date
