@@ -18,12 +18,9 @@ CREATE INDEX IF NOT EXISTS idx_technicals_rsi_date
 CREATE INDEX IF NOT EXISTS idx_technicals_signal_date
     ON technicals_daily(signal_score, date DESC);
 
--- Theme membership lookups
-CREATE INDEX IF NOT EXISTS idx_theme_membership_theme
-    ON theme_membership(theme_id);
-
-CREATE INDEX IF NOT EXISTS idx_theme_membership_symbol
-    ON theme_membership(symbol);
+-- Theme membership lookups (column is theme_slug, not theme_id)
+-- Note: idx_theme_membership_theme_slug and idx_theme_membership_symbol
+-- already exist in schema_themes.sql — skipping to avoid conflicts.
 
 -- Relative strength sorting
 CREATE INDEX IF NOT EXISTS idx_rs_score_date
