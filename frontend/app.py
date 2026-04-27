@@ -1860,16 +1860,7 @@ def render_themes_view():
                     st.session_state["theme_sort_period"] = dur_label
                     st.rerun()
 
-        # Inject CSS to highlight the selected return period button
         _active_dur = st.session_state["theme_sort_period"]
-        st.markdown(f"""<style>
-            [data-testid="stButton-theme_dur_{_active_dur}"] button {{
-                background: {"#1d3461" if _dark else "#1d4ed8"} !important;
-                border: 1px solid {"#2d4f8e" if _dark else "#3b82f6"} !important;
-                color: {"#e2e8f0" if _dark else "#ffffff"} !important;
-                font-weight: 700 !important;
-            }}
-        </style>""", unsafe_allow_html=True)
 
         sort_col, sort_label = _THEME_SORT_OPTIONS[st.session_state["theme_sort_period"]]
 
@@ -1893,17 +1884,71 @@ def render_themes_view():
                 st.session_state["_theme_scroll_top"] = True
                 st.rerun()
 
-        # Inject CSS to highlight the selected theme button
+        # Highlight selected buttons via JS — CSS selectors can't reach them in Streamlit 1.53
+        # (button kind/type is a React prop, not an HTML attribute; data-testid has no key)
         _active_slug = st.session_state["selected_theme_slug"]
-        st.markdown(f"""<style>
-            [data-testid="stButton-theme_btn_{_active_slug}"] button {{
-                background: {"#1d3461" if _dark else "#1d4ed8"} !important;
-                border: 1px solid {"#2d4f8e" if _dark else "#3b82f6"} !important;
-                border-left: 3px solid {"#60a5fa" if _dark else "#3b82f6"} !important;
-                color: {"#e2e8f0" if _dark else "#ffffff"} !important;
-                font-weight: 600 !important;
-            }}
-        </style>""", unsafe_allow_html=True)
+        _active_theme_row = themes_df[themes_df["theme_slug"] == _active_slug]
+        _active_theme_name = _active_theme_row.iloc[0]["theme_name"] if not _active_theme_row.empty else ""
+        _sel_bg  = "#1d3461" if _dark else "#1d4ed8"
+        _sel_bd  = "#2d4f8e" if _dark else "#3b82f6"
+        _sel_txt = "#e2e8f0"
+        if _COMPONENTS_HTML_SAFE:
+         components.html(f"""
+<script>
+(function() {{
+  var activeDur   = {repr(_active_dur)};
+  var activeTheme = {repr(_active_theme_name)};
+  var durLabels   = ['1W', '1M', '1Y'];
+  var selBg  = '{_sel_bg}';
+  var selBd  = '{_sel_bd}';
+  var selTxt = '{_sel_txt}';
+
+  function applyHighlights() {{
+    var doc = window.parent.document;
+    var buttons = doc.querySelectorAll('.stButton button');
+    var durDone = false, themeDone = false;
+    buttons.forEach(function(btn) {{
+      var text = btn.innerText.trim();
+      if (durLabels.indexOf(text) !== -1) {{
+        if (text === activeDur) {{
+          btn.style.setProperty('background', selBg, 'important');
+          btn.style.setProperty('border', '1px solid ' + selBd, 'important');
+          btn.style.setProperty('color', selTxt, 'important');
+          btn.style.setProperty('font-weight', '700', 'important');
+          durDone = true;
+        }} else {{
+          btn.style.removeProperty('background');
+          btn.style.removeProperty('border');
+          btn.style.removeProperty('color');
+          btn.style.removeProperty('font-weight');
+        }}
+      }}
+      if (activeTheme && text.startsWith(activeTheme)) {{
+        btn.style.setProperty('background', selBg, 'important');
+        btn.style.setProperty('border-left', '3px solid #3b82f6', 'important');
+        btn.style.setProperty('color', selTxt, 'important');
+        btn.style.setProperty('font-weight', '600', 'important');
+        themeDone = true;
+      }}
+    }});
+    return durDone && themeDone;
+  }}
+
+  var attempts = 0;
+  function tryHighlight() {{
+    if (!applyHighlights() && attempts < 30) {{
+      attempts++;
+      setTimeout(tryHighlight, 100);
+    }}
+  }}
+  tryHighlight();
+
+  var observer = new MutationObserver(function() {{ applyHighlights(); }});
+  observer.observe(window.parent.document.body, {{subtree: true, childList: true, attributes: true}});
+  setTimeout(function() {{ observer.disconnect(); }}, 8000);
+}})();
+</script>
+""", height=0)
 
     # ── Right: stock table for selected theme ────────────────────────────────
     with right_col:
