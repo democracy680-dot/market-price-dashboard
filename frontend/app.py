@@ -1855,11 +1855,21 @@ def render_themes_view():
                 if st.button(
                     dur_label,
                     key=f"theme_dur_{dur_label}",
-                    type="primary" if st.session_state["theme_sort_period"] == dur_label else "secondary",
                     use_container_width=True,
                 ):
                     st.session_state["theme_sort_period"] = dur_label
                     st.rerun()
+
+        # Inject CSS to highlight the selected return period button
+        _active_dur = st.session_state["theme_sort_period"]
+        st.markdown(f"""<style>
+            [data-testid="stButton-theme_dur_{_active_dur}"] button {{
+                background: {"#1d3461" if _dark else "#1d4ed8"} !important;
+                border: 1px solid {"#2d4f8e" if _dark else "#3b82f6"} !important;
+                color: {"#e2e8f0" if _dark else "#ffffff"} !important;
+                font-weight: 700 !important;
+            }}
+        </style>""", unsafe_allow_html=True)
 
         sort_col, sort_label = _THEME_SORT_OPTIONS[st.session_state["theme_sort_period"]]
 
@@ -1874,16 +1884,26 @@ def render_themes_view():
             avg_val = row.get(sort_col)
             avg_str = f"{avg_val * 100:+.1f}%" if pd.notna(avg_val) else "—"
             label = f"{row['theme_name']} ({int(row['actual_stock_count'])})  {avg_str}"
-            is_selected = st.session_state["selected_theme_slug"] == row["theme_slug"]
             if st.button(
                 label,
                 key=f"theme_btn_{row['theme_slug']}",
-                type="primary" if is_selected else "secondary",
                 use_container_width=True,
             ):
                 st.session_state["selected_theme_slug"] = row["theme_slug"]
                 st.session_state["_theme_scroll_top"] = True
                 st.rerun()
+
+        # Inject CSS to highlight the selected theme button
+        _active_slug = st.session_state["selected_theme_slug"]
+        st.markdown(f"""<style>
+            [data-testid="stButton-theme_btn_{_active_slug}"] button {{
+                background: {"#1d3461" if _dark else "#1d4ed8"} !important;
+                border: 1px solid {"#2d4f8e" if _dark else "#3b82f6"} !important;
+                border-left: 3px solid {"#60a5fa" if _dark else "#3b82f6"} !important;
+                color: {"#e2e8f0" if _dark else "#ffffff"} !important;
+                font-weight: 600 !important;
+            }}
+        </style>""", unsafe_allow_html=True)
 
     # ── Right: stock table for selected theme ────────────────────────────────
     with right_col:
