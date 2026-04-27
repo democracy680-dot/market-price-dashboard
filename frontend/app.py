@@ -345,8 +345,7 @@ st.markdown("""
     }
 
     /* ── Theme toggle icon button ── */
-    [data-testid="stMainBlockContainer"] > div:first-child .stButton button,
-    button[kind="secondary"][data-testid*="theme_toggle_main"] {
+    [data-testid*="stButton-theme_toggle_main"] button {
         padding: 4px 10px !important;
         font-size: 16px !important;
         border-radius: 20px !important;
@@ -355,6 +354,14 @@ st.markdown("""
         color: var(--text-primary) !important;
         line-height: 1.4 !important;
         min-height: unset !important;
+    }
+
+    /* ── Selected (primary) button — must win over all other rules ── */
+    .stButton button[kind="primary"] {
+        background: var(--btn-primary-bg) !important;
+        border: 1px solid var(--btn-primary-bd) !important;
+        color: var(--tab-active-text) !important;
+        font-weight: 600 !important;
     }
 
     /* ── Divider ── */
