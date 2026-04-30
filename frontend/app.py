@@ -2873,7 +2873,7 @@ def _frag_news():
         df = _load_news(query, tuple(sel_sources), sel_sym)
 
         if df.empty:
-            st.info("No articles found. News refreshes every 2 hours — check back soon.")
+            st.info("No articles found. News refreshes every 30 minutes — check back soon.")
         else:
             st.caption(f"{len(df)} articles (last 7 days)")
             col_a, col_b = st.columns(2)
@@ -3914,7 +3914,7 @@ _TAB_DESCRIPTIONS = {
     },
     "news": {
         "what": [
-            "**7 Live Feeds** — Economic Times, Moneycontrol, Business Standard, Livemint, Financial Express, NDTV Profit, and Business Line — refreshed every 2 hours",
+            "**7 Live Feeds** — Economic Times, Moneycontrol, Business Standard, Livemint, Financial Express, NDTV Profit, and Business Line — refreshed every 30 minutes",
             "**Stock-Linked Articles** — articles are auto-tagged with the NSE symbols mentioned in their title or summary",
             "**Full-Text Search** — search across all article titles and summaries (company name, topic, keyword)",
             "**Source Filter** — focus on one or more specific publications",
