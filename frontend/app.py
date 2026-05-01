@@ -545,11 +545,20 @@ def _check_password():
             border-radius: 10px !important;
             font-weight: 700 !important;
             letter-spacing: 0.04em !important;
+            color: white !important;
             box-shadow: 0 4px 20px rgba(37,99,235,0.35) !important;
             transition: box-shadow 0.2s !important;
         }
         .stButton > button[kind="primary"]:hover {
             box-shadow: 0 6px 28px rgba(37,99,235,0.55) !important;
+        }
+        .lp-sebi-disclaimer {
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            margin-top: 14px;
+            line-height: 1.5;
+            letter-spacing: 0.01em;
         }
 
         .lp-logo-icon {
@@ -688,6 +697,15 @@ def _check_password():
                     st.rerun()
                 else:
                     st.error("Incorrect password.")
+            st.markdown("""
+                <div class='lp-sebi-disclaimer'>
+                    <strong>Disclaimer:</strong> This platform is for informational and educational purposes only.
+                    It does not constitute investment advice, research, or a recommendation to buy or sell any
+                    securities. Users must conduct their own due diligence. Investments in securities markets are
+                    subject to market risks. Please read all related documents carefully before investing.
+                    <em>Not SEBI registered.</em>
+                </div>
+            """, unsafe_allow_html=True)
             st.markdown(
                 "<div class='lp-footer'>Restricted access · Authorised users only</div>",
                 unsafe_allow_html=True,
