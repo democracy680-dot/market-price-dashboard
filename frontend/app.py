@@ -3002,6 +3002,187 @@ def _frag_sector_performance(snap_date, refresh_ts=None):
 
 
 # ---------------------------------------------------------------------------
+# Minervini Trend Template — query helpers + renderer
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_minervini_pass() -> pd.DataFrame:
+    query = """
+        SELECT m.*, s.name, s.sector
+        FROM latest_minervini_template m
+        JOIN stocks s ON m.symbol = s.symbol
+        WHERE m.template_pass = true AND s.is_active = true
+        ORDER BY m.template_score DESC, m.rs_rank_12m DESC
+    """
+    with engine.connect() as conn:
+        return pd.read_sql(__import__("sqlalchemy").text(query), conn)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_minervini_by_count(min_count: int) -> pd.DataFrame:
+    query = """
+        SELECT m.*, s.name, s.sector
+        FROM latest_minervini_template m
+        JOIN stocks s ON m.symbol = s.symbol
+        WHERE m.criteria_count >= :min_count AND s.is_active = true
+        ORDER BY m.criteria_count DESC, m.template_score DESC, m.rs_rank_12m DESC
+    """
+    with engine.connect() as conn:
+        return pd.read_sql(
+            __import__("sqlalchemy").text(query), conn,
+            params={"min_count": min_count},
+        )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_minervini_all() -> pd.DataFrame:
+    query = """
+        SELECT m.*, s.name, s.sector
+        FROM latest_minervini_template m
+        JOIN stocks s ON m.symbol = s.symbol
+        WHERE s.is_active = true
+        ORDER BY m.criteria_count DESC, m.template_score DESC
+    """
+    with engine.connect() as conn:
+        return pd.read_sql(__import__("sqlalchemy").text(query), conn)
+
+
+def _render_minervini_screener():
+    st.markdown("### ⭐ Mark Minervini Trend Template")
+    st.caption(
+        "Stocks meeting all 8 criteria of Mark Minervini's Trend Template — "
+        "the framework he used to win the U.S. Investing Championship. "
+        "These stocks are in confirmed Stage 2 uptrends."
+    )
+
+    try:
+        df_pass    = _load_minervini_pass()
+        df_partial = _load_minervini_by_count(6)
+        df_partial = df_partial[df_partial["criteria_count"].between(6, 7)] if not df_partial.empty else df_partial
+    except Exception as e:
+        st.warning(
+            f"Minervini data not available yet. Run the backfill first: "
+            f"`python backend/backfill_minervini_template.py`\n\n_{e}_"
+        )
+        return
+
+    # ── Summary cards ─────────────────────────────────────────────────────────
+    strong = int(df_pass[df_pass["template_score"] >= 8].shape[0]) if not df_pass.empty else 0
+    avg_rs = f"{df_pass['rs_rank_12m'].mean():.0f}" if not df_pass.empty else "—"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Pass All 8 Criteria", len(df_pass))
+    c2.metric("Strong Setups (Score 8+)", strong)
+    c3.metric("Partial Pass (6-7 criteria)", len(df_partial))
+    c4.metric("Avg RS Rank (Passing)", avg_rs)
+
+    st.divider()
+
+    # ── Filters ───────────────────────────────────────────────────────────────
+    fc1, fc2, fc3 = st.columns(3)
+    with fc1:
+        view_mode = st.radio(
+            "View",
+            ["Strict (All 8 Pass)", "Lenient (7+ Pass)", "All Criteria Counts"],
+            index=0, horizontal=False, key="minervini_view",
+        )
+    with fc2:
+        min_score = st.slider("Min Template Score", 0.0, 10.0, 5.0, 0.5, key="minervini_min_score")
+    with fc3:
+        min_rs = st.slider("Min RS Rank", 0, 99, 70, 1, key="minervini_min_rs")
+
+    # ── Load + filter ─────────────────────────────────────────────────────────
+    if view_mode == "Strict (All 8 Pass)":
+        df = df_pass.copy()
+        df = df[df["template_score"] >= min_score]
+    elif view_mode == "Lenient (7+ Pass)":
+        df = _load_minervini_by_count(7)
+    else:
+        df = _load_minervini_all()
+
+    if not df.empty and "rs_rank_12m" in df.columns:
+        df = df[df["rs_rank_12m"] >= min_rs]
+    if not df.empty and "template_score" in df.columns and view_mode != "Strict (All 8 Pass)":
+        df = df.sort_values(["template_score", "rs_rank_12m"], ascending=[False, False])
+
+    if df.empty:
+        st.info("No stocks match the current filters. Try lowering the thresholds.")
+    else:
+        st.caption(f"Showing {len(df)} stocks")
+
+        disp_cols = {
+            "symbol":            "Symbol",
+            "name":              "Company",
+            "sector":            "Sector",
+            "cmp":               "CMP",
+            "template_score":    "Score",
+            "criteria_count":    "Criteria",
+            "rs_rank_12m":       "RS Rank",
+            "pct_from_52w_high": "% from 52W High",
+            "pct_above_52w_low": "% above 52W Low",
+            "sma_200_slope_22d": "200 DMA Slope (1M)",
+            "return_12m":        "12M Return",
+        }
+        available = [c for c in disp_cols if c in df.columns]
+        display_df = df[available].copy()
+
+        def _fmt(col, val):
+            if pd.isna(val):
+                return "—"
+            if col == "template_score":
+                return f"{val:.1f}/10"
+            if col == "criteria_count":
+                return f"{int(val)}/8"
+            if col == "rs_rank_12m":
+                return f"{val:.0f}"
+            if col == "pct_from_52w_high":
+                return f"{val:+.1f}%"
+            if col in ("pct_above_52w_low", "return_12m"):
+                return f"{val:+.1f}%"
+            if col == "sma_200_slope_22d":
+                return f"{val:+.2f}%"
+            if col == "cmp":
+                return f"₹{val:,.1f}"
+            return val
+
+        for col in display_df.columns:
+            display_df[col] = display_df[col].apply(lambda v, c=col: _fmt(c, v))
+
+        display_df.columns = [disp_cols[c] for c in available]
+        st.dataframe(display_df, use_container_width=True, hide_index=True, height=580)
+
+        st.download_button(
+            "📥 Download as CSV",
+            data=display_df.to_csv(index=False),
+            file_name=f"minervini_screener_{pd.Timestamp.now().strftime('%Y-%m-%d')}.csv",
+            mime="text/csv",
+            key="minervini_csv_download",
+        )
+
+    st.divider()
+
+    with st.expander("📋 The 8 Criteria Explained"):
+        st.markdown("""
+1. **Price > 150 DMA AND > 200 DMA** — confirms medium and long-term uptrend
+2. **150 DMA > 200 DMA** — proper moving average alignment
+3. **200 DMA trending up for 1+ month** — long-term trend confirmed
+4. **50 DMA > 150 DMA AND > 200 DMA** — short-term trend leading
+5. **Price > 50 DMA** — currently in short-term uptrend
+6. **Price ≥ 30% above 52-week low** — meaningful strength shown
+7. **Price within 25% of 52-week high** — near highs, not lagging
+8. **Relative Strength Rank ≥ 70** — outperforming most stocks over 12 months
+
+A stock passing all 8 is in a Stan Weinstein **Stage 2** advancing uptrend.
+*Source: Trade Like a Stock Market Wizard — Mark Minervini*
+        """)
+
+    st.info(
+        "ℹ️ This screen identifies stocks in confirmed uptrends. It does NOT predict future performance. "
+        "Always combine technical screening with fundamental analysis and risk management."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Technical Analysis view — RSI, MACD, ADX, DMA signal table
 # ---------------------------------------------------------------------------
 
@@ -3566,7 +3747,7 @@ def render_technical_analysis_view(refresh_ts=None):
     hidden_cols = _render_col_visibility_ui("technical", _ALL_TECH_COLS)
 
     # ── Sub-tabs ──────────────────────────────────────────────────────────────
-    tab_all_stocks, tab_fno_stocks = st.tabs(["All Stocks", "F&O Stocks"])
+    tab_all_stocks, tab_fno_stocks, tab_minervini = st.tabs(["All Stocks", "F&O Stocks", "⭐ Minervini Screener"])
 
     # ── All Stocks sub-tab ────────────────────────────────────────────────────
     with tab_all_stocks:
@@ -3614,6 +3795,10 @@ def render_technical_analysis_view(refresh_ts=None):
                 rs_timeframe_col=rs_tf_col, show_rs_value=show_rs_value,
                 total_before_filter=len(df_fno),
             )
+
+    # ── Minervini Screener sub-tab ────────────────────────────────────────────
+    with tab_minervini:
+        _render_minervini_screener()
 
     # ── v1 vs v2 Debug Panel ──────────────────────────────────────────────────
     if "technical_status_v1" in df_all.columns:
