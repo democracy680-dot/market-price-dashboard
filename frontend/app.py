@@ -22,6 +22,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 from dotenv import load_dotenv
 import yfinance as yf
 from PIL import Image, ImageDraw
@@ -751,6 +752,7 @@ if _COMPONENTS_HTML_SAFE:
 # ---------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def _get_engine():
+    import time
     try:
         url = st.secrets["SUPABASE_DB_URL"]
     except Exception:
@@ -758,18 +760,29 @@ def _get_engine():
     if not url:
         st.error("SUPABASE_DB_URL not configured.")
         st.stop()
-    # PERF: pool_size=3 keeps 3 warm connections; max_overflow=5 allows burst to 8.
-    # pool_recycle=300 drops connections before Supabase's 5-min idle timeout kills them.
-    # pool_pre_ping verifies a connection is alive before using it (avoids stale-conn errors).
-    # connect_timeout=10 prevents hanging queries from blocking the UI indefinitely.
-    return create_engine(
-        url,
-        pool_size=3,
-        max_overflow=5,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        connect_args={"connect_timeout": 10},
-    )
+    tx_url = url.replace(":5432/", ":6543/")
+    connect_args = {
+        "connect_timeout": 10,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 5,
+        "keepalives_count": 3,
+        "options": "-c statement_timeout=30000",
+    }
+    # Try session pooler (5432) then transaction pooler (6543); use NullPool to
+    # avoid holding idle connections against Supabase's per-project limit.
+    for attempt_url in [url, tx_url]:
+        for attempt in range(3):
+            try:
+                eng = create_engine(attempt_url, poolclass=NullPool, connect_args=connect_args)
+                with eng.connect() as c:
+                    c.execute(text("SELECT 1"))
+                return eng
+            except Exception:
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
+    st.error("Could not connect to the database. Please try refreshing.")
+    st.stop()
 
 
 # PERF: Engine is cached via @st.cache_resource — near-zero on warm runs
