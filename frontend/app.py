@@ -3765,15 +3765,15 @@ def render_technical_analysis_view(refresh_ts=None):
     # ── All Stocks sub-tab ────────────────────────────────────────────────────
     with tab_all_stocks:
         # Summary cards (from the full all-stocks universe, before user filters)
-        n_strong_buy = int(df_all["technical_status"].str.contains("Strong Buy", na=False).sum())
-        n_sell       = int(df_all["technical_status"].str.contains("Sell", na=False).sum())
-        n_oversold   = int((df_all["rsi_14"].notna() & (df_all["rsi_14"] < 30)).sum())
-        n_strong_trn = int((df_all["adx_14"].notna() & (df_all["adx_14"] > 25)).sum())
+        n_strong_bull = int(df_all["technical_status"].str.contains("Strong Bullish", na=False).sum())
+        n_sell        = int(df_all["technical_status"].str.contains("Sell / Avoid", na=False).sum())
+        n_oversold    = int((df_all["rsi_14"].notna() & (df_all["rsi_14"] < 30)).sum())
+        n_strong_trn  = int((df_all["adx_14"].notna() & (df_all["adx_14"] > 25)).sum())
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🚀 Strong Buys",    n_strong_buy)
-        c2.metric("🔻 Sells / Avoid",  n_sell)
-        c3.metric("🔥 Oversold (RSI<30)", n_oversold)
+        c1.metric("🟢 Strong Bullish",        n_strong_bull)
+        c2.metric("🔻 Sell / Avoid",           n_sell)
+        c3.metric("🔥 Oversold (RSI<30)",      n_oversold)
         c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
 
         st.divider()
@@ -3787,15 +3787,15 @@ def render_technical_analysis_view(refresh_ts=None):
     # ── F&O Stocks sub-tab ────────────────────────────────────────────────────
     with tab_fno_stocks:
         # Summary cards (from the F&O universe, before user filters)
-        n_strong_buy_fno = int(df_fno["technical_status"].str.contains("Strong Buy", na=False).sum())
-        n_sell_fno       = int(df_fno["technical_status"].str.contains("Sell", na=False).sum())
-        n_oversold_fno   = int((df_fno["rsi_14"].notna() & (df_fno["rsi_14"] < 30)).sum())
-        n_strong_trn_fno = int((df_fno["adx_14"].notna() & (df_fno["adx_14"] > 25)).sum())
+        n_strong_bull_fno = int(df_fno["technical_status"].str.contains("Strong Bullish", na=False).sum())
+        n_sell_fno        = int(df_fno["technical_status"].str.contains("Sell / Avoid", na=False).sum())
+        n_oversold_fno    = int((df_fno["rsi_14"].notna() & (df_fno["rsi_14"] < 30)).sum())
+        n_strong_trn_fno  = int((df_fno["adx_14"].notna() & (df_fno["adx_14"] > 25)).sum())
 
         c1f, c2f, c3f, c4f = st.columns(4)
-        c1f.metric("🚀 Strong Buys",    n_strong_buy_fno)
-        c2f.metric("🔻 Sells / Avoid",  n_sell_fno)
-        c3f.metric("🔥 Oversold (RSI<30)", n_oversold_fno)
+        c1f.metric("🟢 Strong Bullish",        n_strong_bull_fno)
+        c2f.metric("🔻 Sell / Avoid",           n_sell_fno)
+        c3f.metric("🔥 Oversold (RSI<30)",      n_oversold_fno)
         c4f.metric("💪 Strong Trends (ADX>25)", n_strong_trn_fno)
 
         st.divider()
