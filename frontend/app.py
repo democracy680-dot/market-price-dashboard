@@ -986,6 +986,24 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
     for c in _numeric_cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Derive status columns from raw DMA values where they are NULL.
+    # This handles rows written before status columns existed (schema migration gap)
+    # and any stocks whose status_200dma/status_50dma were not populated by the refresh.
+    if "status_200dma" in df.columns and "dma_200" in df.columns and "cmp" in df.columns:
+        mask = df["status_200dma"].isna() & df["dma_200"].notna() & df["cmp"].notna()
+        if mask.any():
+            df.loc[mask, "status_200dma"] = (
+                df.loc[mask, "cmp"] >= df.loc[mask, "dma_200"]
+            ).map({True: "Above 200DMA", False: "Below 200DMA"})
+
+    if "status_50dma" in df.columns and "dma_50" in df.columns and "cmp" in df.columns:
+        mask = df["status_50dma"].isna() & df["dma_50"].notna() & df["cmp"].notna()
+        if mask.any():
+            df.loc[mask, "status_50dma"] = (
+                df.loc[mask, "cmp"] >= df.loc[mask, "dma_50"]
+            ).map({True: "Above 50DMA", False: "Below 50DMA"})
+
     return df
 
 
