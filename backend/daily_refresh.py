@@ -380,6 +380,16 @@ def run():
     except Exception as inactive_err:
         logger.error(f"  mark_inactive_stocks failed (non-fatal): {inactive_err}", exc_info=True)
 
+    # ── 5f. Minervini Trend Template ──────────────────────────────────────────
+    logger.info("Computing Minervini Trend Template...")
+    try:
+        from compute_minervini_template import run_minervini_refresh
+        as_of = snapshots["date"].max() if not snapshots.empty else __import__("datetime").date.today()
+        minervini_pass_count = run_minervini_refresh(as_of)
+        logger.info(f"  Minervini Template: {minervini_pass_count} stocks passed all 8 criteria")
+    except Exception as minervini_err:
+        logger.error(f"  Minervini refresh failed (non-fatal): {minervini_err}", exc_info=True)
+
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"
     with engine.begin() as conn:
