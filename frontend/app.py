@@ -1068,6 +1068,55 @@ def load_all_symbols() -> pd.DataFrame:
     return df
 
 
+# ---------------------------------------------------------------------------
+# Watchlist DB helpers
+# ---------------------------------------------------------------------------
+def _wl_load_watchlists() -> pd.DataFrame:
+    sql = text("""
+        SELECT w.id, w.name, w.created_at, COUNT(m.symbol) AS stock_count
+        FROM watchlists w
+        LEFT JOIN watchlist_members m ON w.id = m.watchlist_id
+        GROUP BY w.id, w.name, w.created_at
+        ORDER BY w.created_at DESC
+    """)
+    with engine.connect() as conn:
+        return pd.read_sql(sql, conn)
+
+
+def _wl_load_symbols(watchlist_id: int) -> list[str]:
+    sql = text("SELECT symbol FROM watchlist_members WHERE watchlist_id = :wid ORDER BY symbol")
+    with engine.connect() as conn:
+        df = pd.read_sql(sql, conn, params={"wid": watchlist_id})
+    return df["symbol"].tolist()
+
+
+def _wl_save(name: str, symbols: list[str]) -> None:
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("INSERT INTO watchlists (name) VALUES (:name) RETURNING id"),
+            {"name": name},
+        )
+        wl_id = result.fetchone()[0]
+        if symbols:
+            conn.execute(
+                text("INSERT INTO watchlist_members (watchlist_id, symbol) VALUES (:wid, :sym)"),
+                [{"wid": wl_id, "sym": s} for s in symbols],
+            )
+
+
+def _wl_delete(watchlist_id: int) -> None:
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM watchlists WHERE id = :wid"), {"wid": watchlist_id})
+
+
+def _wl_rename(watchlist_id: int, new_name: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE watchlists SET name = :name WHERE id = :wid"),
+            {"name": new_name, "wid": watchlist_id},
+        )
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_ohlcv(symbol: str, days: int = 365) -> pd.DataFrame:
     sql = text("""
@@ -1605,13 +1654,29 @@ def _show_chart_dialog(symbol: str, name: str):
 # ---------------------------------------------------------------------------
 # Components
 # ---------------------------------------------------------------------------
-def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_date=None):
+def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_date=None, show_returns: bool = True):
     valid_ret = df["ret_1d"].dropna()
     adv       = int((valid_ret > 0).sum())
     dec       = int((valid_ret < 0).sum())
     unch      = int((valid_ret == 0).sum())
     above_200 = int((df["status_200dma"] == "Above 200DMA").sum())
     total     = len(df)
+
+    if not show_returns:
+        # Watchlist mode — only show advance/decline metrics, no return cards
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.metric("Total Stocks", total)
+        with c2: st.metric("Advancing",    adv)
+        with c3: st.metric("Declining",    dec)
+        with c4: st.metric("Unchanged",    unch)
+        if snap_date:
+            st.markdown(
+                f"<div style='font-size:10.5px;color:{_T['text_as_of']};margin-top:2px;"
+                f"letter-spacing:0.04em;'>As of market close · "
+                f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}</div>",
+                unsafe_allow_html=True,
+            )
+        return
 
     # Fetch index-level returns — prefer a benchmark yfinance symbol, else use
     # the median return of constituent stocks already in df.
@@ -3522,6 +3587,260 @@ _PATTERN_LABELS = {
 }
 
 
+def render_my_watchlist_tab(snap_date, refresh_ts=None):
+    # ── Section 1: Upload & Stage ────────────────────────────────────────────
+    st.markdown(
+        f"<h3 style='font-size:15px;font-weight:700;color:{_T['card_title']};margin:0 0 4px;'>"
+        f"Upload a Stock List</h3>",
+        unsafe_allow_html=True,
+    )
+
+    uploaded = st.file_uploader("Upload CSV", type=["csv"], key="wl_upload",
+                                 label_visibility="collapsed")
+
+    if not uploaded:
+        st.markdown(f"""
+        <div style="
+            background: linear-gradient(135deg, {_T['bg_tag']} 0%, {_T['bd_card']} 100%);
+            border: 1px dashed {_T['bd_card']};
+            border-radius: 16px;
+            padding: 36px 32px;
+            text-align: center;
+            margin-top: 12px;
+        ">
+            <div style="font-size:36px; margin-bottom:14px; opacity:0.6;">
+                <svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'
+                     fill='none' stroke='#2d5a9e' stroke-width='1.5'
+                     stroke-linecap='round' stroke-linejoin='round'>
+                    <path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>
+                    <polyline points='14 2 14 8 20 8'/>
+                    <line x1='16' y1='13' x2='8' y2='13'/>
+                    <line x1='16' y1='17' x2='8' y2='17'/>
+                    <polyline points='10 9 9 9 8 9'/>
+                </svg>
+            </div>
+            <div style="font-size:15px; font-weight:600; color:{_T['card_title']}; margin-bottom:8px;">
+                Upload a stock list to analyse or save as a watchlist
+            </div>
+            <div style="font-size:13px; color:{_T['text_soft']}; max-width:380px; margin:0 auto 20px; line-height:1.6;">
+                Upload a CSV with a
+                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">symbol</code>
+                column containing NSE tickers — no
+                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">.NS</code>
+                suffix needed.
+            </div>
+            <div style="font-size:11px; color:{_T['text_hint']}; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">
+                Example &nbsp;·&nbsp; RELIANCE &nbsp;·&nbsp; TCS &nbsp;·&nbsp; INFY &nbsp;·&nbsp; HDFCBANK
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if uploaded:
+        try:
+            user_df = pd.read_csv(uploaded)
+            if "symbol" not in user_df.columns:
+                st.error("CSV must have a column named `symbol`.")
+            else:
+                user_symbols = user_df["symbol"].str.upper().str.strip().unique().tolist()
+                all_symbols_df = load_all_symbols()
+                valid = set(all_symbols_df["symbol"].tolist())
+                known   = [s for s in user_symbols if s in valid]
+                unknown = [s for s in user_symbols if s not in valid]
+
+                if unknown:
+                    st.warning(f"Unknown symbols (not in master): {', '.join(unknown)}")
+                if known:
+                    staged_df = _load_all_snapshots(snap_date)
+                    staged_df = staged_df[staged_df["symbol"].isin(known)]
+                    if staged_df.empty:
+                        st.info("No snapshot data for these symbols on the selected date.")
+                    else:
+                        st.success(f"{len(known)} symbols matched.")
+                        st.divider()
+                        render_summary_cards(staged_df, snap_date=snap_date, show_returns=False)
+                        st.divider()
+                        render_sort_and_table(staged_df, key="wl_staged")
+                        st.divider()
+
+                        # ── Add to Watchlist ─────────────────────────────
+                        st.markdown(
+                            f"<h4 style='font-size:14px;font-weight:700;color:{_T['card_title']};margin:8px 0 4px;'>"
+                            f"Save as Watchlist</h4>",
+                            unsafe_allow_html=True,
+                        )
+                        wl_name_col, wl_btn_col = st.columns([3, 1])
+                        with wl_name_col:
+                            wl_name = st.text_input(
+                                "Watchlist name", placeholder="e.g. My Top Picks",
+                                key="wl_new_name", label_visibility="collapsed",
+                            )
+                        with wl_btn_col:
+                            if st.button("➕ Add to Watchlist", use_container_width=True, type="primary"):
+                                if not wl_name.strip():
+                                    st.error("Please enter a name for the watchlist.")
+                                else:
+                                    try:
+                                        _wl_save(wl_name.strip(), known)
+                                        st.success(f'Watchlist "{wl_name.strip()}" saved with {len(known)} stocks!')
+                                        st.rerun()
+                                    except Exception as ex:
+                                        if "unique" in str(ex).lower() or "duplicate" in str(ex).lower():
+                                            st.error(f'A watchlist named "{wl_name.strip()}" already exists. Choose a different name.')
+                                        else:
+                                            st.error(f"Error saving watchlist: {ex}")
+        except Exception as e:
+            st.error(f"Error reading CSV: {e}")
+
+    # ── Section 2: Saved Watchlists ─────────────────────────────────────────
+    st.divider()
+    st.markdown(
+        f"<h3 style='font-size:15px;font-weight:700;color:{_T['card_title']};margin:0 0 8px;'>"
+        f"My Saved Watchlists</h3>",
+        unsafe_allow_html=True,
+    )
+
+    try:
+        wl_df = _wl_load_watchlists()
+    except Exception as ex:
+        st.error(f"Could not load watchlists: {ex}")
+        return
+
+    if wl_df.empty:
+        st.info("No saved watchlists yet. Upload a CSV above and click 'Add to Watchlist' to create one.")
+        return
+
+    for _, row in wl_df.iterrows():
+        wl_id   = int(row["id"])
+        wl_name = str(row["name"])
+        wl_cnt  = int(row["stock_count"])
+        created = pd.Timestamp(row["created_at"]).strftime("%d %b %Y")
+
+        with st.expander(f"**{wl_name}** — {wl_cnt} stocks · added {created}"):
+            # Rename / Delete controls
+            mgmt_c1, mgmt_c2, mgmt_c3 = st.columns([3, 1, 1])
+            with mgmt_c1:
+                new_name = st.text_input(
+                    "Rename", value=wl_name, key=f"wl_rename_input_{wl_id}",
+                    label_visibility="collapsed",
+                )
+            with mgmt_c2:
+                if st.button("💾 Rename", key=f"wl_rename_btn_{wl_id}", use_container_width=True):
+                    if new_name.strip() and new_name.strip() != wl_name:
+                        try:
+                            _wl_rename(wl_id, new_name.strip())
+                            st.success("Renamed.")
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error: {ex}")
+            with mgmt_c3:
+                # Two-click delete: first click arms, second click confirms
+                arm_key = f"wl_delete_armed_{wl_id}"
+                if st.session_state.get(arm_key):
+                    if st.button("⚠️ Confirm Delete", key=f"wl_delete_confirm_{wl_id}",
+                                 type="primary", use_container_width=True):
+                        _wl_delete(wl_id)
+                        st.session_state.pop(arm_key, None)
+                        st.success("Deleted.")
+                        st.rerun()
+                else:
+                    if st.button("🗑️ Delete", key=f"wl_delete_btn_{wl_id}",
+                                 use_container_width=True):
+                        st.session_state[arm_key] = True
+                        st.rerun()
+
+            # Stock table for this watchlist
+            symbols = _wl_load_symbols(wl_id)
+            if symbols:
+                detail_df = _load_all_snapshots(snap_date)
+                detail_df = detail_df[detail_df["symbol"].isin(symbols)]
+                if detail_df.empty:
+                    st.info("No snapshot data for this watchlist on the selected date.")
+                else:
+                    render_summary_cards(detail_df, snap_date=snap_date, show_returns=False)
+                    st.divider()
+                    render_sort_and_table(detail_df, key=f"wl_detail_{wl_id}")
+
+    # ── Section 3: Watchlist Analysis ───────────────────────────────────────
+    st.divider()
+    st.markdown(
+        f"<h3 style='font-size:15px;font-weight:700;color:{_T['card_title']};margin:0 0 8px;'>"
+        f"📊 Watchlist Analysis</h3>",
+        unsafe_allow_html=True,
+    )
+
+    # Timeframe selector
+    RET_COLS = [("1D", "ret_1d"), ("1W", "ret_1w"), ("30D", "ret_30d"),
+                ("60D", "ret_60d"), ("180D", "ret_180d"), ("365D", "ret_365d")]
+    tf_key = "wl_analysis_tf"
+    if tf_key not in st.session_state:
+        st.session_state[tf_key] = "1D"
+
+    tf_cols = st.columns(len(RET_COLS))
+    for i, (label, _) in enumerate(RET_COLS):
+        active = st.session_state[tf_key] == label
+        with tf_cols[i]:
+            if st.button(
+                label, key=f"wl_tf_{label}",
+                type="primary" if active else "secondary",
+                use_container_width=True,
+            ):
+                st.session_state[tf_key] = label
+                st.rerun()
+
+    selected_tf  = st.session_state[tf_key]
+    selected_col = dict(RET_COLS)[selected_tf]
+
+    all_snap = _load_all_snapshots(snap_date)
+    header_cols = st.columns([2, 1, 2, 2, 2])
+    for hc, label in zip(header_cols, ["Watchlist", "Stocks", "Adv / Dec", f"Best ({selected_tf})", f"Worst ({selected_tf})"]):
+        hc.markdown(f"<span style='font-size:11px;font-weight:600;color:{_T['text_muted']};text-transform:uppercase;letter-spacing:0.06em;'>{label}</span>", unsafe_allow_html=True)
+    st.markdown(f"<hr style='margin:4px 0 8px;border-color:{_T['bd_card']};'>", unsafe_allow_html=True)
+
+    if wl_df.empty:
+        st.info("No watchlists to analyse. Save one above.")
+    else:
+        for _, row in wl_df.iterrows():
+            wl_id   = int(row["id"])
+            wl_name = str(row["name"])
+            symbols = _wl_load_symbols(wl_id)
+            if not symbols:
+                continue
+            sub = all_snap[all_snap["symbol"].isin(symbols)]
+            if sub.empty:
+                continue
+
+            valid_ret = sub[selected_col].dropna()
+            adv = int((valid_ret > 0).sum())
+            dec = int((valid_ret < 0).sum())
+            total = len(sub)
+
+            best_row  = sub.nlargest(1, selected_col, keep="first")
+            worst_row = sub.nsmallest(1, selected_col, keep="first")
+
+            best_sym  = best_row.iloc[0]["symbol"] if not best_row.empty else "—"
+            best_val  = _fmt_pct(best_row.iloc[0][selected_col]) if not best_row.empty and pd.notna(best_row.iloc[0][selected_col]) else "—"
+            worst_sym = worst_row.iloc[0]["symbol"] if not worst_row.empty else "—"
+            worst_val = _fmt_pct(worst_row.iloc[0][selected_col]) if not worst_row.empty and pd.notna(worst_row.iloc[0][selected_col]) else "—"
+
+            r1, r2, r3, r4, r5 = st.columns([2, 1, 2, 2, 2])
+            r1.markdown(f"**{wl_name}**")
+            r2.markdown(f"{total}")
+            r3.markdown(
+                f"<span style='color:#22c55e;font-weight:600;'>{adv} ↑</span>"
+                f" / <span style='color:#ef4444;font-weight:600;'>{dec} ↓</span>",
+                unsafe_allow_html=True,
+            )
+            r4.markdown(
+                f"<span style='color:#22c55e;'>{best_sym}</span> {best_val}",
+                unsafe_allow_html=True,
+            )
+            r5.markdown(
+                f"<span style='color:#ef4444;'>{worst_sym}</span> {worst_val}",
+                unsafe_allow_html=True,
+            )
+        st.markdown(f"<hr style='margin:8px 0 0;border-color:{_T['bd_card']};'>", unsafe_allow_html=True)
+
+
 def render_scanner_tab():
     _page_header("Breakout & Reversal Scanner", desc_key=None)
 
@@ -4062,7 +4381,7 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical,
     "Vol Spikes",
     "🔬 Technical Analysis",
     "📡 Scanner",
-    "Custom Upload",
+    "My Watchlist",
     "📰 News",
 ])
 
@@ -4139,12 +4458,15 @@ _TAB_DESCRIPTIONS = {
     },
     "custom_upload": {
         "what": [
-            "**CSV Upload** — import any custom watchlist containing a `symbol` column with NSE tickers (no `.NS` suffix required)",
+            "**CSV Upload** — import a stock list containing a `symbol` column with NSE tickers (no `.NS` suffix required)",
             "**Automatic Matching** — uploaded symbols are validated against the full master stock list; unrecognised tickers are flagged",
-            "**Full Analysis View** — matched stocks immediately display summary cards (1D / 1M / 1Y returns, advance/decline, 200 DMA breadth) and the complete sortable stock table",
-            "**CSV Export** — download the enriched data for any matched stocks",
+            "**Advance / Decline Summary** — instant advance/decline count for the uploaded list, without return noise",
+            "**Full Stock Table** — complete sortable table with CMP, market cap, P/E, DMA status, RSI, 52W High%, volume spike and more",
+            "**Save as Watchlist** — name and persist the uploaded list to your saved watchlists with one click",
+            "**Saved Watchlists** — view, rename, delete, and drill into any previously saved watchlist",
+            "**Watchlist Analysis** — side-by-side comparison of all saved watchlists: advance/decline counts plus best and worst performer across any timeframe",
         ],
-        "how": "Bring your own watchlist and get the full power of the dashboard applied to it instantly. Useful for analysing a portfolio, a broker's recommended list, an index constituent file, or any curated set of stocks. There is no need to manually search for each ticker — upload once and the platform fetches all available data for every matched symbol from the same date-specific snapshot used by every other tab.",
+        "how": "Build and manage persistent named watchlists from any CSV of stocks. Upload a portfolio, a broker recommendation, or a curated screener result — validate the symbols, review the data, then save it permanently. The Analysis section lets you compare multiple watchlists at a glance: which list is seeing more breadth today, which has the strongest performer, and which is under pressure. Switch timeframes (1D to 365D) to see how each watchlist has performed across different horizons.",
     },
     "news": {
         "what": [
@@ -4239,75 +4561,10 @@ with tab_volspike:
     _page_header("Volume Spike Screener", selected_date, desc_key="vol_spikes")
     _frag_volspike(selected_date)
 
-# ── Tab 6: Custom Upload ─────────────────────────────────────────────────────
+# ── Tab 6: My Watchlist ───────────────────────────────────────────────────────
 with tab_upload:
-    _page_header("Custom Stock List", desc_key="custom_upload")
-
-    uploaded = st.file_uploader("Upload CSV", type=["csv"])
-    if not uploaded:
-        st.markdown(f"""
-        <div style="
-            background: linear-gradient(135deg, {_T['bg_tag']} 0%, {_T['bd_card']} 100%);
-            border: 1px dashed {_T['bd_card']};
-            border-radius: 16px;
-            padding: 48px 32px;
-            text-align: center;
-            margin-top: 16px;
-        ">
-            <div style="font-size:36px; margin-bottom:14px; opacity:0.6;">
-                <svg xmlns='http://www.w3.org/2000/svg' width='36' height='36' viewBox='0 0 24 24'
-                     fill='none' stroke='#2d5a9e' stroke-width='1.5'
-                     stroke-linecap='round' stroke-linejoin='round'>
-                    <path d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/>
-                    <polyline points='14 2 14 8 20 8'/>
-                    <line x1='16' y1='13' x2='8' y2='13'/>
-                    <line x1='16' y1='17' x2='8' y2='17'/>
-                    <polyline points='10 9 9 9 8 9'/>
-                </svg>
-            </div>
-            <div style="font-size:15px; font-weight:600; color:{_T['card_title']}; margin-bottom:8px;">
-                Analyse a custom watchlist
-            </div>
-            <div style="font-size:13px; color:{_T['text_soft']}; max-width:380px; margin:0 auto 20px; line-height:1.6;">
-                Upload a CSV with a
-                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">symbol</code>
-                column containing NSE tickers — no
-                <code style="background:{_T['bg_code']}; padding:2px 7px; border-radius:4px; color:{_T['code_text']}; font-size:12px;">.NS</code>
-                suffix needed.
-            </div>
-            <div style="font-size:11px; color:{_T['text_hint']}; letter-spacing:0.06em; text-transform:uppercase; font-weight:600;">
-                Example &nbsp;·&nbsp; RELIANCE &nbsp;·&nbsp; TCS &nbsp;·&nbsp; INFY &nbsp;·&nbsp; HDFCBANK
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    if uploaded:
-        try:
-            user_df = pd.read_csv(uploaded)
-            if "symbol" not in user_df.columns:
-                st.error("CSV must have a column named `symbol`.")
-            else:
-                user_symbols = user_df["symbol"].str.upper().str.strip().unique().tolist()
-                all_symbols_df = load_all_symbols()
-                valid = set(all_symbols_df["symbol"].tolist())
-                known   = [s for s in user_symbols if s in valid]
-                unknown = [s for s in user_symbols if s not in valid]
-
-                if unknown:
-                    st.warning(f"Unknown symbols (not in master): {', '.join(unknown)}")
-                if known:
-                    st.success(f"{len(known)} symbols matched.")
-                    # Reuse bulk cache — no extra query
-                    custom_df = _load_all_snapshots(selected_date)
-                    custom_df = custom_df[custom_df["symbol"].isin(known)]
-                    if custom_df.empty:
-                        st.info("No snapshot data for these symbols on the selected date.")
-                    else:
-                        st.divider()
-                        render_summary_cards(custom_df)
-                        st.divider()
-                        render_sort_and_table(custom_df, key="custom")
-        except Exception as e:
-            st.error(f"Error reading CSV: {e}")
+    _page_header("My Watchlist", desc_key="custom_upload")
+    render_my_watchlist_tab(selected_date, _refresh_ts_key)
 
 # ── Tab 7: Technical Analysis ────────────────────────────────────────────────
 with tab_technical:
