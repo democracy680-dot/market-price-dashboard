@@ -3768,77 +3768,64 @@ def render_my_watchlist_tab(snap_date, refresh_ts=None):
         unsafe_allow_html=True,
     )
 
-    # Timeframe selector
-    RET_COLS = [("1D", "ret_1d"), ("1W", "ret_1w"), ("30D", "ret_30d"),
-                ("60D", "ret_60d"), ("180D", "ret_180d"), ("365D", "ret_365d")]
+    if wl_df.empty:
+        st.info("No watchlists to analyse. Save one above.")
+        return
+
+    # Timeframe selector — same style as sector/index Analysis tab
     tf_key = "wl_analysis_tf"
     if tf_key not in st.session_state:
         st.session_state[tf_key] = "1D"
 
-    tf_cols = st.columns(len(RET_COLS))
-    for i, (label, _) in enumerate(RET_COLS):
-        active = st.session_state[tf_key] == label
+    st.markdown(
+        f"<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
+        f"text-transform:uppercase;color:{_T['text_label']};margin-bottom:8px;'>"
+        "Timeframe</div>",
+        unsafe_allow_html=True,
+    )
+    tf_cols = st.columns(len(RETURN_COLS))
+    for i, tf_label in enumerate(RETURN_COLS):
         with tf_cols[i]:
             if st.button(
-                label, key=f"wl_tf_{label}",
-                type="primary" if active else "secondary",
+                tf_label,
+                key=f"wl_tf_{tf_label}",
+                type="primary" if st.session_state[tf_key] == tf_label else "secondary",
                 use_container_width=True,
             ):
-                st.session_state[tf_key] = label
+                st.session_state[tf_key] = tf_label
                 st.rerun()
 
-    selected_tf  = st.session_state[tf_key]
-    selected_col = dict(RET_COLS)[selected_tf]
+    selected_tf = st.session_state[tf_key]
+    ret_col, ret_label = RETURN_COLS[selected_tf]
 
+    st.divider()
+
+    # One block per watchlist — same bar chart pattern as sector/index analysis
     all_snap = _load_all_snapshots(snap_date)
-    header_cols = st.columns([2, 1, 2, 2, 2])
-    for hc, label in zip(header_cols, ["Watchlist", "Stocks", "Adv / Dec", f"Best ({selected_tf})", f"Worst ({selected_tf})"]):
-        hc.markdown(f"<span style='font-size:11px;font-weight:600;color:{_T['text_muted']};text-transform:uppercase;letter-spacing:0.06em;'>{label}</span>", unsafe_allow_html=True)
-    st.markdown(f"<hr style='margin:4px 0 8px;border-color:{_T['bd_card']};'>", unsafe_allow_html=True)
+    for _, row in wl_df.iterrows():
+        wl_id   = int(row["id"])
+        wl_name = str(row["name"])
+        symbols = _wl_load_symbols(wl_id)
+        if not symbols:
+            continue
+        sub = all_snap[all_snap["symbol"].isin(symbols)].copy()
+        if sub.empty:
+            st.caption(f"No snapshot data for {wl_name} on this date.")
+            continue
 
-    if wl_df.empty:
-        st.info("No watchlists to analyse. Save one above.")
-    else:
-        for _, row in wl_df.iterrows():
-            wl_id   = int(row["id"])
-            wl_name = str(row["name"])
-            symbols = _wl_load_symbols(wl_id)
-            if not symbols:
-                continue
-            sub = all_snap[all_snap["symbol"].isin(symbols)]
-            if sub.empty:
-                continue
-
-            valid_ret = sub[selected_col].dropna()
-            adv = int((valid_ret > 0).sum())
-            dec = int((valid_ret < 0).sum())
-            total = len(sub)
-
-            best_row  = sub.nlargest(1, selected_col, keep="first")
-            worst_row = sub.nsmallest(1, selected_col, keep="first")
-
-            best_sym  = best_row.iloc[0]["symbol"] if not best_row.empty else "—"
-            best_val  = _fmt_pct(best_row.iloc[0][selected_col]) if not best_row.empty and pd.notna(best_row.iloc[0][selected_col]) else "—"
-            worst_sym = worst_row.iloc[0]["symbol"] if not worst_row.empty else "—"
-            worst_val = _fmt_pct(worst_row.iloc[0][selected_col]) if not worst_row.empty and pd.notna(worst_row.iloc[0][selected_col]) else "—"
-
-            r1, r2, r3, r4, r5 = st.columns([2, 1, 2, 2, 2])
-            r1.markdown(f"**{wl_name}**")
-            r2.markdown(f"{total}")
-            r3.markdown(
-                f"<span style='color:#22c55e;font-weight:600;'>{adv} ↑</span>"
-                f" / <span style='color:#ef4444;font-weight:600;'>{dec} ↓</span>",
-                unsafe_allow_html=True,
-            )
-            r4.markdown(
-                f"<span style='color:#22c55e;'>{best_sym}</span> {best_val}",
-                unsafe_allow_html=True,
-            )
-            r5.markdown(
-                f"<span style='color:#ef4444;'>{worst_sym}</span> {worst_val}",
-                unsafe_allow_html=True,
-            )
-        st.markdown(f"<hr style='margin:8px 0 0;border-color:{_T['bd_card']};'>", unsafe_allow_html=True)
+        n = min(5, len(sub))
+        valid_count = sub[ret_col].notna().sum()
+        st.markdown(
+            f"<div style='display:flex;align-items:baseline;gap:10px;margin-bottom:6px;'>"
+            f"<span style='font-size:14px;font-weight:700;color:{_T['text_secondary']};"
+            f"letter-spacing:-0.01em;'>{wl_name}</span>"
+            f"<span style='font-size:10px;color:{_T['text_label']};font-weight:500;"
+            f"letter-spacing:0.04em;'>{valid_count} stocks · {selected_tf}</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        _render_topbottom_chart(sub, ret_col, n, wl_name, ret_label)
+        st.divider()
 
 
 def render_scanner_tab():
