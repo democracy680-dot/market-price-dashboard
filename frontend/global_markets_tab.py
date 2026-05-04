@@ -11,6 +11,7 @@ Visual design:
 
 import concurrent.futures
 import logging
+import requests
 from datetime import datetime, time as dtime
 
 import pandas as pd
@@ -165,6 +166,14 @@ HEATMAP_COUNTRIES = [
 
 _YIELD_SYMS   = {'^TNX', '^TYX', '^FVX', '^IRX', '^USGG20YR',
                  'IN10YT=RR', 'IN20YT=RR', 'IN30YT=RR'}
+
+# CNBC fallback for bonds unavailable on Yahoo Finance
+_CNBC_BOND_MAP = {
+    '^USGG20YR': 'US20Y',
+    'IN10YT=RR': 'IN10Y',
+    'IN20YT=RR': None,       # Not available via any free public API
+    'IN30YT=RR': 'IN30Y',
+}
 _FUTURES_SYMS = ['ES=F', 'NQ=F', 'YM=F']
 
 
@@ -389,6 +398,37 @@ def _fetch_quotes() -> tuple:
                     pass
     except Exception as e:
         logger.error(f"Quote fetch failed: {e}")
+
+    # CNBC fallback for bonds that yfinance cannot provide (^USGG20YR, India bonds)
+    cnbc_pairs = [(yf_sym, cnbc_sym)
+                  for yf_sym, cnbc_sym in _CNBC_BOND_MAP.items()
+                  if cnbc_sym and results.get(yf_sym) is None]
+    if cnbc_pairs:
+        try:
+            cnbc_query = '|'.join(cs for _, cs in cnbc_pairs)
+            resp = requests.get(
+                'https://quote.cnbc.com/quote-html-webservice/quote.htm'
+                f'?requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json&events=1&symbols={cnbc_query}',
+                timeout=10, headers={'User-Agent': 'Mozilla/5.0'},
+            )
+            cnbc_data = resp.json()
+            cnbc_reverse = {cs: yfs for yfs, cs in cnbc_pairs}
+            for q in cnbc_data.get('ITVQuoteResult', {}).get('ITVQuote', []):
+                if q.get('code') != '0':
+                    continue
+                yf_sym = cnbc_reverse.get(q['symbol'])
+                if not yf_sym:
+                    continue
+                try:
+                    price = float(str(q.get('last', '')).rstrip('%'))
+                    prev  = float(str(q.get('previous_day_closing', '')).rstrip('%'))
+                    chg   = price - prev
+                    pct   = (chg / prev * 100) if prev else 0.0
+                    results[yf_sym] = {'price': price, 'prev': prev, 'change': chg, 'pct': pct}
+                except (ValueError, AttributeError):
+                    pass
+        except Exception as e:
+            logger.error(f"CNBC bond fetch failed: {e}")
 
     return results, datetime.now()
 
@@ -1306,7 +1346,7 @@ def render_global_markets_tab():
             intraday=intraday,
             status=_asset_status(always_open=False),
             expanded=False,
-            note='Yields in % · US bonds via CBOE; India bonds may show — if unavailable on Yahoo Finance',
+            note='Yields in % · US 20Y & India bonds via CNBC; India 20Y may show — (no free public feed)',
             C=C,
             dark=dark,
         )
