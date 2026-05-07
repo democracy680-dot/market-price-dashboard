@@ -291,27 +291,27 @@ def _get_index_breadth(engine, as_of: date) -> pd.DataFrame:
 
 
 def _get_top_themes(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
-    """Top themes by average 1D return of member stocks."""
+    """Top themes by average 1-week return of member stocks."""
     sql = text("""
         SELECT
             t.theme_name,
             COUNT(tm.symbol)                            AS stock_count,
-            ROUND(AVG(sd.ret_1d)  * 100, 2)            AS avg_ret_1d,
-            ROUND(AVG(sd.ret_30d) * 100, 2)            AS avg_ret_30d
+            ROUND(AVG(sd.ret_1w)  * 100, 2)            AS avg_ret_1w,
+            ROUND(AVG(sd.ret_1d)  * 100, 2)            AS avg_ret_1d
         FROM themes t
         JOIN theme_membership tm ON tm.theme_slug = t.theme_slug
         JOIN snapshots_daily sd
             ON sd.symbol = tm.symbol AND sd.date = :as_of
-        WHERE sd.ret_1d IS NOT NULL
+        WHERE sd.ret_1w IS NOT NULL
         GROUP BY t.theme_name, t.theme_order
         HAVING COUNT(tm.symbol) >= 3
-        ORDER BY AVG(sd.ret_1d) DESC
+        ORDER BY AVG(sd.ret_1w) DESC
         LIMIT :top_n
     """)
     with engine.connect() as conn:
         rows = conn.execute(sql, {"as_of": as_of, "top_n": top_n}).fetchall()
-    df = pd.DataFrame(rows, columns=["theme_name", "stock_count", "avg_ret_1d", "avg_ret_30d"])
-    for col in ("avg_ret_1d", "avg_ret_30d"):
+    df = pd.DataFrame(rows, columns=["theme_name", "stock_count", "avg_ret_1w", "avg_ret_1d"])
+    for col in ("avg_ret_1w", "avg_ret_1d"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -570,11 +570,11 @@ def _build_themes_table(df: pd.DataFrame) -> str:
             <div style="font-size:11px;color:#94a3b8;margin-top:1px;">{int(r["stock_count"])} stocks</div>
           </td>
           <td style="padding:10px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;text-align:center;">
-            {_pct_pill(r["avg_ret_1d"])}
+            {_pct_pill(r["avg_ret_1w"])}
           </td>
           <td style="padding:10px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;
             font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:#64748b;text-align:center;">
-            {_fmt_pct(r["avg_ret_30d"])} <span style="font-size:10px;color:#94a3b8;">30D</span>
+            {_fmt_pct(r["avg_ret_1d"])} <span style="font-size:10px;color:#94a3b8;">1D</span>
           </td>
         </tr>"""
     return f"""
@@ -582,8 +582,8 @@ def _build_themes_table(df: pd.DataFrame) -> str:
       <thead><tr>
         <th {_TH_STYLE}>#</th>
         <th {_TH_STYLE}>Theme</th>
-        <th {_TH_STYLE} style="text-align:center;">1D Avg Return</th>
-        <th {_TH_STYLE} style="text-align:center;">30D Avg</th>
+        <th {_TH_STYLE} style="text-align:center;">1W Avg Return</th>
+        <th {_TH_STYLE} style="text-align:center;">1D Avg</th>
       </tr></thead>
       <tbody>{rows}</tbody>
     </table>"""
@@ -751,8 +751,8 @@ def build_html_email(
     idx_section      = _section("📊", "Index Breadth",
                                  "Stocks above / below 50 DMA and 200 DMA across the 4 major indexes",
                                  idx_html)
-    themes_section   = _section("🎯", "Top 5 Themes",
-                                 "Best performing thematic baskets today (avg return of member stocks)",
+    themes_section   = _section("🎯", "Top 5 Themes — Weekly",
+                                 "Best performing thematic baskets by avg 1-week return of member stocks",
                                  themes_html)
     vol_section      = _section("🔥", "Top 5 Volume Surge",
                                  "Stocks with the highest volume vs their 20-day average",
