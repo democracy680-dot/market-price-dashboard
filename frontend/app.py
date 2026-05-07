@@ -2773,6 +2773,136 @@ def _frag_themes():
     render_themes_view()
 
 
+def _render_earnings_table(df: pd.DataFrame, mode: str):
+    """Render an earnings results table.
+
+    mode='today'  → symbol, name, market_cap_cr, announcement_day_return, cmp
+    mode='season' → adds result_date and return_since_announcement
+    """
+    disp = pd.DataFrame()
+    disp["Symbol"] = df["symbol"]
+    disp["Company"] = df["name"]
+    disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
+    if mode == "season":
+        disp["Result Date"] = pd.to_datetime(df["result_date"]).dt.strftime("%d %b %Y")
+    disp["Ann. Day Return"] = df["announcement_day_return"].map(_fmt_pct)
+    if mode == "season":
+        disp["Return Since Ann."] = df["return_since_announcement"].map(_fmt_pct)
+    disp["Chart"] = df.apply(
+        lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
+    )
+
+    styled = disp.style.map(_color_return, subset=["Ann. Day Return"])
+    if mode == "season" and "Return Since Ann." in disp.columns:
+        styled = styled.map(_color_return, subset=["Return Since Ann."])
+
+    col_cfg = {"Chart": st.column_config.LinkColumn("Chart", display_text="📈")}
+    st.dataframe(styled, use_container_width=True, hide_index=True, height=600,
+                 column_config=col_cfg)
+
+    csv_bytes = df.to_csv(index=False).encode()
+    _, dl_col = st.columns([5, 1])
+    with dl_col:
+        fname = "earnings_today.csv" if mode == "today" else "earnings_season.csv"
+        st.download_button("⬇ CSV", csv_bytes, fname, "text/csv",
+                           key=f"dl_earn_{mode}", use_container_width=True)
+
+
+@st.fragment
+def _frag_quarterly_results(snap_date):
+    sub_today, sub_season = st.tabs(["Today's Results", "Season to Date"])
+
+    with sub_today:
+        try:
+            rows = engine.connect().execute(
+                text("""
+                    SELECT
+                        ec.symbol,
+                        s.name,
+                        sd.market_cap_cr,
+                        sd.ret_1d  AS announcement_day_return,
+                        sd.cmp
+                    FROM earnings_calendar ec
+                    JOIN stocks s ON ec.symbol = s.symbol
+                    LEFT JOIN snapshots_daily sd
+                        ON ec.symbol = sd.symbol AND sd.date = ec.result_date
+                    WHERE ec.result_date = :today
+                    ORDER BY sd.ret_1d DESC NULLS LAST
+                """),
+                {"today": snap_date},
+            ).fetchall()
+        except Exception as e:
+            st.error(f"Could not load today's earnings data: {e}")
+            return
+        df_today = pd.DataFrame(rows, columns=["symbol", "name", "market_cap_cr",
+                                               "announcement_day_return", "cmp"])
+        if df_today.empty:
+            st.info(
+                f"No quarterly result announcements scheduled for "
+                f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}."
+            )
+        else:
+            n = len(df_today)
+            announced = df_today["announcement_day_return"].notna().sum()
+            st.markdown(
+                f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
+                f"{n} companies scheduled · {announced} with price data · "
+                f"sorted by 1D return on announcement day</div>",
+                unsafe_allow_html=True,
+            )
+            _render_earnings_table(df_today, mode="today")
+
+    with sub_season:
+        try:
+            rows = engine.connect().execute(
+                text("""
+                    SELECT
+                        ec.symbol,
+                        s.name,
+                        ec.result_date,
+                        sd_ann.market_cap_cr,
+                        sd_ann.ret_1d AS announcement_day_return,
+                        CASE
+                            WHEN sd_ann.cmp > 0 AND latest.cmp > 0
+                            THEN ROUND(
+                                CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
+                            )
+                            ELSE NULL
+                        END AS return_since_announcement
+                    FROM earnings_calendar ec
+                    JOIN stocks s ON ec.symbol = s.symbol
+                    LEFT JOIN snapshots_daily sd_ann
+                        ON ec.symbol = sd_ann.symbol AND sd_ann.date = ec.result_date
+                    LEFT JOIN LATERAL (
+                        SELECT cmp FROM snapshots_daily
+                        WHERE symbol = ec.symbol
+                        ORDER BY date DESC LIMIT 1
+                    ) latest ON TRUE
+                    WHERE ec.result_date <= :today
+                    ORDER BY ec.result_date DESC, sd_ann.ret_1d DESC NULLS LAST
+                """),
+                {"today": snap_date},
+            ).fetchall()
+        except Exception as e:
+            st.error(f"Could not load season earnings data: {e}")
+            return
+        df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
+                                                 "announcement_day_return",
+                                                 "return_since_announcement"])
+        if df_season.empty:
+            st.info("No results announced yet this season.")
+        else:
+            n = len(df_season)
+            dates = df_season["result_date"].nunique()
+            st.markdown(
+                f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
+                f"{n} companies across {dates} result dates · "
+                f"sorted by date ↓ then 1D return ↓</div>",
+                unsafe_allow_html=True,
+            )
+            _render_earnings_table(df_season, mode="season")
+
+
 @st.fragment
 def _frag_volspike(snap_date):
     render_volspike_view(snap_date)
@@ -4359,12 +4489,13 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
+    "📅 Quaterly Results",
     "Vol Spikes",
     "🔬 Technical Analysis",
     "📡 Scanner",
@@ -4423,6 +4554,13 @@ _TAB_DESCRIPTIONS = {
             "**Period Toggle** — switch the sorting and display between 1W, 1M, and 1Y performance",
         ],
         "how": "Themes cut across traditional sector boundaries — a 'Data Centre' theme spans real estate, power infrastructure, and IT hardware stocks. This view is built for thematic and narrative-driven investors who want to track a macro idea rather than an index. Sort themes by 1-month return to find which narratives the market is currently rewarding. Drill into a theme to identify the strongest and weakest constituents, which helps you concentrate exposure in the right names rather than holding the entire basket.",
+    },
+    "quarterly_results": {
+        "what": [
+            "**Today's Results** — companies announcing quarterly results today, sorted by their 1-day return on the announcement date",
+            "**Season to Date** — all companies that have announced results so far this season, showing announcement-day return and return-since-announcement",
+        ],
+        "how": "Track how stocks react the moment quarterly results hit. The announcement-day return tells you whether the market liked the numbers — a big positive move signals a beat; a sharp fall signals disappointment. The return-since-announcement shows the subsequent drift: stocks that keep rising after results often reflect genuine fundamental improvement, while those that fade may have been a one-day knee-jerk. Sort by either column to quickly identify the strongest and weakest earnings reactions of the season.",
     },
     "vol_spikes": {
         "what": [
@@ -4543,7 +4681,12 @@ with tab_themes:
     _page_header("Themes", desc_key="themes")
     _frag_themes()
 
-# ── Tab 5: Vol Spikes ────────────────────────────────────────────────────────
+# ── Tab 5: Quarterly Results ─────────────────────────────────────────────────
+with tab_earnings:
+    _page_header("Quaterly Results", selected_date, desc_key="quarterly_results")
+    _frag_quarterly_results(selected_date)
+
+# ── Tab 6: Vol Spikes ────────────────────────────────────────────────────────
 with tab_volspike:
     _page_header("Volume Spike Screener", selected_date, desc_key="vol_spikes")
     _frag_volspike(selected_date)
