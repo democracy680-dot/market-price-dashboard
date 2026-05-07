@@ -2773,15 +2773,30 @@ def _frag_themes():
     render_themes_view()
 
 
+def _color_score(val):
+    if pd.isna(val) or val == "—":
+        return "color: #4a5568"
+    try:
+        n = float(val)
+        if n >= 70:
+            return "color: #22c55e; font-weight:700"
+        if n >= 40:
+            return "color: #f59e0b; font-weight:700"
+        return "color: #ef4444; font-weight:700"
+    except (ValueError, TypeError):
+        return ""
+
+
 def _render_earnings_table(df: pd.DataFrame, mode: str):
     """Render an earnings results table.
 
-    mode='today'  → symbol, name, market_cap_cr, announcement_day_return, cmp
+    mode='today'  → symbol, name, score, market_cap_cr, announcement_day_return, cmp
     mode='season' → adds result_date and return_since_announcement
     """
     disp = pd.DataFrame()
     disp["Symbol"] = df["symbol"]
     disp["Company"] = df["name"]
+    disp["Score"] = pd.to_numeric(df["score"], errors="coerce")
     disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     if mode == "season":
         disp["Result Date"] = pd.to_datetime(df["result_date"]).dt.strftime("%d %b %Y")
@@ -2795,7 +2810,8 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
         lambda r: f"https://www.screener.in/company/{r['symbol']}/consolidated/", axis=1
     )
 
-    styled = disp.style.map(_color_return, subset=["Ann. Day Return"])
+    styled = disp.style.map(_color_score, subset=["Score"])
+    styled = styled.map(_color_return, subset=["Ann. Day Return"])
     if mode == "season" and "Return Since Ann." in disp.columns:
         styled = styled.map(_color_return, subset=["Return Since Ann."])
 
@@ -2827,13 +2843,59 @@ def _frag_quarterly_results(snap_date):
                         s.name,
                         sd.market_cap_cr,
                         sd.ret_1d  AS announcement_day_return,
-                        sd.cmp
+                        sd.cmp,
+                        ROUND(
+                            COALESCE(mt.criteria_count, 0) / 8.0 * 25
+                            + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
+                            + CASE WHEN sd.cmp > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                            + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
+                            + CASE
+                                WHEN COALESCE(sd.ret_1d, 0) >= 0.10 THEN 20
+                                WHEN COALESCE(sd.ret_1d, 0) >= 0.05 THEN 15
+                                WHEN COALESCE(sd.ret_1d, 0) >= 0.02 THEN 10
+                                WHEN COALESCE(sd.ret_1d, 0) >  0    THEN 5
+                                ELSE 0
+                              END
+                            + CASE
+                                WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
+                                WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
+                                WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
+                                ELSE 0
+                              END
+                            + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
+                                   WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
+                                   WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
+                            + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
+                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
+                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                            + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
+                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
+                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                        , 0) AS score
                     FROM earnings_calendar ec
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd
                         ON ec.symbol = sd.symbol AND sd.date = ec.result_date
+                    LEFT JOIN LATERAL (
+                        SELECT criteria_count, rs_rank_12m
+                        FROM minervini_template_daily
+                        WHERE symbol = ec.symbol
+                        ORDER BY date DESC LIMIT 1
+                    ) mt ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT sma_200, sma_200_slope, volume_ratio
+                        FROM technicals_daily
+                        WHERE symbol = ec.symbol
+                        ORDER BY date DESC LIMIT 1
+                    ) td ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT roe, revenue_growth_yoy, pat_growth_yoy
+                        FROM financials_snapshots
+                        WHERE symbol = ec.symbol
+                        ORDER BY fetched_at DESC LIMIT 1
+                    ) fs ON TRUE
                     WHERE ec.result_date = :today
-                    ORDER BY sd.ret_1d DESC NULLS LAST
+                    ORDER BY score DESC NULLS LAST
                 """),
                 {"today": snap_date},
             ).fetchall()
@@ -2841,7 +2903,7 @@ def _frag_quarterly_results(snap_date):
             st.error(f"Could not load today's earnings data: {e}")
             return
         df_today = pd.DataFrame(rows, columns=["symbol", "name", "market_cap_cr",
-                                               "announcement_day_return", "cmp"])
+                                               "announcement_day_return", "cmp", "score"])
         if df_today.empty:
             st.info(
                 f"No quarterly result announcements scheduled for "
@@ -2853,7 +2915,7 @@ def _frag_quarterly_results(snap_date):
             st.markdown(
                 f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
                 f"{n} companies scheduled · {announced} with price data · "
-                f"sorted by 1D return on announcement day</div>",
+                f"sorted by Post-Result Strength Score ↓</div>",
                 unsafe_allow_html=True,
             )
             _render_earnings_table(df_today, mode="today")
@@ -2874,7 +2936,35 @@ def _frag_quarterly_results(snap_date):
                                 CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
                             )
                             ELSE NULL
-                        END AS return_since_announcement
+                        END AS return_since_announcement,
+                        ROUND(
+                            COALESCE(mt.criteria_count, 0) / 8.0 * 25
+                            + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
+                            + CASE WHEN sd_ann.cmp > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                            + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
+                            + CASE
+                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.10 THEN 20
+                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.05 THEN 15
+                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.02 THEN 10
+                                WHEN COALESCE(sd_ann.ret_1d, 0) >  0    THEN 5
+                                ELSE 0
+                              END
+                            + CASE
+                                WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
+                                WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
+                                WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
+                                ELSE 0
+                              END
+                            + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
+                                   WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
+                                   WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
+                            + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
+                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
+                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                            + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
+                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
+                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                        , 0) AS score
                     FROM earnings_calendar ec
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd_ann
@@ -2884,8 +2974,26 @@ def _frag_quarterly_results(snap_date):
                         WHERE symbol = ec.symbol
                         ORDER BY date DESC LIMIT 1
                     ) latest ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT criteria_count, rs_rank_12m
+                        FROM minervini_template_daily
+                        WHERE symbol = ec.symbol
+                        ORDER BY date DESC LIMIT 1
+                    ) mt ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT sma_200, sma_200_slope, volume_ratio
+                        FROM technicals_daily
+                        WHERE symbol = ec.symbol
+                        ORDER BY date DESC LIMIT 1
+                    ) td ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT roe, revenue_growth_yoy, pat_growth_yoy
+                        FROM financials_snapshots
+                        WHERE symbol = ec.symbol
+                        ORDER BY fetched_at DESC LIMIT 1
+                    ) fs ON TRUE
                     WHERE ec.result_date <= :today
-                    ORDER BY ec.result_date DESC, sd_ann.ret_1d DESC NULLS LAST
+                    ORDER BY score DESC NULLS LAST, ec.result_date DESC
                 """),
                 {"today": snap_date},
             ).fetchall()
@@ -2894,7 +3002,7 @@ def _frag_quarterly_results(snap_date):
             return
         df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
                                                  "announcement_day_return",
-                                                 "return_since_announcement"])
+                                                 "return_since_announcement", "score"])
         if df_season.empty:
             st.info("No results announced yet this season.")
         else:
@@ -2903,7 +3011,7 @@ def _frag_quarterly_results(snap_date):
             st.markdown(
                 f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
                 f"{n} companies across {dates} result dates · "
-                f"sorted by date ↓ then 1D return ↓</div>",
+                f"sorted by Post-Result Strength Score ↓</div>",
                 unsafe_allow_html=True,
             )
             _render_earnings_table(df_season, mode="season")
