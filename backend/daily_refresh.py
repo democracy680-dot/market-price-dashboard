@@ -399,6 +399,15 @@ def run():
                 f"{success} ok / {failed} failed | "
                 f"{n_prices} price rows | {n_snaps} snapshots ===")
 
+    # ── 7. Daily email digest ────────────────────────────────────────────────
+    logger.info("Sending daily email digest...")
+    try:
+        from email_digest import send_digest
+        as_of_date = snapshots["date"].max().date() if not snapshots.empty else __import__("datetime").date.today()
+        send_digest(as_of_date)
+    except Exception as digest_err:
+        logger.error(f"  Email digest failed (non-fatal): {digest_err}", exc_info=True)
+
 
 if __name__ == "__main__":
     run()
