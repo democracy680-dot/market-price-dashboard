@@ -1,0 +1,116 @@
+<h2>Proposed Score Formula — Does this match your thinking?</h2>
+<p class="subtitle">Total score: 0–100. Computed live from data already in your database. Click Approve or Revise below.</p>
+
+<style>
+.formula-block { background:#141420; border:1px solid #333; border-radius:8px; padding:16px 20px; margin-bottom:14px; }
+.formula-block h3 { margin:0 0 4px 0; font-size:1em; }
+.formula-block .weight-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.78em; font-weight:700; margin-left:8px; vertical-align:middle; }
+.wt-setup  { background:#1b3a1b; color:#66bb6a; }
+.wt-react  { background:#1a1a3a; color:#7986cb; }
+.wt-fund   { background:#3a2a10; color:#ffb74d; }
+.signal-row { display:flex; align-items:baseline; gap:10px; margin:6px 0; font-size:0.84em; }
+.signal-name { color:#aaa; flex:0 0 200px; }
+.signal-pts  { color:#fff; font-weight:600; min-width:60px; }
+.signal-how  { color:#666; font-size:0.9em; }
+.divider { border:none; border-top:1px solid #2a2a2a; margin:8px 0; }
+.total-row { display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:#1e1e1e; border-radius:8px; margin-top:4px; }
+.color-key { display:flex; gap:20px; font-size:0.82em; margin-top:6px; }
+.ck { padding:3px 10px; border-radius:10px; font-weight:700; }
+.ck-green  { background:#1b3a1b; color:#66bb6a; }
+.ck-yellow { background:#3a3010; color:#ffd54f; }
+.ck-red    { background:#3a1010; color:#ef5350; }
+.missing-note { font-size:0.8em; color:#666; margin-top:4px; font-style:italic; }
+</style>
+
+<div class="formula-block">
+  <h3>🏗️ Setup Quality <span class="weight-badge wt-setup">50 pts</span></h3>
+  <p style="color:#666;font-size:0.82em;margin:4px 0 10px">Was the stock already positioned well BEFORE results? Stage-2 stocks with strong momentum continue higher.</p>
+  <div class="signal-row">
+    <span class="signal-name">Minervini Criteria (0–8)</span>
+    <span class="signal-pts">0–25 pts</span>
+    <span class="signal-how">criteria_count / 8 × 25</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">RS Rank vs Nifty 50</span>
+    <span class="signal-pts">0–15 pts</span>
+    <span class="signal-how">rs_rank_12m / 99 × 15</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">Above 200-DMA</span>
+    <span class="signal-pts">0 or 5 pts</span>
+    <span class="signal-how">+5 if CMP > 200-DMA</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">200-DMA Slope Up</span>
+    <span class="signal-pts">0 or 5 pts</span>
+    <span class="signal-how">+5 if sma_200_slope > 0</span>
+  </div>
+</div>
+
+<div class="formula-block">
+  <h3>⚡ Results Reaction <span class="weight-badge wt-react">30 pts</span></h3>
+  <p style="color:#666;font-size:0.82em;margin:4px 0 10px">Did the market respond strongly on the day? Price move + volume confirmation = institutional participation.</p>
+  <div class="signal-row">
+    <span class="signal-name">Announcement Day Return</span>
+    <span class="signal-pts">0–20 pts</span>
+    <span class="signal-how">≥10% → 20 · 5–10% → 15 · 2–5% → 10 · 0–2% → 5 · neg → 0</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">Volume Surge</span>
+    <span class="signal-pts">0–10 pts</span>
+    <span class="signal-how">≥3× avg → 10 · 2–3× → 7 · 1.5–2× → 4 · &lt;1.5× → 0</span>
+  </div>
+  <p class="missing-note">⚠️ Volume data from technicals_daily — if not refreshed yet on results day, shows 0 pts for volume (conservative).</p>
+</div>
+
+<div class="formula-block">
+  <h3>📊 Fundamentals <span class="weight-badge wt-fund">20 pts</span></h3>
+  <p style="color:#666;font-size:0.82em;margin:4px 0 10px">Is the underlying business high quality? Annual yfinance figures — rewards profitable, growing companies.</p>
+  <div class="signal-row">
+    <span class="signal-name">ROE</span>
+    <span class="signal-pts">0–8 pts</span>
+    <span class="signal-how">≥20% → 8 · 15–20% → 6 · 10–15% → 4 · &lt;10% → 0</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">Revenue Growth YoY</span>
+    <span class="signal-pts">0–6 pts</span>
+    <span class="signal-how">≥20% → 6 · 10–20% → 4 · 5–10% → 2 · &lt;5% → 0</span>
+  </div>
+  <div class="signal-row">
+    <span class="signal-name">PAT Growth YoY</span>
+    <span class="signal-pts">0–6 pts</span>
+    <span class="signal-how">≥20% → 6 · 10–20% → 4 · 5–10% → 2 · &lt;5% → 0</span>
+  </div>
+</div>
+
+<div class="total-row">
+  <div>
+    <strong style="font-size:1.1em">Total: 0–100</strong>
+    <div class="color-key">
+      <span class="ck ck-green">70–100 Strong</span>
+      <span class="ck ck-yellow">40–69 Moderate</span>
+      <span class="ck ck-red">0–39 Weak</span>
+    </div>
+  </div>
+  <div style="font-size:0.82em;color:#666;max-width:280px;text-align:right">
+    Computed in SQL at query time — no new table needed. Missing data defaults to 0 (conservative, not penalising).
+  </div>
+</div>
+
+<br>
+<div class="options">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Looks good — use this formula</h3>
+      <p>Proceed with these weights. We can always tune them later.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">↩</div>
+    <div class="content">
+      <h3>I want to change something</h3>
+      <p>Tell me in the terminal what you'd like to adjust.</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login Screen Design Options – StockStack</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #111; color: #fff; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 22px; color: #94a3b8; margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+  p.sub { text-align: center; color: #475569; font-size: 13px; margin-bottom: 48px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 40px; max-width: 1400px; margin: 0 auto; }
+  .option { display: flex; flex-direction: column; gap: 12px; }
+  .label { text-align: center; font-size: 13px; font-weight: 700; color: #60a5fa; letter-spacing: 0.1em; text-transform: uppercase; }
+  .desc { text-align: center; font-size: 11px; color: #475569; line-height: 1.5; }
+  .screen { border-radius: 16px; overflow: hidden; height: 420px; position: relative; border: 2px solid #1e293b; }
+  /* ── shared fake form elements ── */
+  .fake-input {
+    width: 100%; padding: 10px 14px; border-radius: 8px; font-size: 13px;
+    outline: none; margin-bottom: 10px; display: block;
+  }
+  .fake-btn {
+    width: 100%; padding: 11px; border-radius: 8px; font-size: 13px;
+    font-weight: 700; cursor: default; text-align: center; letter-spacing: 0.04em;
+  }
+
+  /* ══════════════ OPTION 1 — Deep Navy Glass ══════════════ */
+  .opt1 { background: linear-gradient(135deg,#0a0f1e 0%,#0d1b34 100%); display:flex; align-items:center; justify-content:center; }
+  .opt1 .card { background: rgba(255,255,255,0.04); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,0.08); border-radius:20px; padding:36px 32px; width:280px; text-align:center; }
+  .opt1 .logo { width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px; }
+  .opt1 h2 { font-size:22px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:4px; }
+  .opt1 h2 span{color:#3b82f6;}
+  .opt1 .tag{font-size:10px;color:#334155;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:20px;}
+  .opt1 .fake-input{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#94a3b8;}
+  .opt1 .fake-btn{background:linear-gradient(90deg,#1d4ed8,#3b82f6);color:#fff;border:none;}
+  .opt1 .foot{font-size:10px;color:#1e3a5f;margin-top:12px;}
+
+  /* ══════════════ OPTION 2 — Light Minimal ══════════════ */
+  .opt2{background:#f0f4f8;display:flex;align-items:center;justify-content:center;}
+  .opt2 .card{background:#fff;border-radius:20px;padding:36px 32px;width:280px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.12);}
+  .opt2 .logo{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#60a5fa);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .opt2 h2{font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-0.04em;margin-bottom:4px;}
+  .opt2 h2 span{color:#2563eb;}
+  .opt2 .tag{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:20px;}
+  .opt2 hr{border:none;border-top:1px solid #e2e8f0;margin-bottom:20px;}
+  .opt2 .fake-input{background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;}
+  .opt2 .fake-btn{background:#2563eb;color:#fff;border:none;}
+  .opt2 .foot{font-size:10px;color:#cbd5e1;margin-top:12px;}
+
+  /* ══════════════ OPTION 3 — Dark Split with Chart BG ══════════════ */
+  .opt3{background:#070d18;display:flex;align-items:stretch;overflow:hidden;}
+  .opt3 .left{flex:1;background:linear-gradient(160deg,#0d1f3c 0%,#0a1628 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+  .opt3 .chart-lines{position:absolute;inset:0;opacity:0.15;}
+  .opt3 .left-text{position:relative;z-index:1;padding:20px;text-align:center;}
+  .opt3 .left-text h3{font-size:16px;font-weight:800;color:#60a5fa;margin-bottom:6px;}
+  .opt3 .left-text p{font-size:10px;color:#475569;line-height:1.6;}
+  .opt3 .right{width:55%;background:#0c1220;display:flex;align-items:center;justify-content:center;padding:28px;}
+  .opt3 .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;}
+  .opt3 h2{font-size:18px;font-weight:800;color:#f1f5f9;margin-bottom:2px;text-align:center;}
+  .opt3 h2 span{color:#3b82f6;}
+  .opt3 .tag{font-size:9px;color:#334155;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px;text-align:center;display:block;}
+  .opt3 .fake-input{background:#111d30;border:1px solid #1e2d45;color:#64748b;font-size:12px;}
+  .opt3 .fake-btn{background:#2563eb;color:#fff;border:none;font-size:12px;}
+
+  /* ══════════════ OPTION 4 — Emerald Accent Dark ══════════════ */
+  .opt4{background:#050f0a;display:flex;align-items:center;justify-content:center;}
+  .opt4 .card{background:rgba(0,255,128,0.03);border:1px solid rgba(0,255,128,0.12);border-radius:20px;padding:36px 32px;width:280px;text-align:center;}
+  .opt4 .logo{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#064e3b,#10b981);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .opt4 h2{font-size:22px;font-weight:800;color:#ecfdf5;letter-spacing:-0.04em;margin-bottom:4px;}
+  .opt4 h2 span{color:#10b981;}
+  .opt4 .tag{font-size:10px;color:#064e3b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:20px;}
+  .opt4 .fake-input{background:rgba(255,255,255,0.03);border:1px solid rgba(0,255,128,0.1);color:#64748b;}
+  .opt4 .fake-btn{background:#10b981;color:#fff;border:none;}
+  .opt4 .foot{font-size:10px;color:#064e3b;margin-top:12px;}
+
+  /* ══════════════ OPTION 5 — Full Bleed Hero + Overlay ══════════════ */
+  .opt5{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 50%,#0f172a 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+  .opt5::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");}
+  .opt5 .card{background:rgba(12,18,32,0.88);backdrop-filter:blur(24px);border:1px solid rgba(59,130,246,0.2);border-radius:20px;padding:36px 32px;width:280px;text-align:center;position:relative;}
+  .opt5 .logo{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .opt5 h2{font-size:22px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:4px;}
+  .opt5 h2 span{color:#60a5fa;}
+  .opt5 .tag{font-size:10px;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:20px;}
+  .opt5 .fake-input{background:rgba(255,255,255,0.05);border:1px solid rgba(59,130,246,0.2);color:#64748b;}
+  .opt5 .fake-btn{background:linear-gradient(90deg,#1d4ed8,#3b82f6);color:#fff;border:none;}
+
+  /* ══════════════ OPTION 6 — Saffron / India Flag Accent ══════════════ */
+  .opt6{background:#0d0d12;display:flex;align-items:center;justify-content:center;position:relative;}
+  .opt6::after{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#FF9933 33%,#fff 33%,#fff 66%,#138808 66%);}
+  .opt6 .card{background:#13131a;border:1px solid #1f2035;border-radius:20px;padding:36px 32px;width:280px;text-align:center;}
+  .opt6 .logo{width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#FF9933,#e05c00);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .opt6 h2{font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-0.04em;margin-bottom:4px;}
+  .opt6 h2 span{color:#FF9933;}
+  .opt6 .tag{font-size:10px;color:#2a2a3d;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:20px;}
+  .opt6 .fake-input{background:#0d0d14;border:1px solid #1e1e30;color:#64748b;}
+  .opt6 .fake-btn{background:linear-gradient(90deg,#FF9933,#e05c00);color:#fff;border:none;}
+  .opt6 .foot{font-size:10px;color:#1a1a2a;margin-top:12px;}
+
+  /* ══════════════ OPTION 7 — Terminal / Bloomberg Style ══════════════ */
+  .opt7{background:#0a0a0a;display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;}
+  .opt7 .card{background:#000;border:1px solid #ff6600;border-radius:4px;padding:36px 32px;width:290px;text-align:left;}
+  .opt7 .logo-row{display:flex;align-items:center;gap:10px;margin-bottom:20px;}
+  .opt7 .dot{width:10px;height:10px;border-radius:50%;background:#ff6600;}
+  .opt7 h2{font-size:16px;font-weight:700;color:#ff6600;letter-spacing:0.08em;}
+  .opt7 .sub{font-size:10px;color:#442200;margin-bottom:20px;letter-spacing:0.05em;}
+  .opt7 .prompt{font-size:10px;color:#ff6600;margin-bottom:4px;}
+  .opt7 .fake-input{background:#0a0500;border:1px solid #442200;color:#ff9933;font-family:'Courier New',monospace;font-size:12px;border-radius:2px;}
+  .opt7 .fake-btn{background:#ff6600;color:#000;border:none;font-family:'Courier New',monospace;font-weight:700;border-radius:2px;font-size:12px;}
+  .opt7 .foot{font-size:9px;color:#331a00;margin-top:12px;font-family:'Courier New',monospace;}
+
+  /* ══════════════ OPTION 8 — Premium Dark + Stats Tickers ══════════════ */
+  .opt8{background:#06090f;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+  .opt8 .ticker-bar{position:absolute;top:0;left:0;right:0;height:28px;background:#0a1020;border-bottom:1px solid #0d1f3c;display:flex;align-items:center;padding:0 12px;gap:20px;overflow:hidden;}
+  .opt8 .tick{font-size:9px;font-weight:600;white-space:nowrap;}
+  .opt8 .tick.up{color:#10b981;} .opt8 .tick.dn{color:#ef4444;}
+  .opt8 .card{background:#0c1220;border:1px solid #1a2740;border-radius:20px;padding:32px 30px;width:278px;text-align:center;margin-top:28px;}
+  .opt8 .logo{width:50px;height:50px;border-radius:14px;background:linear-gradient(135deg,#1d4ed8,#3b82f6);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;}
+  .opt8 h2{font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:3px;}
+  .opt8 h2 span{color:#3b82f6;}
+  .opt8 .tag{font-size:9px;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:18px;}
+  .opt8 .stats{display:flex;gap:8px;margin-bottom:18px;}
+  .opt8 .stat{flex:1;background:#0a1628;border:1px solid #0d1f3c;border-radius:8px;padding:8px 4px;text-align:center;}
+  .opt8 .stat .val{font-size:12px;font-weight:700;color:#10b981;}
+  .opt8 .stat .lbl{font-size:8px;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.06em;}
+  .opt8 .fake-input{background:#080f1a;border:1px solid #1a2740;color:#64748b;font-size:12px;}
+  .opt8 .fake-btn{background:#2563eb;color:#fff;border:none;font-size:12px;}
+
+  /* ══════════════ OPTION 9 — Elegant White + Blue Gradient Side ══════════════ */
+  .opt9{background:#fff;display:flex;align-items:stretch;}
+  .opt9 .left{width:42%;background:linear-gradient(160deg,#1e40af 0%,#3b82f6 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
+  .opt9 .left h3{font-size:14px;font-weight:800;color:#fff;margin-bottom:8px;letter-spacing:-0.02em;}
+  .opt9 .left p{font-size:9px;color:rgba(255,255,255,0.6);line-height:1.6;}
+  .opt9 .left .badge{margin-top:16px;background:rgba(255,255,255,0.15);border-radius:20px;padding:5px 12px;font-size:9px;color:#bfdbfe;}
+  .opt9 .right{flex:1;display:flex;align-items:center;justify-content:center;padding:28px;}
+  .opt9 .form{width:100%;}
+  .opt9 .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#1d4ed8,#60a5fa);display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px;}
+  .opt9 h2{font-size:18px;font-weight:800;color:#0f172a;margin-bottom:2px;}
+  .opt9 h2 span{color:#2563eb;}
+  .opt9 .tag{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:18px;display:block;}
+  .opt9 .fake-input{background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:12px;}
+  .opt9 .fake-btn{background:#2563eb;color:#fff;border:none;font-size:12px;}
+
+  /* ══════════════ OPTION 10 — Frosted Aurora ══════════════ */
+  .opt10{background:linear-gradient(135deg,#020617 0%,#0c0a1e 40%,#050d1a 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
+  .opt10::before{content:'';position:absolute;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,0.25) 0%,transparent 70%);top:-60px;right:-60px;}
+  .opt10::after{content:'';position:absolute;width:250px;height:250px;border-radius:50%;background:radial-gradient(circle,rgba(16,185,129,0.15) 0%,transparent 70%);bottom:-40px;left:-40px;}
+  .opt10 .card{background:rgba(255,255,255,0.04);backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:36px 32px;width:285px;text-align:center;position:relative;z-index:1;}
+  .opt10 .logo{width:54px;height:54px;border-radius:16px;background:linear-gradient(135deg,#4f46e5,#818cf8);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px;box-shadow:0 8px 32px rgba(99,102,241,0.4);}
+  .opt10 h2{font-size:22px;font-weight:800;letter-spacing:-0.04em;margin-bottom:4px;background:linear-gradient(90deg,#a5b4fc,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  .opt10 .tag{font-size:10px;color:#312e81;text-transform:uppercase;letter-spacing:0.12em;margin-bottom:20px;}
+  .opt10 .fake-input{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:#64748b;}
+  .opt10 .fake-btn{background:linear-gradient(90deg,#4f46e5,#818cf8);color:#fff;border:none;box-shadow:0 4px 20px rgba(99,102,241,0.35);}
+  .opt10 .foot{font-size:10px;color:#1e1b4b;margin-top:12px;}
+</style>
+</head>
+<body>
+
+<h1>Login Screen — 10 Design Options</h1>
+<p class="sub">Pick a number and I'll implement it in the app exactly.</p>
+
+<div class="grid">
+
+  <!-- OPTION 1 -->
+  <div class="option">
+    <div class="label">Option 1</div>
+    <div class="screen opt1">
+      <div class="card">
+        <div class="logo">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div class="lp-name" style="font-size:22px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:4px;">Stock<span style="color:#3b82f6;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div class="foot">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">Deep Navy Glass · Current dark theme, slightly refined with glass card and blue gradient logo</div>
+  </div>
+
+  <!-- OPTION 2 -->
+  <div class="option">
+    <div class="label">Option 2</div>
+    <div class="screen opt2">
+      <div class="card">
+        <div class="logo">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#0f172a;letter-spacing:-0.04em;margin-bottom:4px;">Stock<span style="color:#2563eb;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <hr>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div class="foot">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">Clean Light · White card on grey background — professional, minimal, daytime-friendly</div>
+  </div>
+
+  <!-- OPTION 3 -->
+  <div class="option">
+    <div class="label">Option 3</div>
+    <div class="screen opt3">
+      <div class="left">
+        <svg class="chart-lines" viewBox="0 0 200 420" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="0,300 30,260 60,280 90,200 120,220 150,160 180,180 200,140" fill="none" stroke="#3b82f6" stroke-width="2"/>
+          <polyline points="0,360 40,340 80,320 110,290 140,310 170,270 200,250" fill="none" stroke="#10b981" stroke-width="1.5" stroke-dasharray="4,3"/>
+        </svg>
+        <div class="left-text">
+          <h3>Market Intelligence</h3>
+          <p>Real-time signals<br>for Indian equities</p>
+        </div>
+      </div>
+      <div class="right">
+        <div style="width:100%;text-align:center;">
+          <div class="logo" style="display:inline-flex;margin-bottom:12px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          </div>
+          <div style="font-size:18px;font-weight:800;color:#f1f5f9;margin-bottom:2px;">Stock<span style="color:#3b82f6;">Stack</span></div>
+          <span class="tag">Indian Equity Intelligence</span>
+          <input class="fake-input" placeholder="Enter password…" readonly style="margin-top:8px;">
+          <div class="fake-btn">Sign In →</div>
+        </div>
+      </div>
+    </div>
+    <div class="desc">Dark Split · Left panel with animated chart lines, right panel for login — two-column layout</div>
+  </div>
+
+  <!-- OPTION 4 -->
+  <div class="option">
+    <div class="label">Option 4</div>
+    <div class="screen opt4">
+      <div class="card">
+        <div class="logo" style="display:inline-flex;margin-bottom:14px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#ecfdf5;letter-spacing:-0.04em;margin-bottom:4px;">Stock<span style="color:#10b981;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div class="foot">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">Emerald Dark · Green accent on black — signals financial growth, distinctive and bold</div>
+  </div>
+
+  <!-- OPTION 5 -->
+  <div class="option">
+    <div class="label">Option 5</div>
+    <div class="screen opt5">
+      <div class="card">
+        <div class="logo" style="display:inline-flex;margin-bottom:14px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:4px;">Stock<span style="color:#60a5fa;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div style="font-size:10px;color:#1e3a5f;margin-top:12px;">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">Starfield Pattern · Blue hex/dot grid BG with frosted glass card — dramatic and premium</div>
+  </div>
+
+  <!-- OPTION 6 -->
+  <div class="option">
+    <div class="label">Option 6</div>
+    <div class="screen opt6">
+      <div class="card">
+        <div class="logo" style="display:inline-flex;margin-bottom:14px;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-0.04em;margin-bottom:4px;">Stock<span style="color:#FF9933;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div class="foot">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">India Flag Accent · Saffron/orange branding with tricolor top bar — proudly Indian</div>
+  </div>
+
+  <!-- OPTION 7 -->
+  <div class="option">
+    <div class="label">Option 7</div>
+    <div class="screen opt7">
+      <div class="card">
+        <div class="logo-row">
+          <div class="dot"></div>
+          <h2>STOCKSTACK</h2>
+        </div>
+        <div class="sub">> INDIAN EQUITY INTELLIGENCE TERMINAL</div>
+        <div class="prompt">> ENTER ACCESS CODE:</div>
+        <input class="fake-input" placeholder="████████" readonly>
+        <div class="fake-btn">[ AUTHENTICATE ]</div>
+        <div class="foot">> RESTRICTED — AUTHORISED USERS ONLY</div>
+      </div>
+    </div>
+    <div class="desc">Bloomberg Terminal · Monospace orange-on-black — for traders who live in the terminal</div>
+  </div>
+
+  <!-- OPTION 8 -->
+  <div class="option">
+    <div class="label">Option 8</div>
+    <div class="screen opt8">
+      <div class="ticker-bar">
+        <span class="tick up">RELIANCE ▲ 2,930.45 +0.8%</span>
+        <span class="tick dn">TCS ▼ 3,812.10 -0.3%</span>
+        <span class="tick up">NIFTY ▲ 22,450 +0.5%</span>
+        <span class="tick dn">HDFC ▼ 1,680.30 -0.1%</span>
+      </div>
+      <div class="card">
+        <div class="logo" style="display:inline-flex;margin-bottom:12px;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:20px;font-weight:800;color:#f1f5f9;letter-spacing:-0.04em;margin-bottom:3px;">Stock<span style="color:#3b82f6;">Stack</span></div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <div class="stats">
+          <div class="stat"><div class="val">500+</div><div class="lbl">Stocks</div></div>
+          <div class="stat"><div class="val">Live</div><div class="lbl">Data</div></div>
+          <div class="stat"><div class="val">NSE</div><div class="lbl">BSE</div></div>
+        </div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+      </div>
+    </div>
+    <div class="desc">Live Ticker Bar · Running stock prices at top + mini stats — immersive trading feel</div>
+  </div>
+
+  <!-- OPTION 9 -->
+  <div class="option">
+    <div class="label">Option 9</div>
+    <div class="screen opt9">
+      <div class="left">
+        <div style="font-size:32px;margin-bottom:10px;">📈</div>
+        <h3>StockStack</h3>
+        <p>500+ Indian equities<br>Technical signals<br>Theme portfolios</p>
+        <div class="badge">NSE · BSE · NIFTY</div>
+      </div>
+      <div class="right">
+        <div class="form" style="text-align:center;">
+          <div class="logo" style="display:inline-flex;margin-bottom:12px;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          </div>
+          <div style="font-size:18px;font-weight:800;color:#0f172a;margin-bottom:2px;">Stock<span style="color:#2563eb;">Stack</span></div>
+          <span class="tag">Sign in to continue</span>
+          <input class="fake-input" placeholder="Enter password…" readonly>
+          <div class="fake-btn">Sign In →</div>
+          <div style="font-size:9px;color:#cbd5e1;margin-top:10px;">Restricted access · Authorised users only</div>
+        </div>
+      </div>
+    </div>
+    <div class="desc">Elegant Split Light · Blue gradient left with features, clean white right — SaaS product feel</div>
+  </div>
+
+  <!-- OPTION 10 -->
+  <div class="option">
+    <div class="label">Option 10</div>
+    <div class="screen opt10">
+      <div class="card">
+        <div class="logo" style="display:inline-flex;margin-bottom:14px;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+        </div>
+        <div style="font-size:22px;font-weight:800;letter-spacing:-0.04em;margin-bottom:4px;background:linear-gradient(90deg,#a5b4fc,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">StockStack</div>
+        <div class="tag">Indian Equity Intelligence</div>
+        <input class="fake-input" placeholder="Enter password…" readonly>
+        <div class="fake-btn">Sign In →</div>
+        <div class="foot">Restricted access · Authorised users only</div>
+      </div>
+    </div>
+    <div class="desc">Frosted Aurora · Purple/indigo glowing orbs with glass card — modern, luxurious, unique</div>
+  </div>
+
+</div>
+
+<p style="text-align:center;color:#1e293b;margin-top:60px;font-size:12px;">Tell Claude which number you want and it will implement it.</p>
+
+</body>
+</html>

@@ -1,0 +1,436 @@
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8502
+  Network URL: http://10.177.8.233:8502
+  External URL: http://223.225.59.19:8502
+
++------------------------- Traceback (most recent call last) --------------------------+
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:143 in __init__                                                                |
+|                                                                                      |
+|    140                                                                               |
+|    141         if connection is None:                                                |
+|    142             try:                                                              |
+| >  143                 self._dbapi_connection = engine.raw_connection()              |
+|    144             except dialect.loaded_dbapi.Error as err:                         |
+|    145                 Connection._handle_dbapi_exception_noconnection(              |
+|    146                     err, dialect, engine                                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:3317 in raw_connection                                                         |
+|                                                                                      |
+|   3314             :ref:`dbapi_connections`                                          |
+|   3315                                                                               |
+|   3316         """                                                                   |
+| > 3317         return self.pool.connect()                                            |
+|   3318                                                                               |
+|   3319                                                                               |
+|   3320 class OptionEngineMixin(log.Identified):                                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:448 in connect                                                                   |
+|                                                                                      |
+|    445         the pool.                                                             |
+|    446                                                                               |
+|    447         """                                                                   |
+| >  448         return _ConnectionFairy._checkout(self)                               |
+|    449                                                                               |
+|    450     def _return_conn(self, record: ConnectionPoolEntry) -> None:              |
+|    451         """Given a _ConnectionRecord, return it to the :class:`_pool.Pool`.   |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:1272 in _checkout                                                                |
+|                                                                                      |
+|   1269         fairy: Optional[_ConnectionFairy] = None,                             |
+|   1270     ) -> _ConnectionFairy:                                                    |
+|   1271         if not fairy:                                                         |
+| > 1272             fairy = _ConnectionRecord.checkout(pool)                          |
+|   1273                                                                               |
+|   1274             if threadconns is not None:                                       |
+|   1275                 threadconns.current = weakref.ref(fairy)                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:717 in checkout                                                                  |
+|                                                                                      |
+|    714         try:                                                                  |
+|    715             dbapi_connection = rec.get_connection()                           |
+|    716         except BaseException as err:                                          |
+| >  717             with util.safe_reraise():                                         |
+|    718                 rec._checkin_failed(err, _fairy_was_created=False)            |
+|    719                                                                               |
+|    720             # not reached, for code linters only                              |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\util\lang |
+| helpers.py:121 in __exit__                                                           |
+|                                                                                      |
+|    118             exc_type, exc_value, exc_tb = self._exc_info                      |
+|    119             assert exc_value is not None                                      |
+|    120             self._exc_info = None  # remove potential circular references     |
+| >  121             raise exc_value.with_traceback(exc_tb)                            |
+|    122         else:                                                                 |
+|    123             self._exc_info = None  # remove potential circular references     |
+|    124             assert value is not None                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:715 in checkout                                                                  |
+|                                                                                      |
+|    712             rec = pool._do_get()                                              |
+|    713                                                                               |
+|    714         try:                                                                  |
+| >  715             dbapi_connection = rec.get_connection()                           |
+|    716         except BaseException as err:                                          |
+|    717             with util.safe_reraise():                                         |
+|    718                 rec._checkin_failed(err, _fairy_was_created=False)            |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:866 in get_connection                                                            |
+|                                                                                      |
+|    863             self.__close(terminate=True)                                      |
+|    864             self.info.clear()                                                 |
+|    865                                                                               |
+| >  866             self.__connect()                                                  |
+|    867                                                                               |
+|    868         assert self.dbapi_connection is not None                              |
+|    869         return self.dbapi_connection                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:900 in __connect                                                                 |
+|                                                                                      |
+|    897             pool.logger.debug("Created new connection %r", connection)        |
+|    898             self.fresh = True                                                 |
+|    899         except BaseException as e:                                            |
+| >  900             with util.safe_reraise():                                         |
+|    901                 pool.logger.debug("Error on connect(): %s", e)                |
+|    902         else:                                                                 |
+|    903             # in SQLAlchemy 1.4 the first_connect event is not used by        |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\util\lang |
+| helpers.py:121 in __exit__                                                           |
+|                                                                                      |
+|    118             exc_type, exc_value, exc_tb = self._exc_info                      |
+|    119             assert exc_value is not None                                      |
+|    120             self._exc_info = None  # remove potential circular references     |
+| >  121             raise exc_value.with_traceback(exc_tb)                            |
+|    122         else:                                                                 |
+|    123             self._exc_info = None  # remove potential circular references     |
+|    124             assert value is not None                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:896 in __connect                                                                 |
+|                                                                                      |
+|    893         self.dbapi_connection = None                                          |
+|    894         try:                                                                  |
+|    895             self.starttime = time.time()                                      |
+| >  896             self.dbapi_connection = connection = pool._invoke_creator(self)   |
+|    897             pool.logger.debug("Created new connection %r", connection)        |
+|    898             self.fresh = True                                                 |
+|    899         except BaseException as e:                                            |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\cr |
+| eate.py:667 in connect                                                               |
+|                                                                                      |
+|   664                         return connection                                      |
+|   665                 return dialect.connect(*mutable_cargs, **mutable_cparams)      |
+|   666             else:                                                              |
+| > 667                 return dialect.connect(*cargs_tup, **cparams)                  |
+|   668                                                                                |
+|   669         creator = pop_kwarg("creator", connect)                                |
+|   670                                                                                |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\de |
+| fault.py:630 in connect                                                              |
+|                                                                                      |
+|    627                                                                               |
+|    628     def connect(self, *cargs: Any, **cparams: Any) -> DBAPIConnection:        |
+|    629         # inherits the docstring from interfaces.Dialect.connect              |
+| >  630         return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[n |
+|    631                                                                               |
+|    632     def create_connect_args(self, url: URL) -> ConnectArgsType:               |
+|    633         # inherits the docstring from interfaces.Dialect.create_connect_args  |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\psycopg2\__init__.py |
+| :135 in connect                                                                      |
+|                                                                                      |
+|   132         kwasync['async_'] = kwargs.pop('async_')                               |
+|   133                                                                                |
+|   134     dsn = _ext.make_dsn(dsn, **kwargs)                                         |
+| > 135     conn = _connect(dsn, connection_factory=connection_factory, **kwasync)     |
+|   136     if cursor_factory is not None:                                             |
+|   137         conn.cursor_factory = cursor_factory                                   |
+|   138                                                                                |
++--------------------------------------------------------------------------------------+
+OperationalError: could not translate host name 
+"aws-1-ap-northeast-1.pooler.supabase.com" to address: Name or service not known
+
+
+The above exception was the direct cause of the following exception:
+
++------------------------- Traceback (most recent call last) --------------------------+
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\streamlit\runtime\sc |
+| riptrunner\exec_code.py:129 in exec_func_with_error_handling                         |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\streamlit\runtime\sc |
+| riptrunner\script_runner.py:672 in code_to_exec                                      |
+|                                                                                      |
+| c:\Users\Sumit meena\OneDrive\Desktop\Claude Code\Market Price                       |
+| Dashboard\frontend\app.py:2353 in <module>                                           |
+|                                                                                      |
+|   2350     st.markdown("<div class='sidebar-section-label'>Last Refresh</div>", unsa |
+|   2351     # PERF: Measure refresh status query (TTL=1800s, near-zero on cache hit)  |
+|   2352     with measure("load_refresh_status"):                                      |
+| > 2353         status = load_refresh_status()                                        |
+|   2354     if status:                                                                |
+|   2355         last_run = status.get("finished_at") or status.get("started_at")      |
+|   2356         s   = status.get("status", "")                                        |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\streamlit\runtime\ca |
+| ching\cache_utils.py:281 in __call__                                                 |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\streamlit\runtime\ca |
+| ching\cache_utils.py:326 in _get_or_create_cached_value                              |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\streamlit\runtime\ca |
+| ching\cache_utils.py:385 in _handle_cache_miss                                       |
+|                                                                                      |
+| c:\Users\Sumit meena\OneDrive\Desktop\Claude Code\Market Price                       |
+| Dashboard\frontend\app.py:1069 in load_refresh_status                                |
+|                                                                                      |
+|   1066         SELECT started_at, finished_at, stocks_total, stocks_success, stocks_ |
+|   1067         FROM refresh_log ORDER BY started_at DESC LIMIT 1                     |
+|   1068     """)                                                                      |
+| > 1069     with engine.connect() as conn:                                            |
+|   1070         row = conn.execute(sql).fetchone()                                    |
+|   1071     return dict(row._mapping) if row else None                                |
+|   1072                                                                               |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:3293 in connect                                                                |
+|                                                                                      |
+|   3290                                                                               |
+|   3291         """                                                                   |
+|   3292                                                                               |
+| > 3293         return self._connection_cls(self)                                     |
+|   3294                                                                               |
+|   3295     def raw_connection(self) -> PoolProxiedConnection:                        |
+|   3296         """Return a "raw" DBAPI connection from the connection pool.          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:145 in __init__                                                                |
+|                                                                                      |
+|    142             try:                                                              |
+|    143                 self._dbapi_connection = engine.raw_connection()              |
+|    144             except dialect.loaded_dbapi.Error as err:                         |
+| >  145                 Connection._handle_dbapi_exception_noconnection(              |
+|    146                     err, dialect, engine                                      |
+|    147                 )                                                             |
+|    148                 raise                                                         |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:2448 in _handle_dbapi_exception_noconnection                                   |
+|                                                                                      |
+|   2445             raise newraise.with_traceback(exc_info[2]) from e                 |
+|   2446         elif should_wrap:                                                     |
+|   2447             assert sqlalchemy_exception is not None                           |
+| > 2448             raise sqlalchemy_exception.with_traceback(exc_info[2]) from e     |
+|   2449         else:                                                                 |
+|   2450             assert exc_info[1] is not None                                    |
+|   2451             raise exc_info[1].with_traceback(exc_info[2])                     |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:143 in __init__                                                                |
+|                                                                                      |
+|    140                                                                               |
+|    141         if connection is None:                                                |
+|    142             try:                                                              |
+| >  143                 self._dbapi_connection = engine.raw_connection()              |
+|    144             except dialect.loaded_dbapi.Error as err:                         |
+|    145                 Connection._handle_dbapi_exception_noconnection(              |
+|    146                     err, dialect, engine                                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\ba |
+| se.py:3317 in raw_connection                                                         |
+|                                                                                      |
+|   3314             :ref:`dbapi_connections`                                          |
+|   3315                                                                               |
+|   3316         """                                                                   |
+| > 3317         return self.pool.connect()                                            |
+|   3318                                                                               |
+|   3319                                                                               |
+|   3320 class OptionEngineMixin(log.Identified):                                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:448 in connect                                                                   |
+|                                                                                      |
+|    445         the pool.                                                             |
+|    446                                                                               |
+|    447         """                                                                   |
+| >  448         return _ConnectionFairy._checkout(self)                               |
+|    449                                                                               |
+|    450     def _return_conn(self, record: ConnectionPoolEntry) -> None:              |
+|    451         """Given a _ConnectionRecord, return it to the :class:`_pool.Pool`.   |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:1272 in _checkout                                                                |
+|                                                                                      |
+|   1269         fairy: Optional[_ConnectionFairy] = None,                             |
+|   1270     ) -> _ConnectionFairy:                                                    |
+|   1271         if not fairy:                                                         |
+| > 1272             fairy = _ConnectionRecord.checkout(pool)                          |
+|   1273                                                                               |
+|   1274             if threadconns is not None:                                       |
+|   1275                 threadconns.current = weakref.ref(fairy)                      |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:717 in checkout                                                                  |
+|                                                                                      |
+|    714         try:                                                                  |
+|    715             dbapi_connection = rec.get_connection()                           |
+|    716         except BaseException as err:                                          |
+| >  717             with util.safe_reraise():                                         |
+|    718                 rec._checkin_failed(err, _fairy_was_created=False)            |
+|    719                                                                               |
+|    720             # not reached, for code linters only                              |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\util\lang |
+| helpers.py:121 in __exit__                                                           |
+|                                                                                      |
+|    118             exc_type, exc_value, exc_tb = self._exc_info                      |
+|    119             assert exc_value is not None                                      |
+|    120             self._exc_info = None  # remove potential circular references     |
+| >  121             raise exc_value.with_traceback(exc_tb)                            |
+|    122         else:                                                                 |
+|    123             self._exc_info = None  # remove potential circular references     |
+|    124             assert value is not None                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:715 in checkout                                                                  |
+|                                                                                      |
+|    712             rec = pool._do_get()                                              |
+|    713                                                                               |
+|    714         try:                                                                  |
+| >  715             dbapi_connection = rec.get_connection()                           |
+|    716         except BaseException as err:                                          |
+|    717             with util.safe_reraise():                                         |
+|    718                 rec._checkin_failed(err, _fairy_was_created=False)            |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:866 in get_connection                                                            |
+|                                                                                      |
+|    863             self.__close(terminate=True)                                      |
+|    864             self.info.clear()                                                 |
+|    865                                                                               |
+| >  866             self.__connect()                                                  |
+|    867                                                                               |
+|    868         assert self.dbapi_connection is not None                              |
+|    869         return self.dbapi_connection                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:900 in __connect                                                                 |
+|                                                                                      |
+|    897             pool.logger.debug("Created new connection %r", connection)        |
+|    898             self.fresh = True                                                 |
+|    899         except BaseException as e:                                            |
+| >  900             with util.safe_reraise():                                         |
+|    901                 pool.logger.debug("Error on connect(): %s", e)                |
+|    902         else:                                                                 |
+|    903             # in SQLAlchemy 1.4 the first_connect event is not used by        |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\util\lang |
+| helpers.py:121 in __exit__                                                           |
+|                                                                                      |
+|    118             exc_type, exc_value, exc_tb = self._exc_info                      |
+|    119             assert exc_value is not None                                      |
+|    120             self._exc_info = None  # remove potential circular references     |
+| >  121             raise exc_value.with_traceback(exc_tb)                            |
+|    122         else:                                                                 |
+|    123             self._exc_info = None  # remove potential circular references     |
+|    124             assert value is not None                                          |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\pool\base |
+| .py:896 in __connect                                                                 |
+|                                                                                      |
+|    893         self.dbapi_connection = None                                          |
+|    894         try:                                                                  |
+|    895             self.starttime = time.time()                                      |
+| >  896             self.dbapi_connection = connection = pool._invoke_creator(self)   |
+|    897             pool.logger.debug("Created new connection %r", connection)        |
+|    898             self.fresh = True                                                 |
+|    899         except BaseException as e:                                            |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\cr |
+| eate.py:667 in connect                                                               |
+|                                                                                      |
+|   664                         return connection                                      |
+|   665                 return dialect.connect(*mutable_cargs, **mutable_cparams)      |
+|   666             else:                                                              |
+| > 667                 return dialect.connect(*cargs_tup, **cparams)                  |
+|   668                                                                                |
+|   669         creator = pop_kwarg("creator", connect)                                |
+|   670                                                                                |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\engine\de |
+| fault.py:630 in connect                                                              |
+|                                                                                      |
+|    627                                                                               |
+|    628     def connect(self, *cargs: Any, **cparams: Any) -> DBAPIConnection:        |
+|    629         # inherits the docstring from interfaces.Dialect.connect              |
+| >  630         return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[n |
+|    631                                                                               |
+|    632     def create_connect_args(self, url: URL) -> ConnectArgsType:               |
+|    633         # inherits the docstring from interfaces.Dialect.create_connect_args  |
+|                                                                                      |
+| C:\Users\Sumit                                                                       |
+| meena\AppData\Local\Programs\Python\Python311\Lib\site-packages\psycopg2\__init__.py |
+| :135 in connect                                                                      |
+|                                                                                      |
+|   132         kwasync['async_'] = kwargs.pop('async_')                               |
+|   133                                                                                |
+|   134     dsn = _ext.make_dsn(dsn, **kwargs)                                         |
+| > 135     conn = _connect(dsn, connection_factory=connection_factory, **kwasync)     |
+|   136     if cursor_factory is not None:                                             |
+|   137         conn.cursor_factory = cursor_factory                                   |
+|   138                                                                                |
++--------------------------------------------------------------------------------------+
+OperationalError: (psycopg2.OperationalError) could not translate host name 
+"aws-1-ap-northeast-1.pooler.supabase.com" to address: Name or service not known
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

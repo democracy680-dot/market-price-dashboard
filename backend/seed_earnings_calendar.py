@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from db import get_engine
 from sqlalchemy import text
 
-EXCEL_PATH = Path(__file__).parent.parent / "Quaterly Result Annoucement date.xlsx"
+EXCEL_PATH = Path(__file__).parent.parent / "data" / "Quaterly Result Annoucement date.xlsx"
 BATCH = 50
 
 
@@ -106,7 +106,7 @@ def main():
     print(f"Reading {EXCEL_PATH.name} ...")
     df = load_excel()
     print(f"  Found {len(df)} valid entries across {df['result_date'].nunique()} dates "
-          f"({df['result_date'].min()} → {df['result_date'].max()})")
+          f"({df['result_date'].min()} to {df['result_date'].max()})")
 
     records = df.to_dict("records")
     engine = get_engine()

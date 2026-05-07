@@ -1,0 +1,37 @@
+<h2>What should the Score primarily measure?</h2>
+<p class="subtitle">This determines what the "Post-Result Strength Score" rewards. Think about how you actually pick stocks after results season.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Pre-result technical setup</h3>
+      <p>Reward stocks that were <strong>already strong before</strong> results day — uptrend, above 200-DMA, strong relative strength vs Nifty, Minervini template passing. The idea: great results in a stock already in stage-2 = continuation for weeks.</p>
+      <div style="margin-top:10px;padding:8px 12px;background:#1a2a1a;border-left:3px solid #4caf50;font-size:0.85em;">
+        📐 Signals: Minervini score (0–8), RS Rank, 200-DMA status, ADX trend strength
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Market reaction on results day</h3>
+      <p>Reward stocks where the <strong>market reacted strongly</strong> to the results — big positive return AND unusually high volume. The idea: institutions are entering, and price + volume confirmation signals sustained buying.</p>
+      <div style="margin-top:10px;padding:8px 12px;background:#1a1a2a;border-left:3px solid #5c6bc0;font-size:0.85em;">
+        📊 Signals: Announcement-day return %, Volume surge (today vs 20-day avg), Gap-up magnitude
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Both — setup quality × reaction strength (Recommended)</h3>
+      <p>The highest-conviction stocks have <strong>both</strong>: a clean technical base before results AND strong market reaction on the day. A stock in stage-2 uptrend that also gaps up on high volume is a rare, high-quality setup.</p>
+      <div style="margin-top:10px;padding:8px 12px;background:#2a1a1a;border-left:3px solid #ff7043;font-size:0.85em;">
+        🎯 Score = (Setup Quality 50%) + (Results Reaction 30%) + (Fundamentals 20%)
+      </div>
+    </div>
+  </div>
+</div>
