@@ -2796,7 +2796,9 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     disp = pd.DataFrame()
     disp["Symbol"] = df["symbol"]
     disp["Company"] = df["name"]
-    disp["Score"] = pd.to_numeric(df["score"], errors="coerce")
+    disp["Score"] = pd.to_numeric(df["score"], errors="coerce").map(
+        lambda x: int(x) if pd.notna(x) else "—"
+    )
     disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     if mode == "season":
         disp["Result Date"] = pd.to_datetime(df["result_date"]).dt.strftime("%d %b %Y")
