@@ -76,10 +76,13 @@ def _get_volume_surge(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
     """)
     with engine.connect() as conn:
         rows = conn.execute(sql, {"as_of": as_of, "top_n": top_n}).fetchall()
-    return pd.DataFrame(rows, columns=[
+    df = pd.DataFrame(rows, columns=[
         "symbol", "name", "cmp", "ret_1d_pct",
         "today_vol", "avg_vol_20d", "surge_ratio",
     ])
+    for col in ("cmp", "ret_1d_pct", "surge_ratio"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
 
 def _get_earnings_movers(engine, as_of: date, min_return_pct: float = 5.0) -> pd.DataFrame:
@@ -103,7 +106,10 @@ def _get_earnings_movers(engine, as_of: date, min_return_pct: float = 5.0) -> pd
             "as_of":   as_of,
             "min_ret": min_return_pct / 100.0,
         }).fetchall()
-    return pd.DataFrame(rows, columns=["symbol", "name", "cmp", "ret_1d_pct", "market_cap_cr"])
+    df = pd.DataFrame(rows, columns=["symbol", "name", "cmp", "ret_1d_pct", "market_cap_cr"])
+    for col in ("cmp", "ret_1d_pct", "market_cap_cr"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
 
 
 def _get_top_movers(engine, as_of: date, top_n: int = 10) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -124,6 +130,7 @@ def _get_top_movers(engine, as_of: date, top_n: int = 10) -> tuple[pd.DataFrame,
         rows = conn.execute(sql, {"as_of": as_of}).fetchall()
 
     df = pd.DataFrame(rows, columns=["symbol", "name", "cmp", "ret_1d_pct", "market_cap_cr"])
+    df["ret_1d_pct"] = pd.to_numeric(df["ret_1d_pct"], errors="coerce")
     gainers = df.nlargest(top_n, "ret_1d_pct").reset_index(drop=True)
     losers  = df.nsmallest(top_n, "ret_1d_pct").reset_index(drop=True)
     return gainers, losers
