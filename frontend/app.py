@@ -2791,12 +2791,18 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     disp["Chart"] = df.apply(
         lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
     )
+    disp["Screener"] = df.apply(
+        lambda r: f"https://www.screener.in/company/{r['symbol']}/consolidated/", axis=1
+    )
 
     styled = disp.style.map(_color_return, subset=["Ann. Day Return"])
     if mode == "season" and "Return Since Ann." in disp.columns:
         styled = styled.map(_color_return, subset=["Return Since Ann."])
 
-    col_cfg = {"Chart": st.column_config.LinkColumn("Chart", display_text="📈")}
+    col_cfg = {
+        "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
+        "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
+    }
     st.dataframe(styled, use_container_width=True, hide_index=True, height=600,
                  column_config=col_cfg)
 
