@@ -49,7 +49,7 @@ _RED        = colors.HexColor("#dc2626")
 _RED_L      = colors.HexColor("#fecaca")
 _RED_XL     = colors.HexColor("#fef2f2")
 _AMBER      = colors.HexColor("#d97706")
-_MUTED      = colors.HexColor("#64748b")
+_MUTED      = colors.HexColor("#475569")   # darkened from #64748b for legibility
 _BORDER     = colors.HexColor("#e2e8f0")
 _BG_LIGHT   = colors.HexColor("#f8fafc")
 _BG_ALT     = colors.HexColor("#f1f5f9")
@@ -61,9 +61,12 @@ M_BLUE    = "#3b82f6"
 M_GREEN   = "#16a34a"
 M_RED     = "#dc2626"
 M_AMBER   = "#d97706"
-M_MUTED   = "#94a3b8"
+M_MUTED   = "#475569"   # darkened
 M_BG      = "#f8fafc"
 M_BORDER  = "#e2e8f0"
+# Fixed series colors for index breadth chart (legend must always match bars)
+M_200DMA  = "#f59e0b"   # amber — 200 DMA series
+M_50DMA   = "#3b82f6"   # blue  — 50 DMA series
 
 # ── Text styles ────────────────────────────────────────────────────────────────
 S_H1   = ParagraphStyle("h1",  fontSize=11, fontName="Helvetica-Bold",
@@ -71,17 +74,21 @@ S_H1   = ParagraphStyle("h1",  fontSize=11, fontName="Helvetica-Bold",
 S_H1W  = ParagraphStyle("h1w", fontSize=13, fontName="Helvetica-Bold",
                           textColor=_WHITE, spaceAfter=2)
 S_SUB  = ParagraphStyle("sub", fontSize=8,  fontName="Helvetica",
-                          textColor=_MUTED, spaceAfter=5)
+                          textColor=colors.HexColor("#475569"), spaceAfter=5)
 S_SUBW = ParagraphStyle("subw",fontSize=8,  fontName="Helvetica",
                           textColor=_BLUE_XL, spaceAfter=0)
-S_CELL = ParagraphStyle("c",   fontSize=8.5,fontName="Helvetica",  leading=11)
-S_CELB = ParagraphStyle("cb",  fontSize=8.5,fontName="Helvetica-Bold", leading=11)
+S_CELL = ParagraphStyle("c",   fontSize=8.5,fontName="Helvetica",
+                          textColor=colors.HexColor("#1e293b"), leading=11)
+S_CELB = ParagraphStyle("cb",  fontSize=8.5,fontName="Helvetica-Bold",
+                          textColor=colors.HexColor("#0f172a"), leading=11)
 S_CELM = ParagraphStyle("cm",  fontSize=7.5,fontName="Helvetica",
-                          textColor=_MUTED, leading=10)
+                          textColor=colors.HexColor("#475569"), leading=10)
 S_TH   = ParagraphStyle("th",  fontSize=7,  fontName="Helvetica-Bold",
-                          textColor=_MUTED)
+                          textColor=colors.HexColor("#334155"))
 S_FOOT = ParagraphStyle("ft",  fontSize=7,  fontName="Helvetica",
-                          textColor=_MUTED, alignment=TA_CENTER)
+                          textColor=colors.HexColor("#475569"), alignment=TA_CENTER)
+S_LINK = ParagraphStyle("lnk", fontSize=6.5, fontName="Helvetica",
+                          textColor=colors.HexColor("#3b82f6"), leading=9)
 
 PAGE_W, PAGE_H = A4
 MARGIN = 14 * mm
@@ -164,6 +171,24 @@ def _gc(val) -> str:
 
 def _th(*labels):
     return [Paragraph(l, S_TH) for l in labels]
+
+
+def _stock_cell_pdf(symbol: str, name: str, tv_url=None, sc_url=None) -> Paragraph:
+    """Stock cell with symbol, name, and dashed TradingView / Screener links."""
+    links = []
+    if tv_url and str(tv_url).startswith("http"):
+        links.append(f'<link href="{tv_url}"><u>TradingView</u></link>')
+    if sc_url and str(sc_url).startswith("http"):
+        links.append(f'<link href="{sc_url}"><u>Screener</u></link>')
+    links_html = (
+        f'  <font color="#3b82f6" size="6">' + '  ·  '.join(links) + '</font>'
+    ) if links else ""
+    return Paragraph(
+        f'<b><font color="#0f172a">{symbol}</font></b>'
+        f'  <font color="#475569" size="7.5">{name}</font>'
+        + (f'<br/>{links_html}' if links_html else ""),
+        S_CELL,
+    )
 
 def _section(title: str, subtitle: str, story: list):
     story.append(Spacer(1, 4*mm))
@@ -277,12 +302,9 @@ def _chart_index_breadth(df: pd.DataFrame) -> Image:
     fig, ax = plt.subplots(figsize=(6.8, 2.4), facecolor="white")
     ax.set_facecolor("white")
 
-    bars200 = ax.barh(y + h/2, pct200, h, label="Above 200 DMA",
-                      color=[M_GREEN if v >= 60 else (M_RED if v < 40 else M_AMBER) for v in pct200],
-                      alpha=0.85)
-    bars50  = ax.barh(y - h/2, pct50,  h, label="Above 50 DMA",
-                      color=[M_BLUE  if v >= 60 else (M_RED if v < 40 else M_AMBER) for v in pct50],
-                      alpha=0.85)
+    # Fixed colors per series so legend always matches bars
+    bars200 = ax.barh(y + h/2, pct200, h, color=M_200DMA, alpha=0.88, label="Above 200 DMA")
+    bars50  = ax.barh(y - h/2, pct50,  h, color=M_50DMA,  alpha=0.88, label="Above 50 DMA")
 
     # Value labels
     for bar, v in zip(bars200, pct200):
@@ -294,15 +316,15 @@ def _chart_index_breadth(df: pd.DataFrame) -> Image:
 
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=7.5, color=M_NAVY)
-    ax.set_xlim(0, 105)
+    ax.set_xlim(0, 108)
     ax.axvline(50, color=M_BORDER, linewidth=0.8, linestyle="--")
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
     _setup_ax(ax)
     ax.set_title("Index Breadth — % Stocks Above Key Moving Averages",
                  fontsize=8.5, fontweight="bold", color=M_NAVY, pad=6)
 
-    patch200 = mpatches.Patch(color=M_GREEN,  label="Above 200 DMA")
-    patch50  = mpatches.Patch(color=M_BLUE,   label="Above 50 DMA")
+    patch200 = mpatches.Patch(color=M_200DMA, label="Above 200 DMA")
+    patch50  = mpatches.Patch(color=M_50DMA,  label="Above 50 DMA")
     leg = ax.legend(handles=[patch200, patch50], fontsize=6.5,
                     loc="lower right", frameon=True,
                     facecolor="white", edgecolor=M_BORDER)
@@ -507,20 +529,20 @@ def _add_volume_surge(story: list, df: pd.DataFrame):
         story.append(Paragraph("No volume surge data.", S_CELL))
         return
 
-    header = _th("#", "Symbol", "Company", "CMP", "1D Return", "Today Vol", "20D Avg", "Surge")
+    header = _th("#", "Stock", "CMP", "1D Return", "Today Vol", "20D Avg", "Surge")
     rows = [header]
     for i, (_, r) in enumerate(df.iterrows(), 1):
         rows.append([
             Paragraph(str(i), S_CELL),
-            Paragraph(f"<b>{r['symbol']}</b>", S_CELB),
-            Paragraph(str(r["name"]), S_CELL),
+            _stock_cell_pdf(r["symbol"], r["name"],
+                            r.get("tradingview_url"), r.get("screener_url")),
             Paragraph(f"Rs.{float(r['cmp']):.2f}", S_CELL),
             Paragraph(f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>", S_CELB),
-            Paragraph(_vol(r["today_vol"]),  S_CELL),
-            Paragraph(_vol(r["avg_vol_20d"]),S_CELL),
+            Paragraph(_vol(r["today_vol"]),   S_CELL),
+            Paragraph(_vol(r["avg_vol_20d"]), S_CELL),
             Paragraph(f"<font color='#1d4ed8'><b>{float(r['surge_ratio']):.1f}x</b></font>", S_CELB),
         ])
-    t = Table(rows, colWidths=[8*mm, 20*mm, 52*mm, 22*mm, 22*mm, 20*mm, 20*mm, 14*mm])
+    t = Table(rows, colWidths=[8*mm, 72*mm, 22*mm, 22*mm, 20*mm, 20*mm, 14*mm])
     t.setStyle(_table_style(len(rows)))
     story.append(Spacer(1, 3*mm))
     story.append(t)
@@ -534,18 +556,18 @@ def _add_earnings(story: list, df: pd.DataFrame):
         story.append(Spacer(1, 4*mm))
         return
 
-    header = _th("#", "Symbol", "Company", "CMP", "1D Return", "Market Cap")
+    header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
     rows = [header]
     for i, (_, r) in enumerate(df.iterrows(), 1):
         rows.append([
             Paragraph(str(i), S_CELL),
-            Paragraph(f"<b>{r['symbol']}</b>", S_CELB),
-            Paragraph(str(r["name"]), S_CELL),
+            _stock_cell_pdf(r["symbol"], r["name"],
+                            r.get("tradingview_url"), r.get("screener_url")),
             Paragraph(f"Rs.{float(r['cmp']):.2f}", S_CELL),
             Paragraph(f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>", S_CELB),
             Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
         ])
-    t = Table(rows, colWidths=[8*mm, 22*mm, 72*mm, 24*mm, 26*mm, 26*mm])
+    t = Table(rows, colWidths=[8*mm, 90*mm, 24*mm, 26*mm, 26*mm])
     t.setStyle(_table_style(len(rows)))
     story.append(t)
     story.append(Spacer(1, 4*mm))
@@ -562,20 +584,20 @@ def _add_movers(story: list, df: pd.DataFrame, title: str, is_gainers: bool):
         story.append(Paragraph("No data.", S_CELL))
         return
 
-    header = _th("#", "Symbol", "Company", "CMP", "1D Return", "Market Cap")
+    header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
     rows = [header]
     accent = "#16a34a" if is_gainers else "#dc2626"
     for rank, (_, r) in enumerate(df.iterrows(), 1):
         rows.append([
             Paragraph(f"<font color='{accent}'><b>{rank}</b></font>", S_CELB),
-            Paragraph(f"<b>{r['symbol']}</b>", S_CELB),
-            Paragraph(str(r["name"]), S_CELL),
+            _stock_cell_pdf(r["symbol"], r["name"],
+                            r.get("tradingview_url"), r.get("screener_url")),
             Paragraph(f"Rs.{float(r['cmp']):.2f}", S_CELL),
             Paragraph(f"<font color='{accent}'><b>{_pct(r['ret_1d_pct'])}</b></font>", S_CELB),
             Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
         ])
     row_bg = _GREEN_XL if is_gainers else _RED_XL
-    t = Table(rows, colWidths=[10*mm, 22*mm, 80*mm, 22*mm, 26*mm, 18*mm])
+    t = Table(rows, colWidths=[10*mm, 92*mm, 22*mm, 26*mm, 18*mm])
     ts = _table_style(len(rows), alt_bg=row_bg)
     t.setStyle(ts)
     story.append(Spacer(1, 3*mm))
