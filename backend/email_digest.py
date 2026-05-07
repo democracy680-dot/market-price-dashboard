@@ -189,21 +189,42 @@ def _get_breadth(engine, as_of: date) -> dict:
     }
 
 
-def _get_sector_leaderboard(engine, as_of: date, n: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Top N and bottom N sectors by 1D return."""
+def _get_index_breadth(engine, as_of: date) -> pd.DataFrame:
+    """For each of the 4 major indexes, count stocks above/below 50 DMA and 200 DMA."""
+    indexes = [
+        ("NIFTY_50",   "Nifty 50"),
+        ("NIFTY_500",  "Nifty 500"),
+        ("NIFTY_BANK", "Nifty Bank"),
+        ("FNO",        "F&O Stocks"),
+    ]
     sql = text("""
-        SELECT sector, day_change_pct, num_companies, advances, declines
-        FROM sector_performance_daily
-        WHERE date = :as_of
-          AND day_change_pct IS NOT NULL
-          AND sector NOT IN ('Unknown', '')
-        ORDER BY day_change_pct DESC
+        SELECT
+            COUNT(*)                                                          AS total,
+            COUNT(*) FILTER (WHERE sd.status_200dma = 'Above 200DMA')        AS above_200,
+            COUNT(*) FILTER (WHERE sd.status_200dma = 'Below 200DMA')        AS below_200,
+            COUNT(*) FILTER (WHERE sd.status_50dma  = 'Above 50DMA')         AS above_50,
+            COUNT(*) FILTER (WHERE sd.status_50dma  = 'Below 50DMA')         AS below_50
+        FROM index_membership im
+        JOIN snapshots_daily sd
+            ON sd.symbol = im.symbol AND sd.date = :as_of
+        WHERE im.index_name = :idx
     """)
+    rows = []
     with engine.connect() as conn:
-        rows = conn.execute(sql, {"as_of": as_of}).fetchall()
-    df = pd.DataFrame(rows, columns=["sector", "day_change_pct", "num_companies", "advances", "declines"])
-    df["day_change_pct"] = pd.to_numeric(df["day_change_pct"], errors="coerce")
-    return df.head(n).reset_index(drop=True), df.tail(n).iloc[::-1].reset_index(drop=True)
+        for idx_key, idx_label in indexes:
+            r = conn.execute(sql, {"as_of": as_of, "idx": idx_key}).fetchone()
+            if r and r.total:
+                rows.append({
+                    "index":     idx_label,
+                    "total":     int(r.total),
+                    "above_200": int(r.above_200),
+                    "below_200": int(r.below_200),
+                    "above_50":  int(r.above_50),
+                    "below_50":  int(r.below_50),
+                    "pct_200":   round(100 * r.above_200 / r.total, 1),
+                    "pct_50":    round(100 * r.above_50  / r.total, 1),
+                })
+    return pd.DataFrame(rows)
 
 
 def _get_top_themes(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
@@ -402,53 +423,69 @@ def _build_breadth_card(b: dict) -> str:
     </div>"""
 
 
-def _build_sector_leaderboard(top_df: pd.DataFrame, bot_df: pd.DataFrame) -> str:
-    def _sector_row(r, rank: int, is_top: bool) -> str:
-        accent = "#16a34a" if is_top else "#dc2626"
-        bg     = "#f0fdf4" if is_top else "#fef2f2"
-        border = "#bbf7d0" if is_top else "#fecaca"
-        arrow  = "▲" if is_top else "▼"
-        pct    = float(r["day_change_pct"])
-        ad_str = f'{int(r["advances"])}↑ / {int(r["declines"])}↓'
-        return f"""
-        <tr>
-          <td style="padding:10px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;width:28px;">
-            <span style="display:inline-flex;align-items:center;justify-content:center;
-              width:22px;height:22px;border-radius:50%;background:{accent}18;
-              color:{accent};font-weight:800;font-size:10px;">{rank}</span>
+def _build_index_breadth(df: pd.DataFrame) -> str:
+    if df.empty:
+        return _empty("No index breadth data available for today.")
+
+    def _mini_bar(above: int, total: int, color: str) -> str:
+        pct = int(round(100 * above / total)) if total else 0
+        return (
+            f'<div style="height:6px;border-radius:3px;background:#e2e8f0;overflow:hidden;margin-top:4px;">'
+            f'<div style="height:6px;width:{pct}%;background:{color};border-radius:3px;"></div>'
+            f'</div>'
+        )
+
+    rows = ""
+    for i, (_, r) in enumerate(df.iterrows()):
+        bg = "#fafbff" if i % 2 == 0 else "#ffffff"
+        total     = int(r["total"])
+        above_200 = int(r["above_200"])
+        below_200 = int(r["below_200"])
+        above_50  = int(r["above_50"])
+        below_50  = int(r["below_50"])
+        pct_200   = float(r["pct_200"])
+        pct_50    = float(r["pct_50"])
+
+        # 200 DMA color: green if >60%, red if <40%, amber otherwise
+        c200 = "#16a34a" if pct_200 >= 60 else ("#dc2626" if pct_200 < 40 else "#d97706")
+        c50  = "#16a34a" if pct_50  >= 60 else ("#dc2626" if pct_50  < 40 else "#d97706")
+
+        rows += f"""
+        <tr style="background:{bg};">
+          <td style="padding:12px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
+            <div style="font-size:13px;font-weight:700;color:#0f172a;">{r["index"]}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">{total} stocks</div>
           </td>
-          <td style="padding:10px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
-            <div style="font-size:13px;font-weight:600;color:#0f172a;">{r["sector"]}</div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">{int(r["num_companies"])} stocks &nbsp;·&nbsp; {ad_str}</div>
+          <td style="padding:12px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;min-width:140px;">
+            <div style="display:table;width:100%;">
+              <span style="font-size:12px;font-weight:700;color:{c200};">{above_200}</span>
+              <span style="font-size:11px;color:#94a3b8;"> above &nbsp;/&nbsp; </span>
+              <span style="font-size:12px;font-weight:700;color:#dc2626;">{below_200}</span>
+              <span style="font-size:11px;color:#94a3b8;"> below</span>
+            </div>
+            {_mini_bar(above_200, total, c200)}
+            <div style="font-size:10px;color:{c200};font-weight:600;margin-top:3px;">{pct_200:.0f}% above 200 DMA</div>
           </td>
-          <td style="padding:10px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;text-align:right;">
-            <span style="display:inline-block;padding:3px 10px;border-radius:20px;
-              background:{bg};border:1px solid {border};color:{accent};
-              font-weight:700;font-size:12px;">{arrow} {abs(pct):.2f}%</span>
+          <td style="padding:12px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;min-width:140px;">
+            <div style="display:table;width:100%;">
+              <span style="font-size:12px;font-weight:700;color:{c50};">{above_50}</span>
+              <span style="font-size:11px;color:#94a3b8;"> above &nbsp;/&nbsp; </span>
+              <span style="font-size:12px;font-weight:700;color:#dc2626;">{below_50}</span>
+              <span style="font-size:11px;color:#94a3b8;"> below</span>
+            </div>
+            {_mini_bar(above_50, total, c50)}
+            <div style="font-size:10px;color:{c50};font-weight:600;margin-top:3px;">{pct_50:.0f}% above 50 DMA</div>
           </td>
         </tr>"""
 
-    if top_df.empty and bot_df.empty:
-        return _empty("No sector data available for today.")
-
-    top_rows = "".join(_sector_row(r, i+1, True)  for i, (_, r) in enumerate(top_df.iterrows()))
-    bot_rows = "".join(_sector_row(r, i+1, False) for i, (_, r) in enumerate(bot_df.iterrows()))
-
     return f"""
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-      <thead>
-        <tr><th colspan="3" style="padding:10px 14px;text-align:left;font-size:10px;
-          font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#16a34a;
-          background:#f0fdf4;border-bottom:1px solid #bbf7d0;">🏆 Top Performers</th></tr>
-      </thead>
-      <tbody>{top_rows}</tbody>
-      <thead>
-        <tr><th colspan="3" style="padding:10px 14px;text-align:left;font-size:10px;
-          font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#dc2626;
-          background:#fef2f2;border-bottom:1px solid #fecaca;border-top:2px solid #e2e8f0;">
-          ⚠️ Underperformers</th></tr>
-      </thead>
-      <tbody>{bot_rows}</tbody>
+      <thead><tr>
+        <th {_TH_STYLE}>Index</th>
+        <th {_TH_STYLE}>200 DMA Breadth</th>
+        <th {_TH_STYLE}>50 DMA Breadth</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
     </table>"""
 
 
@@ -628,30 +665,29 @@ def _build_movers_table(df: pd.DataFrame, is_gainers: bool) -> str:
 
 def build_html_email(
     as_of: date,
-    breadth:     dict,
-    top_sectors: pd.DataFrame,
-    bot_sectors: pd.DataFrame,
-    themes_df:   pd.DataFrame,
-    vol_df:      pd.DataFrame,
-    earnings_df: pd.DataFrame,
-    gainers_df:  pd.DataFrame,
-    losers_df:   pd.DataFrame,
+    breadth:      dict,
+    idx_breadth:  pd.DataFrame,
+    themes_df:    pd.DataFrame,
+    vol_df:       pd.DataFrame,
+    earnings_df:  pd.DataFrame,
+    gainers_df:   pd.DataFrame,
+    losers_df:    pd.DataFrame,
 ) -> str:
     date_str     = as_of.strftime("%d %b %Y")
     weekday_str  = as_of.strftime("%A")
     total_stocks = breadth["total"]
 
     breadth_card     = _build_breadth_card(breadth)
-    sector_html      = _build_sector_leaderboard(top_sectors, bot_sectors)
+    idx_html         = _build_index_breadth(idx_breadth)
     themes_html      = _build_themes_table(themes_df)
     vol_html         = _build_volume_table(vol_df)
     earnings_html    = _build_earnings_table(earnings_df)
     gainers_html     = _build_movers_table(gainers_df, is_gainers=True)
     losers_html      = _build_movers_table(losers_df,  is_gainers=False)
 
-    sector_section   = _section("🏭", "Sector Leaderboard",
-                                 "Top 3 and bottom 3 sectors by 1-day return",
-                                 sector_html)
+    idx_section      = _section("📊", "Index Breadth",
+                                 "Stocks above / below 50 DMA and 200 DMA across the 4 major indexes",
+                                 idx_html)
     themes_section   = _section("🎯", "Top 5 Themes",
                                  "Best performing thematic baskets today (avg return of member stocks)",
                                  themes_html)
@@ -714,7 +750,7 @@ def build_html_email(
     border:1px solid #e2e8f0;border-top:none;">
 
     {breadth_card}
-    {sector_section}
+    {idx_section}
     {themes_section}
     {vol_section}
     {earnings_section}
@@ -758,15 +794,15 @@ def send_digest(as_of: date | None = None) -> bool:
     logger.info(f"Building daily digest for {as_of}...")
 
     try:
-        breadth              = _get_breadth(engine, as_of)
-        top_sec, bot_sec     = _get_sector_leaderboard(engine, as_of)
-        themes_df            = _get_top_themes(engine, as_of)
-        vol_df               = _get_volume_surge(engine, as_of)
-        earnings_df          = _get_earnings_movers(engine, as_of)
+        breadth               = _get_breadth(engine, as_of)
+        idx_breadth           = _get_index_breadth(engine, as_of)
+        themes_df             = _get_top_themes(engine, as_of)
+        vol_df                = _get_volume_surge(engine, as_of)
+        earnings_df           = _get_earnings_movers(engine, as_of)
         gainers_df, losers_df = _get_top_movers(engine, as_of)
         logger.info(
             f"  breadth={breadth['advances']}A/{breadth['declines']}D, "
-            f"sectors={len(top_sec)+len(bot_sec)}, themes={len(themes_df)}, "
+            f"idx_breadth={len(idx_breadth)} indexes, themes={len(themes_df)}, "
             f"vol_surge={len(vol_df)}, earnings_movers={len(earnings_df)}, "
             f"gainers={len(gainers_df)}, losers={len(losers_df)}"
         )
@@ -775,7 +811,7 @@ def send_digest(as_of: date | None = None) -> bool:
         return False
 
     html_body = build_html_email(
-        as_of, breadth, top_sec, bot_sec, themes_df,
+        as_of, breadth, idx_breadth, themes_df,
         vol_df, earnings_df, gainers_df, losers_df,
     )
 
