@@ -5,9 +5,13 @@ Sends to DIGEST_EMAIL_TO (default: democracy680@gmail.com) via Gmail SMTP.
 Requires GMAIL_APP_PASSWORD in .env (16-char Google App Password, not your login password).
 Get one at: https://myaccount.google.com/apppasswords
 
-Sections in the email:
+Also generates a PDF and uploads it to Google Drive.
+Requires GOOGLE_SERVICE_ACCOUNT_JSON (path to service account key file) and
+GDRIVE_FOLDER_ID (ID of the Drive folder to upload into) in .env.
+
+Sections in the email / PDF:
   0. Market Breadth Snapshot (advances/declines, % above 200 DMA, index returns)
-  1. Sector Leaderboard (top 3 + bottom 3 sectors)
+  1. Index Breadth — above/below 50 & 200 DMA for Nifty 50/500/Bank/F&O
   2. Top 5 Themes by 1D return
   3. Top 5 Volume Surge stocks (today volume vs 20-day avg)
   4. Quarterly Results stocks with >5% return today
@@ -19,12 +23,15 @@ Usage (standalone):
     python backend/email_digest.py 2026-05-07   # specific date
 """
 
+import json
 import logging
 import os
 import smtplib
 from datetime import date
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -35,9 +42,65 @@ from db import get_engine
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-DIGEST_EMAIL_FROM  = os.getenv("DIGEST_EMAIL_FROM",  "democracy680@gmail.com")
-DIGEST_EMAIL_TO    = os.getenv("DIGEST_EMAIL_TO",    "democracy680@gmail.com")
+GMAIL_APP_PASSWORD          = os.getenv("GMAIL_APP_PASSWORD", "")
+DIGEST_EMAIL_FROM           = os.getenv("DIGEST_EMAIL_FROM",  "democracy680@gmail.com")
+DIGEST_EMAIL_TO             = os.getenv("DIGEST_EMAIL_TO",    "democracy680@gmail.com")
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+GDRIVE_FOLDER_ID            = os.getenv("GDRIVE_FOLDER_ID", "")
+
+
+# ── Google Drive upload ───────────────────────────────────────────────────────
+
+def _upload_to_drive(file_path: str, filename: str) -> str | None:
+    """
+    Upload file_path to Google Drive folder GDRIVE_FOLDER_ID.
+    Returns the shareable Drive URL, or None on failure.
+
+    Requires a Service Account JSON key. Steps to set up:
+      1. console.cloud.google.com → APIs & Services → Enable "Google Drive API"
+      2. IAM & Admin → Service Accounts → Create → download JSON key
+      3. Open your Drive folder → Share with the service account email (Editor)
+      4. Copy the folder ID from the Drive URL: drive.google.com/drive/folders/<ID>
+      5. Set GOOGLE_SERVICE_ACCOUNT_JSON=path/to/key.json and GDRIVE_FOLDER_ID=<ID> in .env
+    """
+    if not GOOGLE_SERVICE_ACCOUNT_JSON or not GDRIVE_FOLDER_ID:
+        logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON or GDRIVE_FOLDER_ID not set — skipping Drive upload")
+        return None
+
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+
+        key_path = Path(GOOGLE_SERVICE_ACCOUNT_JSON)
+        if not key_path.exists():
+            logger.error(f"Service account key not found: {key_path}")
+            return None
+
+        creds = service_account.Credentials.from_service_account_file(
+            str(key_path),
+            scopes=["https://www.googleapis.com/auth/drive.file"],
+        )
+        service = build("drive", "v3", credentials=creds, cache_discovery=False)
+
+        file_metadata = {
+            "name":    filename,
+            "parents": [GDRIVE_FOLDER_ID],
+        }
+        media = MediaFileUpload(file_path, mimetype="application/pdf", resumable=False)
+        uploaded = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id,webViewLink",
+        ).execute()
+
+        link = uploaded.get("webViewLink", "")
+        logger.info(f"PDF uploaded to Drive: {link}")
+        return link
+
+    except Exception as e:
+        logger.error(f"Drive upload failed: {e}", exc_info=True)
+        return None
 
 
 # ── Queries ───────────────────────────────────────────────────────────────────
@@ -815,17 +878,49 @@ def send_digest(as_of: date | None = None) -> bool:
         vol_df, earnings_df, gainers_df, losers_df,
     )
 
-    msg = MIMEMultipart("alternative")
+    # ── Generate PDF ──────────────────────────────────────────────────────────
+    pdf_path   = None
+    drive_link = None
+    pdf_filename = f"StockStack_Digest_{as_of.isoformat()}.pdf"
+    try:
+        from pdf_generator import generate_pdf
+        pdf_path = generate_pdf(
+            as_of, breadth, idx_breadth, themes_df,
+            vol_df, earnings_df, gainers_df, losers_df,
+        )
+        logger.info(f"PDF generated: {pdf_path}")
+    except Exception as pdf_err:
+        logger.error(f"PDF generation failed (non-fatal): {pdf_err}", exc_info=True)
+
+    # ── Upload PDF to Google Drive ─────────────────────────────────────────────
+    if pdf_path:
+        drive_link = _upload_to_drive(pdf_path, pdf_filename)
+
+    # ── Build email (mixed = html + attachment) ────────────────────────────────
+    msg = MIMEMultipart("mixed")
     msg["Subject"] = f"StockStack Daily Digest — {as_of.strftime('%d %b %Y')}"
     msg["From"]    = DIGEST_EMAIL_FROM
     msg["To"]      = DIGEST_EMAIL_TO
-    msg.attach(MIMEText(html_body, "html"))
+
+    # HTML body
+    body_part = MIMEMultipart("alternative")
+    body_part.attach(MIMEText(html_body, "html"))
+    msg.attach(body_part)
+
+    # PDF attachment
+    if pdf_path and Path(pdf_path).exists():
+        with open(pdf_path, "rb") as f:
+            pdf_part = MIMEApplication(f.read(), _subtype="pdf")
+        pdf_part.add_header("Content-Disposition", "attachment", filename=pdf_filename)
+        msg.attach(pdf_part)
+        logger.info(f"PDF attached to email ({Path(pdf_path).stat().st_size // 1024} KB)")
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(DIGEST_EMAIL_FROM, GMAIL_APP_PASSWORD)
             server.sendmail(DIGEST_EMAIL_FROM, DIGEST_EMAIL_TO, msg.as_string())
-        logger.info(f"Daily digest sent to {DIGEST_EMAIL_TO}")
+        logger.info(f"Daily digest sent to {DIGEST_EMAIL_TO}"
+                    + (f" | Drive: {drive_link}" if drive_link else ""))
         return True
     except smtplib.SMTPAuthenticationError:
         logger.error(
