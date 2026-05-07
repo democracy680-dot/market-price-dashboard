@@ -422,20 +422,20 @@ def build_html_email(
           <table cellpadding="0" cellspacing="0">
             <tr>
               <td style="padding-right:14px;vertical-align:middle;">
-                <div style="width:42px;height:42px;background:#3b82f6;border-radius:10px;
-                  display:flex;align-items:center;justify-content:center;
-                  font-size:20px;font-weight:800;color:#fff;text-align:center;line-height:42px;">S</div>
+                <table cellpadding="0" cellspacing="0" style="width:42px;height:42px;background:#3b82f6;border-radius:10px;">
+                  <tr><td style="text-align:center;vertical-align:middle;font-size:22px;font-weight:800;color:#ffffff;font-family:Arial,sans-serif;width:42px;height:42px;">S</td></tr>
+                </table>
               </td>
               <td style="vertical-align:middle;">
                 <div style="color:#f1f5f9;font-size:20px;font-weight:700;letter-spacing:-0.02em;">StockStack</div>
-                <div style="color:#64748b;font-size:11px;margin-top:1px;letter-spacing:.04em;text-transform:uppercase;">Daily Market Digest</div>
+                <div style="color:#93c5fd;font-size:11px;margin-top:2px;letter-spacing:.06em;text-transform:uppercase;">Daily Market Digest</div>
               </td>
             </tr>
           </table>
         </td>
         <td style="text-align:right;vertical-align:middle;">
           <div style="color:#f1f5f9;font-size:15px;font-weight:600;">{date_str}</div>
-          <div style="color:#475569;font-size:11px;margin-top:2px;">{weekday_str} · NSE India</div>
+          <div style="color:#93c5fd;font-size:11px;margin-top:2px;">{weekday_str} · NSE India</div>
         </td>
       </tr>
     </table>
