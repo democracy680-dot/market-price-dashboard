@@ -336,14 +336,15 @@ def _get_rs_leaders(engine, as_of: date, top_n: int = 10) -> pd.DataFrame:
             snap.cmp,
             ROUND(snap.ret_1d * 100, 2)  AS ret_1d_pct,
             snap.market_cap_cr,
-            ROUND(r.rs_excess_1m * 100, 2) AS rs_1m,
-            r.rs_bucket_1m                  AS rs_1m_bucket
+            ROUND(r.rs_excess_1m::NUMERIC, 2) AS rs_1m,
+            r.rs_bucket_1m                    AS rs_1m_bucket
         FROM relative_strength_daily r
         JOIN stocks s         ON s.symbol   = r.symbol
         JOIN snapshots_daily snap
             ON snap.symbol = r.symbol AND snap.date = r.date
         WHERE r.date = :as_of
           AND r.rs_excess_1m IS NOT NULL
+          AND snap.market_cap_cr >= 500
         ORDER BY r.rs_excess_1m DESC
         LIMIT :top_n
     """)
