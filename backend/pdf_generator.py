@@ -83,12 +83,18 @@ S_CELB = ParagraphStyle("cb",  fontSize=8.5,fontName="Helvetica-Bold",
                           textColor=colors.HexColor("#0f172a"), leading=11)
 S_CELM = ParagraphStyle("cm",  fontSize=7.5,fontName="Helvetica",
                           textColor=colors.HexColor("#475569"), leading=10)
-S_TH   = ParagraphStyle("th",  fontSize=7,  fontName="Helvetica-Bold",
-                          textColor=colors.HexColor("#334155"))
-S_FOOT = ParagraphStyle("ft",  fontSize=7,  fontName="Helvetica",
-                          textColor=colors.HexColor("#475569"), alignment=TA_CENTER)
-S_LINK = ParagraphStyle("lnk", fontSize=6.5, fontName="Helvetica",
-                          textColor=colors.HexColor("#3b82f6"), leading=9)
+S_TH     = ParagraphStyle("th",  fontSize=8.5, fontName="Helvetica-Bold",
+                            textColor=colors.white)
+S_FOOT   = ParagraphStyle("ft",  fontSize=7,  fontName="Helvetica",
+                            textColor=colors.HexColor("#475569"), alignment=TA_CENTER)
+S_LINK   = ParagraphStyle("lnk", fontSize=6.5, fontName="Helvetica",
+                            textColor=colors.HexColor("#3b82f6"), leading=9)
+S_CARD_L = ParagraphStyle("cl", fontSize=7,   fontName="Helvetica",
+                            textColor=colors.HexColor("#64748b"),
+                            alignment=TA_CENTER, spaceAfter=2)
+S_CARD_V = ParagraphStyle("cv", fontSize=14,  fontName="Helvetica-Bold",
+                            textColor=colors.HexColor("#0f172a"),
+                            alignment=TA_CENTER, leading=16)
 
 PAGE_W, PAGE_H = A4
 MARGIN = 14 * mm
@@ -118,6 +124,7 @@ def _draw_page(canvas, doc):
     canvas.setFont("Helvetica", 7.5)
     canvas.drawString(MARGIN + 12*mm, PAGE_H - 14*mm, "DAILY MARKET DIGEST")
     # Date (right side)
+    edition_num = getattr(doc, "edition_num", None)
     canvas.setFillColor(_WHITE)
     canvas.setFont("Helvetica-Bold", 10)
     date_str = doc.digest_date.strftime("%d %b %Y")
@@ -126,6 +133,10 @@ def _draw_page(canvas, doc):
     canvas.setFont("Helvetica", 7.5)
     weekday = doc.digest_date.strftime("%A  ·  NSE India")
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 14.5*mm, weekday)
+    if edition_num:
+        canvas.setFillColor(colors.HexColor("#bfdbfe"))
+        canvas.setFont("Helvetica", 6.5)
+        canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 18.5*mm, f"Issue #{edition_num}")
     # Footer line
     canvas.setStrokeColor(_BORDER)
     canvas.setLineWidth(0.5)
@@ -211,11 +222,13 @@ def _section(title: str, subtitle: str, story: list):
 
 
 def _table_style(n_rows: int, header_bg=None, alt_bg=None):
-    hbg  = header_bg or _BG_ALT
+    hbg  = header_bg or colors.HexColor("#1e3a5f")
     abg  = alt_bg    or _WHITE
     abg2 = _BG_LIGHT
     ts = [
         ("BACKGROUND",    (0, 0), (-1, 0),   hbg),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.white),
+        ("FONTSIZE",      (0, 0), (-1, 0),   8.5),
         ("GRID",          (0, 0), (-1, -1),  0.35, _BORDER),
         ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
         ("TOPPADDING",    (0, 0), (-1, -1),  4),
@@ -232,7 +245,7 @@ def _table_style(n_rows: int, header_bg=None, alt_bg=None):
 
 def _fig_to_image(fig, width_mm: float) -> Image:
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight",
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight",
                 facecolor=fig.get_facecolor())
     plt.close(fig)
     buf.seek(0)
@@ -260,34 +273,49 @@ def _setup_ax(ax, title: str = ""):
 # ── Chart builders ─────────────────────────────────────────────────────────────
 
 def _chart_breadth_donut(b: dict) -> Image:
-    adv  = b["advances"]
-    dec  = b["declines"]
-    unch = b["unchanged"]
+    adv   = b["advances"]
+    dec   = b["declines"]
+    unch  = b["unchanged"]
     total = adv + dec + unch
 
-    fig, ax = plt.subplots(figsize=(3.2, 3.2), facecolor="white")
+    adv_pct = round(100 * adv / total, 1) if total else 0
+    dec_pct = round(100 * dec / total, 1) if total else 0
+
+    fig, ax = plt.subplots(figsize=(3.4, 3.4), facecolor="white")
     sizes  = [adv, dec, unch] if unch > 0 else [adv, dec]
     clrs   = [M_GREEN, M_RED, "#e2e8f0"][:len(sizes)]
-    labels = ["Advances", "Declines", "Unchanged"][:len(sizes)]
-    wedges, _ = ax.pie(sizes, colors=clrs, startangle=90,
-                        wedgeprops=dict(width=0.52, edgecolor="white", linewidth=2))
-    # Centre text
-    ax.text(0, 0.12, f"{adv:,}", ha="center", va="center",
-            fontsize=16, fontweight="bold", color=M_GREEN)
-    ax.text(0, -0.18, f"{dec:,}", ha="center", va="center",
-            fontsize=16, fontweight="bold", color=M_RED)
-    ax.text(0, -0.52, "A  /  D", ha="center", va="center",
-            fontsize=7, color=M_MUTED)
-    leg = ax.legend(wedges, labels, loc="lower center",
-                    bbox_to_anchor=(0.5, -0.12), ncol=3,
-                    fontsize=6.5, frameon=False)
+    wedges, _ = ax.pie(
+        sizes, colors=clrs, startangle=90,
+        wedgeprops=dict(width=0.56, edgecolor="white", linewidth=2.5),
+    )
+
+    # Center: A/D ratio label
+    ax.text(0,  0.22, f"{adv:,}", ha="center", va="center",
+            fontsize=17, fontweight="bold", color=M_GREEN, family="sans-serif")
+    ax.text(0, -0.04, "▲ Advances", ha="center", va="center",
+            fontsize=6.5, color=M_GREEN)
+    ax.text(0, -0.26, f"{dec:,}", ha="center", va="center",
+            fontsize=17, fontweight="bold", color=M_RED, family="sans-serif")
+    ax.text(0, -0.48, "▼ Declines", ha="center", va="center",
+            fontsize=6.5, color=M_RED)
+
+    # Legend with percentages
+    labels_pct = [f"Advances  {adv_pct:.1f}%", f"Declines  {dec_pct:.1f}%"]
+    if unch > 0:
+        labels_pct.append(f"Unchanged  {round(100*unch/total,1):.1f}%")
+    leg = ax.legend(wedges, labels_pct[:len(wedges)],
+                    loc="lower center", bbox_to_anchor=(0.5, -0.14),
+                    ncol=len(wedges), fontsize=6.5, frameon=False,
+                    handlelength=1.2, handletextpad=0.4)
     for t in leg.get_texts():
         t.set_color(M_MUTED)
+
     ax.set_facecolor("white")
     fig.patch.set_facecolor("white")
-    ax.set_title("Advance / Decline", fontsize=8.5, fontweight="bold",
-                 color=M_NAVY, pad=4)
-    return _fig_to_image(fig, 64)
+    ax.set_title("Advance / Decline Ratio", fontsize=9, fontweight="bold",
+                 color=M_NAVY, pad=6)
+    fig.tight_layout(pad=0.4)
+    return _fig_to_image(fig, 68)
 
 
 def _chart_index_breadth(df: pd.DataFrame) -> Image:
@@ -415,45 +443,230 @@ def _chart_movers(df: pd.DataFrame, title: str, is_gainers: bool) -> Image:
 
 # ── Section builders ──────────────────────────────────────────────────────────
 
+def _add_executive_summary(story: list, breadth: dict, themes_df: pd.DataFrame,
+                            vol_df: pd.DataFrame, gainers_df: pd.DataFrame,
+                            losers_df: pd.DataFrame, earnings_df: pd.DataFrame):
+    adv   = breadth["advances"]
+    dec   = breadth["declines"]
+    p200  = breadth["pct_above_200"]
+    ratio = adv / (adv + dec) if (adv + dec) > 0 else 0.5
+    tone  = "Bullish" if ratio >= 0.55 else ("Bearish" if ratio <= 0.45 else "Neutral")
+    tone_color = "#16a34a" if tone == "Bullish" else ("#dc2626" if tone == "Bearish" else "#d97706")
+
+    S_ES = ParagraphStyle("es", fontSize=8.5, fontName="Helvetica",
+                           textColor=colors.HexColor("#1e293b"), leading=13)
+    S_ES_HEAD = ParagraphStyle("esh", fontSize=9, fontName="Helvetica-Bold",
+                                textColor=colors.HexColor("#1e3a5f"), spaceAfter=3)
+
+    bullets = []
+    bullets.append(
+        f'<font color="{tone_color}"><b>Market:</b></font> Closed <b>{tone}</b> — '
+        f'{adv:,} advances vs {dec:,} declines · '
+        f'<font color="#1d4ed8"><b>{p200:.1f}%</b></font> stocks above 200 DMA'
+    )
+    if not themes_df.empty:
+        t = themes_df.iloc[0]
+        tc = "#16a34a" if float(t["avg_ret_1w"]) > 0 else "#dc2626"
+        sign = "+" if float(t["avg_ret_1w"]) > 0 else ""
+        bullets.append(
+            f'<b>Top Theme:</b> {t["theme_name"]} — avg '
+            f'<font color="{tc}"><b>{sign}{float(t["avg_ret_1w"]):.2f}%</b></font> (1W)'
+        )
+    if not vol_df.empty:
+        vs = vol_df.iloc[0]
+        bullets.append(
+            f'<b>Volume Surge:</b> <b>{vs["symbol"]}</b> traded at '
+            f'<font color="#1d4ed8"><b>{float(vs["surge_ratio"]):.1f}x</b></font> normal volume'
+        )
+    if not gainers_df.empty and not losers_df.empty:
+        g = gainers_df.iloc[0]; l = losers_df.iloc[0]
+        bullets.append(
+            f'<b>Top Movers:</b> '
+            f'<font color="#16a34a"><b>{g["symbol"]} +{float(g["ret_1d_pct"]):.2f}%</b></font>'
+            f'  ·  '
+            f'<font color="#dc2626"><b>{l["symbol"]} {float(l["ret_1d_pct"]):.2f}%</b></font>'
+        )
+    if not earnings_df.empty:
+        e = earnings_df.iloc[0]
+        ec = "#16a34a" if float(e["ret_1d_pct"]) > 0 else "#dc2626"
+        sign = "+" if float(e["ret_1d_pct"]) > 0 else ""
+        bullets.append(
+            f'<b>Results Mover:</b> <b>{e["symbol"]}</b> moved '
+            f'<font color="{ec}"><b>{sign}{float(e["ret_1d_pct"]):.2f}%</b></font> post-results'
+        )
+
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph("Today's Highlights", S_ES_HEAD))
+    story.append(Spacer(1, 1*mm))
+    rows = [[Paragraph(f"• {b}", S_ES)] for b in bullets]
+    t = Table(rows, colWidths=[USABLE_W])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor("#f0f9ff")),
+        ("BOX",           (0, 0), (-1, -1), 0.75, colors.HexColor("#1d4ed8")),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 4*mm))
+
+
+def _chart_rs_leaders(df: pd.DataFrame) -> Image:
+    if df.empty:
+        return None
+    syms = df["symbol"].tolist()
+    vals = df["rs_1m"].tolist()
+
+    fig, ax = plt.subplots(figsize=(6.8, 3.2), facecolor="white")
+    ax.set_facecolor("white")
+    y    = np.arange(len(syms))
+    bars = ax.barh(y, vals, 0.58, color=M_BLUE, alpha=0.82)
+
+    for bar, v in zip(bars, vals):
+        xpos = v + 0.1 if v >= 0 else v - 0.1
+        ha   = "left" if v >= 0 else "right"
+        ax.text(xpos, bar.get_y() + bar.get_height() / 2,
+                f"{'+'if v>0 else ''}{v:.1f}%",
+                va="center", ha=ha, fontsize=6.5, color=M_NAVY, fontweight="bold")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(syms, fontsize=7.5, color=M_NAVY, fontweight="bold")
+    ax.axvline(0, color=M_BORDER, linewidth=0.8)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:+.1f}%"))
+    _setup_ax(ax, "RS Leaders — 1-Month Excess Return vs Nifty 50")
+    fig.tight_layout(pad=0.6)
+    return _fig_to_image(fig, USABLE_W / mm)
+
+
+def _add_rs_leaders(story: list, df: pd.DataFrame):
+    _section("RS Leaders", "Top 10 stocks outperforming Nifty 50 on a 1-month basis", story)
+    chart = _chart_rs_leaders(df)
+    if chart:
+        story.append(chart)
+
+    if df.empty:
+        story.append(Paragraph("No relative strength data.", S_CELL))
+        story.append(Spacer(1, 4*mm))
+        return
+
+    header = _th("#", "Stock", "CMP", "1D Return", "1M RS vs Nifty", "RS Bucket")
+    rows   = [header]
+    for rank, (_, r) in enumerate(df.iterrows(), 1):
+        rs_val  = float(r["rs_1m"])
+        rs_col  = "#16a34a" if rs_val > 0 else "#dc2626"
+        rs_sign = "+" if rs_val > 0 else ""
+        rows.append([
+            Paragraph(f"<font color='#1d4ed8'><b>{rank}</b></font>", S_CELB),
+            _stock_cell_pdf(r["symbol"], r["name"],
+                            r.get("tradingview_url"), r.get("screener_url")),
+            Paragraph(f"Rs.{float(r['cmp']):.2f}", S_CELL),
+            Paragraph(
+                f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
+                S_CELB),
+            Paragraph(
+                f"<font color='{rs_col}'><b>{rs_sign}{rs_val:.1f}%</b></font>",
+                S_CELB),
+            Paragraph(str(r.get("rs_1m_bucket") or "—"), S_CELL),
+        ])
+    t = Table(rows, colWidths=[10*mm, 76*mm, 22*mm, 22*mm, 28*mm, 20*mm])
+    t.setStyle(_table_style(len(rows)))
+    story.append(Spacer(1, 3*mm))
+    story.append(t)
+    story.append(Spacer(1, 4*mm))
+
+
 def _add_breadth(story: list, b: dict):
     _section("Market Breadth", "Advance/decline split, index returns, and 200 DMA strength", story)
     donut = _chart_breadth_donut(b)
 
-    # Stats card
-    n50  = b["nifty50_ret"]
-    bank = b["bank_ret"]
+    n50  = b.get("nifty50_ret")
+    bank = b.get("bank_ret")
     p200 = b["pct_above_200"]
-    stats = [
-        [Paragraph("<b>Nifty 50</b>", S_TH),
-         Paragraph(f"<font color='{_gc(n50)}'><b>{_pct(n50)}</b></font>", S_CELB)],
-        [Paragraph("<b>Nifty Bank</b>", S_TH),
-         Paragraph(f"<font color='{_gc(bank)}'><b>{_pct(bank)}</b></font>", S_CELB)],
-        [Paragraph("<b>Above 200 DMA</b>", S_TH),
-         Paragraph(f"<b>{p200:.1f}%</b>", S_CELB)],
-        [Paragraph("<b>Total Stocks</b>", S_TH),
-         Paragraph(f"{b['total']:,}", S_CELL)],
-        [Paragraph("<b>Advances</b>", S_TH),
-         Paragraph(f"<font color='#16a34a'><b>{b['advances']:,}</b></font>", S_CELB)],
-        [Paragraph("<b>Declines</b>", S_TH),
-         Paragraph(f"<font color='#dc2626'><b>{b['declines']:,}</b></font>", S_CELB)],
-    ]
-    st = Table(stats, colWidths=[36*mm, 30*mm])
-    st.setStyle(TableStyle([
-        ("GRID",          (0,0),(-1,-1), 0.35, _BORDER),
-        ("BACKGROUND",    (0,0),(-1,-1), _BG_LIGHT),
-        ("ROWBACKGROUNDS",(0,0),(-1,-1), [_WHITE, _BG_LIGHT]),
-        ("TOPPADDING",    (0,0),(-1,-1), 5),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-        ("LEFTPADDING",   (0,0),(-1,-1), 8),
+    adv  = b["advances"]
+    dec  = b["declines"]
+    total = b["total"]
+
+    # ── helper: one metric card cell ──────────────────────────────────────────
+    def _card(label: str, value: str, val_color: str,
+              bg: str, border: str) -> list:
+        lbl = Paragraph(label, S_CARD_L)
+        val = Paragraph(
+            f'<font color="{val_color}"><b>{value}</b></font>',
+            S_CARD_V,
+        )
+        inner = Table([[lbl], [val]], colWidths=[None])
+        inner.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, -1), colors.HexColor(bg)),
+            ("BOX",           (0, 0), (-1, -1), 0.6, colors.HexColor(border)),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ]))
+        return inner
+
+    def _ret_triplet(val):
+        if val is None:
+            return "—", "#64748b", "#f8fafc", "#e2e8f0"
+        color  = "#16a34a" if val > 0 else "#dc2626"
+        bg     = "#f0fdf4" if val > 0 else "#fef2f2"
+        border = "#bbf7d0" if val > 0 else "#fecaca"
+        sign   = "+" if val > 0 else ""
+        return f"{sign}{val:.2f}%", color, bg, border
+
+    n50_val,  n50_col,  n50_bg,  n50_brd  = _ret_triplet(n50)
+    bnk_val,  bnk_col,  bnk_bg,  bnk_brd  = _ret_triplet(bank)
+
+    dma_pct = f"{p200:.1f}%"
+    dma_col = "#1d4ed8" if p200 >= 60 else ("#d97706" if p200 >= 40 else "#dc2626")
+
+    cw = (USABLE_W - 72*mm - 3*mm) / 2
+
+    cards = Table([
+        [_card("Nifty 50",       n50_val,       n50_col,  n50_bg,  n50_brd),
+         _card("Nifty Bank",     bnk_val,       bnk_col,  bnk_bg,  bnk_brd)],
+        [_card("Above 200 DMA",  dma_pct,       dma_col,  "#eff6ff", "#bfdbfe"),
+         _card("Total Tracked",  f"{total:,}",  "#334155", "#f8fafc", "#e2e8f0")],
+        [_card("▲ Advances",     f"{adv:,}",    "#16a34a", "#f0fdf4", "#bbf7d0"),
+         _card("▼ Declines",     f"{dec:,}",    "#dc2626", "#fef2f2", "#fecaca")],
+    ], colWidths=[cw, cw], rowHeights=[18*mm, 18*mm, 18*mm])
+    cards.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 2),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]))
 
-    row = Table([[donut, st]], colWidths=[68*mm, USABLE_W - 70*mm])
+    row = Table([[donut, cards]], colWidths=[72*mm, USABLE_W - 72*mm])
     row.setStyle(TableStyle([
-        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-        ("LEFTPADDING",(0,0),(-1,-1),0),
-        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     story.append(row)
+
+    # ── A/D progress bar ──────────────────────────────────────────────────────
+    story.append(Spacer(1, 3*mm))
+    adv_w = int(USABLE_W * adv / total) if total else 0
+    bar = Table(
+        [["", ""]],
+        colWidths=[adv_w, USABLE_W - adv_w],
+        rowHeights=[3.5*mm],
+    )
+    bar.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (0, 0), colors.HexColor("#16a34a")),
+        ("BACKGROUND",    (1, 0), (1, 0), colors.HexColor("#dc2626")),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(bar)
     story.append(Spacer(1, 4*mm))
 
 
@@ -609,13 +822,15 @@ def _add_movers(story: list, df: pd.DataFrame, title: str, is_gainers: bool):
 
 def generate_pdf(
     as_of: date,
-    breadth:     dict,
-    idx_breadth: pd.DataFrame,
-    themes_df:   pd.DataFrame,
-    vol_df:      pd.DataFrame,
-    earnings_df: pd.DataFrame,
-    gainers_df:  pd.DataFrame,
-    losers_df:   pd.DataFrame,
+    breadth:       dict,
+    idx_breadth:   pd.DataFrame,
+    themes_df:     pd.DataFrame,
+    vol_df:        pd.DataFrame,
+    earnings_df:   pd.DataFrame,
+    gainers_df:    pd.DataFrame,
+    losers_df:     pd.DataFrame,
+    rs_leaders_df: pd.DataFrame | None = None,
+    edition_num:   int | None = None,
 ) -> str:
     tmp_dir = Path(__file__).parent.parent / ".tmp"
     tmp_dir.mkdir(exist_ok=True)
@@ -629,14 +844,18 @@ def generate_pdf(
         title=f"StockStack Daily Digest — {as_of.strftime('%d %b %Y')}",
         author="StockStack",
     )
-    doc.digest_date = as_of  # picked up by _draw_page
+    doc.digest_date = as_of   # picked up by _draw_page
+    doc.edition_num = edition_num
 
     frame = Frame(MARGIN, 14*mm, USABLE_W, PAGE_H - 22*mm - 14*mm, id="body")
     doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_draw_page)])
 
     story = []
+    _add_executive_summary(story, breadth, themes_df, vol_df, gainers_df, losers_df, earnings_df)
     _add_breadth(story, breadth)
     _add_index_breadth(story, idx_breadth)
+    if rs_leaders_df is not None and not rs_leaders_df.empty:
+        _add_rs_leaders(story, rs_leaders_df)
     _add_themes(story, themes_df)
     _add_volume_surge(story, vol_df)
     _add_earnings(story, earnings_df)

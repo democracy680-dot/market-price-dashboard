@@ -103,6 +103,16 @@ def _upload_to_drive(file_path: str, filename: str) -> str | None:
         return None
 
 
+# ── Edition number ────────────────────────────────────────────────────────────
+
+def _get_edition_number(engine) -> int:
+    with engine.connect() as conn:
+        result = conn.execute(text(
+            "SELECT COUNT(*) FROM refresh_log WHERE status IN ('complete', 'partial')"
+        )).scalar()
+    return int(result) if result else 1
+
+
 # ── Queries ───────────────────────────────────────────────────────────────────
 
 def _get_volume_surge(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
@@ -312,6 +322,38 @@ def _get_top_themes(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
         rows = conn.execute(sql, {"as_of": as_of, "top_n": top_n}).fetchall()
     df = pd.DataFrame(rows, columns=["theme_name", "stock_count", "avg_ret_1w", "avg_ret_1d"])
     for col in ("avg_ret_1w", "avg_ret_1d"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def _get_rs_leaders(engine, as_of: date, top_n: int = 10) -> pd.DataFrame:
+    sql = text("""
+        SELECT
+            r.symbol,
+            s.name,
+            s.tradingview_url,
+            s.screener_url,
+            snap.cmp,
+            ROUND(snap.ret_1d * 100, 2)  AS ret_1d_pct,
+            snap.market_cap_cr,
+            ROUND(r.rs_excess_1m * 100, 2) AS rs_1m,
+            r.rs_bucket_1m                  AS rs_1m_bucket
+        FROM relative_strength_daily r
+        JOIN stocks s         ON s.symbol   = r.symbol
+        JOIN snapshots_daily snap
+            ON snap.symbol = r.symbol AND snap.date = r.date
+        WHERE r.date = :as_of
+          AND r.rs_excess_1m IS NOT NULL
+        ORDER BY r.rs_excess_1m DESC
+        LIMIT :top_n
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"as_of": as_of, "top_n": top_n}).fetchall()
+    df = pd.DataFrame(rows, columns=[
+        "symbol", "name", "tradingview_url", "screener_url",
+        "cmp", "ret_1d_pct", "market_cap_cr", "rs_1m", "rs_1m_bucket",
+    ])
+    for col in ("cmp", "ret_1d_pct", "market_cap_cr", "rs_1m"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -724,22 +766,138 @@ def _build_movers_table(df: pd.DataFrame, is_gainers: bool) -> str:
     </table>"""
 
 
+def _build_executive_summary(
+    breadth: dict,
+    themes_df: pd.DataFrame,
+    vol_df: pd.DataFrame,
+    gainers_df: pd.DataFrame,
+    losers_df: pd.DataFrame,
+    earnings_df: pd.DataFrame,
+) -> str:
+    adv   = breadth["advances"]
+    dec   = breadth["declines"]
+    p200  = breadth["pct_above_200"]
+    ratio = adv / (adv + dec) if (adv + dec) > 0 else 0.5
+    tone  = "Bullish" if ratio >= 0.55 else ("Bearish" if ratio <= 0.45 else "Neutral")
+    tone_color = "#16a34a" if tone == "Bullish" else ("#dc2626" if tone == "Bearish" else "#d97706")
+
+    bullets = []
+    bullets.append(
+        f'<li style="margin-bottom:8px;">'
+        f'<span style="font-weight:700;color:{tone_color};">Market:</span> '
+        f'Closed <strong>{tone}</strong> — {adv:,} advances vs {dec:,} declines '
+        f'· <span style="color:#1d4ed8;font-weight:600;">{p200:.1f}%</span> stocks above 200 DMA'
+        f'</li>'
+    )
+    if not themes_df.empty:
+        t = themes_df.iloc[0]
+        tc = _pct_color(t["avg_ret_1w"])
+        bullets.append(
+            f'<li style="margin-bottom:8px;">'
+            f'<span style="font-weight:700;color:#0f172a;">Top Theme:</span> '
+            f'{t["theme_name"]} — avg <span style="color:{tc};font-weight:700;">'
+            f'{_fmt_pct(t["avg_ret_1w"])}</span> (1W)'
+            f'</li>'
+        )
+    if not vol_df.empty:
+        vs = vol_df.iloc[0]
+        bullets.append(
+            f'<li style="margin-bottom:8px;">'
+            f'<span style="font-weight:700;color:#0f172a;">Volume Surge:</span> '
+            f'<strong>{vs["symbol"]}</strong> traded at '
+            f'<span style="color:#1d4ed8;font-weight:700;">{float(vs["surge_ratio"]):.1f}x</span> normal volume'
+            f'</li>'
+        )
+    if not gainers_df.empty and not losers_df.empty:
+        g = gainers_df.iloc[0]; lo = losers_df.iloc[0]
+        bullets.append(
+            f'<li style="margin-bottom:8px;">'
+            f'<span style="font-weight:700;color:#0f172a;">Top Movers:</span> '
+            f'<span style="color:#16a34a;font-weight:700;">{g["symbol"]} {_fmt_pct(g["ret_1d_pct"])}</span>'
+            f' &nbsp;·&nbsp; '
+            f'<span style="color:#dc2626;font-weight:700;">{lo["symbol"]} {_fmt_pct(lo["ret_1d_pct"])}</span>'
+            f'</li>'
+        )
+    if not earnings_df.empty:
+        e = earnings_df.iloc[0]
+        bullets.append(
+            f'<li style="margin-bottom:8px;">'
+            f'<span style="font-weight:700;color:#0f172a;">Results Mover:</span> '
+            f'<strong>{e["symbol"]}</strong> moved '
+            f'<span style="color:{_pct_color(e["ret_1d_pct"])};font-weight:700;">{_fmt_pct(e["ret_1d_pct"])}</span> post-results'
+            f'</li>'
+        )
+
+    return f"""
+    <div style="background:#f0f9ff;border:1px solid #bfdbfe;border-left:4px solid #1d4ed8;
+      border-radius:8px;padding:16px 20px;margin-bottom:28px;">
+      <div style="font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:10px;
+        letter-spacing:-0.01em;">Today's Highlights</div>
+      <ul style="margin:0;padding-left:16px;list-style:disc;color:#374151;font-size:13px;line-height:1.6;">
+        {"".join(bullets)}
+      </ul>
+    </div>"""
+
+
+def _build_rs_leaders_table(df: pd.DataFrame) -> str:
+    if df.empty:
+        return _empty("No relative strength data available for today.")
+    rows = ""
+    for rank, (_, r) in enumerate(df.iterrows(), 1):
+        bg      = "#fafbff" if rank % 2 == 0 else "#ffffff"
+        rs_val  = float(r["rs_1m"])
+        rs_col  = "#16a34a" if rs_val > 0 else "#dc2626"
+        rs_sign = "+" if rs_val > 0 else ""
+        rows += f"""
+        <tr style="background:{bg};">
+          <td style="padding:12px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;width:32px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;
+              width:24px;height:24px;border-radius:50%;background:#3b82f618;
+              color:#1d4ed8;font-weight:800;font-size:11px;">{rank}</span>
+          </td>
+          <td {_TD_STYLE}>{_stock_cell(r["symbol"], r["name"], r["tradingview_url"], r["screener_url"])}</td>
+          <td {_TD_MONO}>₹{float(r["cmp"]):.2f}</td>
+          <td {_TD_STYLE}>{_pct_pill(r["ret_1d_pct"])}</td>
+          <td style="padding:12px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
+            <span style="font-weight:700;font-size:13px;color:{rs_col};">{rs_sign}{rs_val:.1f}%</span>
+          </td>
+          <td style="padding:12px 14px;vertical-align:middle;border-bottom:1px solid #f1f5f9;
+            font-size:11px;color:#64748b;">{r.get("rs_1m_bucket") or "—"}</td>
+        </tr>"""
+    return f"""
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead><tr>
+        <th {_TH_STYLE}>#</th>
+        <th {_TH_STYLE}>Stock</th>
+        <th {_TH_STYLE}>CMP</th>
+        <th {_TH_STYLE}>1D Return</th>
+        <th {_TH_STYLE}>1M RS vs Nifty</th>
+        <th {_TH_STYLE}>Bucket</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
+    </table>"""
+
+
 # ── Full email ────────────────────────────────────────────────────────────────
 
 def build_html_email(
     as_of: date,
-    breadth:      dict,
-    idx_breadth:  pd.DataFrame,
-    themes_df:    pd.DataFrame,
-    vol_df:       pd.DataFrame,
-    earnings_df:  pd.DataFrame,
-    gainers_df:   pd.DataFrame,
-    losers_df:    pd.DataFrame,
+    breadth:       dict,
+    idx_breadth:   pd.DataFrame,
+    themes_df:     pd.DataFrame,
+    vol_df:        pd.DataFrame,
+    earnings_df:   pd.DataFrame,
+    gainers_df:    pd.DataFrame,
+    losers_df:     pd.DataFrame,
+    rs_leaders_df: pd.DataFrame | None = None,
+    edition_num:   int | None = None,
 ) -> str:
     date_str     = as_of.strftime("%d %b %Y")
     weekday_str  = as_of.strftime("%A")
     total_stocks = breadth["total"]
+    issue_label  = f"Issue #{edition_num}" if edition_num else ""
 
+    exec_summary     = _build_executive_summary(breadth, themes_df, vol_df, gainers_df, losers_df, earnings_df)
     breadth_card     = _build_breadth_card(breadth)
     idx_html         = _build_index_breadth(idx_breadth)
     themes_html      = _build_themes_table(themes_df)
@@ -747,6 +905,12 @@ def build_html_email(
     earnings_html    = _build_earnings_table(earnings_df)
     gainers_html     = _build_movers_table(gainers_df, is_gainers=True)
     losers_html      = _build_movers_table(losers_df,  is_gainers=False)
+
+    rs_section       = ""
+    if rs_leaders_df is not None and not rs_leaders_df.empty:
+        rs_section   = _section("⭐", "RS Leaders",
+                                 "Top 10 stocks outperforming Nifty 50 on a 1-month basis",
+                                 _build_rs_leaders_table(rs_leaders_df))
 
     idx_section      = _section("📊", "Index Breadth",
                                  "Stocks above / below 50 DMA and 200 DMA across the 4 major indexes",
@@ -793,6 +957,7 @@ def build_html_email(
               <td style="vertical-align:middle;">
                 <div style="color:#f1f5f9;font-size:20px;font-weight:700;letter-spacing:-0.02em;">StockStack</div>
                 <div style="color:#93c5fd;font-size:11px;margin-top:2px;letter-spacing:.06em;text-transform:uppercase;">Daily Market Digest</div>
+                {f'<div style="color:#bfdbfe;font-size:10px;margin-top:3px;letter-spacing:.04em;">{issue_label}</div>' if issue_label else ''}
               </td>
             </tr>
           </table>
@@ -812,8 +977,10 @@ def build_html_email(
   <div style="background:#f8fafc;padding:28px 28px 8px;border-radius:0 0 14px 14px;
     border:1px solid #e2e8f0;border-top:none;">
 
+    {exec_summary}
     {breadth_card}
     {idx_section}
+    {rs_section}
     {themes_section}
     {vol_section}
     {earnings_section}
@@ -857,17 +1024,20 @@ def send_digest(as_of: date | None = None) -> bool:
     logger.info(f"Building daily digest for {as_of}...")
 
     try:
+        edition_num           = _get_edition_number(engine)
         breadth               = _get_breadth(engine, as_of)
         idx_breadth           = _get_index_breadth(engine, as_of)
         themes_df             = _get_top_themes(engine, as_of)
         vol_df                = _get_volume_surge(engine, as_of)
         earnings_df           = _get_earnings_movers(engine, as_of)
         gainers_df, losers_df = _get_top_movers(engine, as_of)
+        rs_leaders_df         = _get_rs_leaders(engine, as_of)
         logger.info(
             f"  breadth={breadth['advances']}A/{breadth['declines']}D, "
             f"idx_breadth={len(idx_breadth)} indexes, themes={len(themes_df)}, "
             f"vol_surge={len(vol_df)}, earnings_movers={len(earnings_df)}, "
-            f"gainers={len(gainers_df)}, losers={len(losers_df)}"
+            f"gainers={len(gainers_df)}, losers={len(losers_df)}, "
+            f"rs_leaders={len(rs_leaders_df)}, edition=#{edition_num}"
         )
     except Exception as e:
         logger.error(f"Email digest query failed: {e}", exc_info=True)
@@ -876,6 +1046,8 @@ def send_digest(as_of: date | None = None) -> bool:
     html_body = build_html_email(
         as_of, breadth, idx_breadth, themes_df,
         vol_df, earnings_df, gainers_df, losers_df,
+        rs_leaders_df=rs_leaders_df,
+        edition_num=edition_num,
     )
 
     # ── Generate PDF ──────────────────────────────────────────────────────────
@@ -887,6 +1059,8 @@ def send_digest(as_of: date | None = None) -> bool:
         pdf_path = generate_pdf(
             as_of, breadth, idx_breadth, themes_df,
             vol_df, earnings_df, gainers_df, losers_df,
+            rs_leaders_df=rs_leaders_df,
+            edition_num=edition_num,
         )
         logger.info(f"PDF generated: {pdf_path}")
     except Exception as pdf_err:
@@ -898,7 +1072,8 @@ def send_digest(as_of: date | None = None) -> bool:
 
     # ── Build email (mixed = html + attachment) ────────────────────────────────
     msg = MIMEMultipart("mixed")
-    msg["Subject"] = f"StockStack Daily Digest — {as_of.strftime('%d %b %Y')}"
+    issue_tag = f" · Issue #{edition_num}" if edition_num else ""
+    msg["Subject"] = f"StockStack Daily Digest — {as_of.strftime('%d %b %Y')}{issue_tag}"
     msg["From"]    = DIGEST_EMAIL_FROM
     msg["To"]      = DIGEST_EMAIL_TO
 
