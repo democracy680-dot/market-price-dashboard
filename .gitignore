@@ -11,3 +11,5 @@ streamlit.log
 *_prompt.md
 *_claude_code_prompt.md
 financials_feature_spec.md
+data/live_prices.db
+data/.zerodha_token.json
