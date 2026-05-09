@@ -300,6 +300,52 @@ def _get_index_breadth(engine, as_of: date) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _get_sector_breadth(engine, as_of: date) -> pd.DataFrame:
+    """For each of the 12 sectors, count stocks above/below 50 DMA and 200 DMA."""
+    sectors = [
+        ("BANKS",                   "Banks"),
+        ("NBFCS",                   "NBFCs"),
+        ("PHARMA",                  "Pharma"),
+        ("DEFENCE",                 "Defence"),
+        ("NIFTY_AUTO",              "Auto"),
+        ("NIFTY_CHEMICAL",          "Chemicals"),
+        ("NIFTY_CONSUMER_DURABLES", "Consumer Durables"),
+        ("NIFTY_FMCG",             "FMCG"),
+        ("NIFTY_HEALTHCARE",        "Healthcare"),
+        ("NIFTY_IT",                "IT"),
+        ("NIFTY_MEDIA",             "Media"),
+        ("NIFTY_METAL",             "Metal"),
+    ]
+    sql = text("""
+        SELECT
+            COUNT(*)                                                          AS total,
+            COUNT(*) FILTER (WHERE sd.status_200dma = 'Above 200DMA')        AS above_200,
+            COUNT(*) FILTER (WHERE sd.status_200dma = 'Below 200DMA')        AS below_200,
+            COUNT(*) FILTER (WHERE sd.status_50dma  = 'Above 50DMA')         AS above_50,
+            COUNT(*) FILTER (WHERE sd.status_50dma  = 'Below 50DMA')         AS below_50
+        FROM index_membership im
+        JOIN snapshots_daily sd
+            ON sd.symbol = im.symbol AND sd.date = :as_of
+        WHERE im.index_name = :idx
+    """)
+    rows = []
+    with engine.connect() as conn:
+        for idx_key, idx_label in sectors:
+            r = conn.execute(sql, {"as_of": as_of, "idx": idx_key}).fetchone()
+            if r and r.total:
+                rows.append({
+                    "index":     idx_label,
+                    "total":     int(r.total),
+                    "above_200": int(r.above_200),
+                    "below_200": int(r.below_200),
+                    "above_50":  int(r.above_50),
+                    "below_50":  int(r.below_50),
+                    "pct_200":   round(100 * r.above_200 / r.total, 1),
+                    "pct_50":    round(100 * r.above_50  / r.total, 1),
+                })
+    return pd.DataFrame(rows)
+
+
 def _get_top_themes(engine, as_of: date, top_n: int = 5) -> pd.DataFrame:
     """Top themes by average 1-week return of member stocks."""
     sql = text("""
