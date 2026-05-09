@@ -12,6 +12,7 @@ GDRIVE_FOLDER_ID (ID of the Drive folder to upload into) in .env.
 Sections in the email / PDF:
   0. Market Breadth Snapshot (advances/declines, % above 200 DMA, index returns)
   1. Index Breadth — above/below 50 & 200 DMA for Nifty 50/500/Bank/F&O
+  1.5. Sector Breadth — above/below 50 & 200 DMA across all 12 sectors
   2. Top 5 Themes by 1D return
   3. Top 5 Volume Surge stocks (today volume vs 20-day avg)
   4. Quarterly Results stocks with >5% return today

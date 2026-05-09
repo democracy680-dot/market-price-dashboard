@@ -747,6 +747,40 @@ def _add_index_breadth(story: list, df: pd.DataFrame):
     story.append(Spacer(1, 4*mm))
 
 
+def _add_sector_breadth(story: list, df: pd.DataFrame):
+    _section("Sector Breadth", "% of stocks above 50 DMA and 200 DMA across all 12 sectors", story)
+    chart = _chart_sector_breadth(df)
+    if chart:
+        story.append(chart)
+
+    if df.empty:
+        story.append(Paragraph("No sector breadth data.", S_CELL))
+        return
+
+    header = _th("Sector", "Total", "▲ 200 DMA", "▼ 200 DMA", "% 200", "▲ 50 DMA", "▼ 50 DMA", "% 50")
+    rows = [header]
+    for _, r in df.iterrows():
+        p200 = float(r["pct_200"]); p50 = float(r["pct_50"])
+        c200 = "#16a34a" if p200>=60 else ("#dc2626" if p200<40 else "#d97706")
+        c50  = "#16a34a" if p50>=60  else ("#dc2626" if p50<40  else "#d97706")
+        rows.append([
+            Paragraph(f"<b>{r['index']}</b>",  S_CELB),
+            Paragraph(str(int(r["total"])),     S_CELL),
+            Paragraph(f"<font color='#16a34a'><b>{int(r['above_200'])}</b></font>", S_CELB),
+            Paragraph(f"<font color='#dc2626'>{int(r['below_200'])}</font>",         S_CELL),
+            Paragraph(f"<font color='{c200}'><b>{p200:.0f}%</b></font>",             S_CELB),
+            Paragraph(f"<font color='#16a34a'><b>{int(r['above_50'])}</b></font>",   S_CELB),
+            Paragraph(f"<font color='#dc2626'>{int(r['below_50'])}</font>",           S_CELL),
+            Paragraph(f"<font color='{c50}'><b>{p50:.0f}%</b></font>",               S_CELB),
+        ])
+    cw = [32*mm, 14*mm, 22*mm, 22*mm, 16*mm, 22*mm, 22*mm, 14*mm]
+    t  = Table(rows, colWidths=cw)
+    t.setStyle(_table_style(len(rows)))
+    story.append(Spacer(1, 3*mm))
+    story.append(t)
+    story.append(Spacer(1, 4*mm))
+
+
 def _add_themes(story: list, df: pd.DataFrame):
     _section("Top 5 Themes — Weekly", "Best performing thematic baskets (avg 1-week return of member stocks)", story)
     chart = _chart_themes(df)
@@ -871,8 +905,9 @@ def generate_pdf(
     earnings_df:   pd.DataFrame,
     gainers_df:    pd.DataFrame,
     losers_df:     pd.DataFrame,
-    rs_leaders_df: pd.DataFrame | None = None,
-    edition_num:   int | None = None,
+    rs_leaders_df:      pd.DataFrame | None = None,
+    edition_num:        int | None = None,
+    sector_breadth_df:  pd.DataFrame | None = None,
 ) -> str:
     tmp_dir = Path(__file__).parent.parent / ".tmp"
     tmp_dir.mkdir(exist_ok=True)
@@ -896,6 +931,8 @@ def generate_pdf(
     _add_executive_summary(story, breadth, themes_df, vol_df, gainers_df, losers_df, earnings_df)
     _add_breadth(story, breadth)
     _add_index_breadth(story, idx_breadth)
+    if sector_breadth_df is not None and not sector_breadth_df.empty:
+        _add_sector_breadth(story, sector_breadth_df)
     if rs_leaders_df is not None and not rs_leaders_df.empty:
         _add_rs_leaders(story, rs_leaders_df)
     _add_themes(story, themes_df)
