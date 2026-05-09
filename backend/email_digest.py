@@ -994,15 +994,16 @@ def _build_rs_leaders_table(df: pd.DataFrame) -> str:
 
 def build_html_email(
     as_of: date,
-    breadth:       dict,
-    idx_breadth:   pd.DataFrame,
-    themes_df:     pd.DataFrame,
-    vol_df:        pd.DataFrame,
-    earnings_df:   pd.DataFrame,
-    gainers_df:    pd.DataFrame,
-    losers_df:     pd.DataFrame,
-    rs_leaders_df: pd.DataFrame | None = None,
-    edition_num:   int | None = None,
+    breadth:            dict,
+    idx_breadth:        pd.DataFrame,
+    themes_df:          pd.DataFrame,
+    vol_df:             pd.DataFrame,
+    earnings_df:        pd.DataFrame,
+    gainers_df:         pd.DataFrame,
+    losers_df:          pd.DataFrame,
+    rs_leaders_df:      pd.DataFrame | None = None,
+    edition_num:        int | None = None,
+    sector_breadth_df:  pd.DataFrame | None = None,
 ) -> str:
     date_str     = as_of.strftime("%d %b %Y")
     weekday_str  = as_of.strftime("%A")
@@ -1027,6 +1028,14 @@ def build_html_email(
     idx_section      = _section("📊", "Index Breadth",
                                  "Stocks above / below 50 DMA and 200 DMA across the 4 major indexes",
                                  idx_html)
+
+    sector_breadth_html = _build_sector_breadth(sector_breadth_df) if sector_breadth_df is not None else ""
+    sector_breadth_section = _section(
+        "🏭", "Sector Breadth",
+        "Stocks above / below 50 DMA and 200 DMA across all 12 sectors",
+        sector_breadth_html,
+    ) if sector_breadth_df is not None and not sector_breadth_df.empty else ""
+
     themes_section   = _section("🎯", "Top 5 Themes — Weekly",
                                  "Best performing thematic baskets by avg 1-week return of member stocks",
                                  themes_html)
@@ -1092,6 +1101,7 @@ def build_html_email(
     {exec_summary}
     {breadth_card}
     {idx_section}
+    {sector_breadth_section}
     {rs_section}
     {themes_section}
     {vol_section}
@@ -1139,6 +1149,7 @@ def send_digest(as_of: date | None = None) -> bool:
         edition_num           = _get_edition_number(engine)
         breadth               = _get_breadth(engine, as_of)
         idx_breadth           = _get_index_breadth(engine, as_of)
+        sector_breadth_df     = _get_sector_breadth(engine, as_of)
         themes_df             = _get_top_themes(engine, as_of)
         vol_df                = _get_volume_surge(engine, as_of)
         earnings_df           = _get_earnings_movers(engine, as_of)
@@ -1146,7 +1157,9 @@ def send_digest(as_of: date | None = None) -> bool:
         rs_leaders_df         = _get_rs_leaders(engine, as_of)
         logger.info(
             f"  breadth={breadth['advances']}A/{breadth['declines']}D, "
-            f"idx_breadth={len(idx_breadth)} indexes, themes={len(themes_df)}, "
+            f"idx_breadth={len(idx_breadth)} indexes, "
+            f"sector_breadth={len(sector_breadth_df)} sectors, "
+            f"themes={len(themes_df)}, "
             f"vol_surge={len(vol_df)}, earnings_movers={len(earnings_df)}, "
             f"gainers={len(gainers_df)}, losers={len(losers_df)}, "
             f"rs_leaders={len(rs_leaders_df)}, edition=#{edition_num}"
@@ -1160,6 +1173,7 @@ def send_digest(as_of: date | None = None) -> bool:
         vol_df, earnings_df, gainers_df, losers_df,
         rs_leaders_df=rs_leaders_df,
         edition_num=edition_num,
+        sector_breadth_df=sector_breadth_df,
     )
 
     # ── Generate PDF ──────────────────────────────────────────────────────────
@@ -1173,6 +1187,7 @@ def send_digest(as_of: date | None = None) -> bool:
             vol_df, earnings_df, gainers_df, losers_df,
             rs_leaders_df=rs_leaders_df,
             edition_num=edition_num,
+            sector_breadth_df=sector_breadth_df,
         )
         logger.info(f"PDF generated: {pdf_path}")
     except Exception as pdf_err:
