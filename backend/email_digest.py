@@ -641,6 +641,71 @@ def _build_index_breadth(df: pd.DataFrame) -> str:
     </table>"""
 
 
+def _build_sector_breadth(df: pd.DataFrame) -> str:
+    if df.empty:
+        return _empty("No sector breadth data available for today.")
+
+    def _mini_bar(above: int, total: int, color: str) -> str:
+        pct = int(round(100 * above / total)) if total else 0
+        return (
+            f'<div style="height:6px;border-radius:3px;background:#e2e8f0;overflow:hidden;margin-top:4px;">'
+            f'<div style="height:6px;width:{pct}%;background:{color};border-radius:3px;"></div>'
+            f'</div>'
+        )
+
+    rows = ""
+    for i, (_, r) in enumerate(df.iterrows()):
+        bg = "#fafbff" if i % 2 == 0 else "#ffffff"
+        total     = int(r["total"])
+        above_200 = int(r["above_200"])
+        below_200 = int(r["below_200"])
+        above_50  = int(r["above_50"])
+        below_50  = int(r["below_50"])
+        pct_200   = float(r["pct_200"])
+        pct_50    = float(r["pct_50"])
+
+        c200 = "#16a34a" if pct_200 >= 60 else ("#dc2626" if pct_200 < 40 else "#d97706")
+        c50  = "#16a34a" if pct_50  >= 60 else ("#dc2626" if pct_50  < 40 else "#d97706")
+
+        rows += f"""
+        <tr style="background:{bg};">
+          <td style="padding:10px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;">
+            <div style="font-size:13px;font-weight:700;color:#0f172a;">{r["index"]}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:1px;">{total} stocks</div>
+          </td>
+          <td style="padding:10px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;min-width:130px;">
+            <div>
+              <span style="font-size:12px;font-weight:700;color:{c200};">{above_200}</span>
+              <span style="font-size:11px;color:#94a3b8;"> above &nbsp;/&nbsp; </span>
+              <span style="font-size:12px;font-weight:700;color:#dc2626;">{below_200}</span>
+              <span style="font-size:11px;color:#94a3b8;"> below</span>
+            </div>
+            {_mini_bar(above_200, total, c200)}
+            <div style="font-size:10px;color:{c200};font-weight:600;margin-top:3px;">{pct_200:.0f}% above 200 DMA</div>
+          </td>
+          <td style="padding:10px 16px;vertical-align:middle;border-bottom:1px solid #f1f5f9;min-width:130px;">
+            <div>
+              <span style="font-size:12px;font-weight:700;color:{c50};">{above_50}</span>
+              <span style="font-size:11px;color:#94a3b8;"> above &nbsp;/&nbsp; </span>
+              <span style="font-size:12px;font-weight:700;color:#dc2626;">{below_50}</span>
+              <span style="font-size:11px;color:#94a3b8;"> below</span>
+            </div>
+            {_mini_bar(above_50, total, c50)}
+            <div style="font-size:10px;color:{c50};font-weight:600;margin-top:3px;">{pct_50:.0f}% above 50 DMA</div>
+          </td>
+        </tr>"""
+
+    return f"""
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead><tr>
+        <th {_TH_STYLE}>Sector</th>
+        <th {_TH_STYLE}>200 DMA Breadth</th>
+        <th {_TH_STYLE}>50 DMA Breadth</th>
+      </tr></thead>
+      <tbody>{rows}</tbody>
+    </table>"""
+
+
 def _build_themes_table(df: pd.DataFrame) -> str:
     if df.empty:
         return _empty("No theme performance data available for today.")
