@@ -773,7 +773,7 @@ def _add_sector_breadth(story: list, df: pd.DataFrame):
             Paragraph(f"<font color='#dc2626'>{int(r['below_50'])}</font>",           S_CELL),
             Paragraph(f"<font color='{c50}'><b>{p50:.0f}%</b></font>",               S_CELB),
         ])
-    cw = [32*mm, 14*mm, 22*mm, 22*mm, 16*mm, 22*mm, 22*mm, 14*mm]
+    cw = [36*mm, 16*mm, 24*mm, 24*mm, 16*mm, 24*mm, 24*mm, 14*mm]
     t  = Table(rows, colWidths=cw)
     t.setStyle(_table_style(len(rows)))
     story.append(Spacer(1, 3*mm))
