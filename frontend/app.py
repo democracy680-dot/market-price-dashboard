@@ -6,7 +6,6 @@ All heavy stock computation happens in the daily refresh job.
 """
 
 import base64
-import datetime
 import json
 import os
 import pathlib
@@ -32,7 +31,6 @@ load_dotenv()
 
 # PERF: Timing instrumentation — gated behind DEBUG=true env var
 from perf_logger import measure, show_perf_panel, reset_timings
-from live_prices_reader import get_live_prices, is_live_data_fresh, get_live_status_text
 
 
 def _make_favicon() -> Image.Image:
@@ -2914,18 +2912,6 @@ def _frag_quarterly_results(snap_date):
                 f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}."
             )
         else:
-            # Merge live Zerodha prices into CMP column when viewing today's results
-            if snap_date == datetime.date.today():
-                live = get_live_prices(df_today["symbol"].tolist())
-                if live:
-                    for i, row in df_today.iterrows():
-                        sym = row["symbol"]
-                        if sym in live and is_live_data_fresh(live[sym]["fetched_at"]):
-                            df_today.at[i, "cmp"] = live[sym]["ltp"]
-                    status = get_live_status_text(live)
-                    if status:
-                        st.success(f"🟢 LIVE — updated {status} via Zerodha")
-
             n = len(df_today)
             announced = df_today["announcement_day_return"].notna().sum()
             st.markdown(
