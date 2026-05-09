@@ -362,6 +362,48 @@ def _chart_index_breadth(df: pd.DataFrame) -> Image:
     return _fig_to_image(fig, USABLE_W / mm)
 
 
+def _chart_sector_breadth(df: pd.DataFrame) -> Image:
+    if df.empty:
+        return None
+    labels = df["index"].tolist()
+    pct200 = df["pct_200"].tolist()
+    pct50  = df["pct_50"].tolist()
+    y      = np.arange(len(labels))
+    h      = 0.32
+
+    fig, ax = plt.subplots(figsize=(6.8, max(3.6, len(labels) * 0.38)), facecolor="white")
+    ax.set_facecolor("white")
+
+    bars200 = ax.barh(y + h/2, pct200, h, color=M_200DMA, alpha=0.88, label="Above 200 DMA")
+    bars50  = ax.barh(y - h/2, pct50,  h, color=M_50DMA,  alpha=0.88, label="Above 50 DMA")
+
+    for bar, v in zip(bars200, pct200):
+        ax.text(min(v + 1, 97), bar.get_y() + bar.get_height()/2,
+                f"{v:.0f}%", va="center", fontsize=6, color=M_NAVY, fontweight="bold")
+    for bar, v in zip(bars50, pct50):
+        ax.text(min(v + 1, 97), bar.get_y() + bar.get_height()/2,
+                f"{v:.0f}%", va="center", fontsize=6, color=M_NAVY, fontweight="bold")
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=7.5, color=M_NAVY)
+    ax.set_xlim(0, 108)
+    ax.axvline(50, color=M_BORDER, linewidth=0.8, linestyle="--")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+    _setup_ax(ax)
+    ax.set_title("Sector Breadth — % Stocks Above Key Moving Averages",
+                 fontsize=8.5, fontweight="bold", color=M_NAVY, pad=6)
+
+    patch200 = mpatches.Patch(color=M_200DMA, label="Above 200 DMA")
+    patch50  = mpatches.Patch(color=M_50DMA,  label="Above 50 DMA")
+    leg = ax.legend(handles=[patch200, patch50], fontsize=6.5,
+                    loc="lower right", frameon=True,
+                    facecolor="white", edgecolor=M_BORDER)
+    for t in leg.get_texts():
+        t.set_color(M_MUTED)
+    fig.tight_layout(pad=0.6)
+    return _fig_to_image(fig, USABLE_W / mm)
+
+
 def _chart_themes(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
