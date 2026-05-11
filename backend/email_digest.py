@@ -1146,28 +1146,42 @@ def send_digest(as_of: date | None = None) -> bool:
     engine = get_engine()
     logger.info(f"Building daily digest for {as_of}...")
 
-    try:
-        edition_num           = _get_edition_number(engine)
-        breadth               = _get_breadth(engine, as_of)
-        idx_breadth           = _get_index_breadth(engine, as_of)
-        sector_breadth_df     = _get_sector_breadth(engine, as_of)
-        themes_df             = _get_top_themes(engine, as_of)
-        vol_df                = _get_volume_surge(engine, as_of)
-        earnings_df           = _get_earnings_movers(engine, as_of)
-        gainers_df, losers_df = _get_top_movers(engine, as_of)
-        rs_leaders_df         = _get_rs_leaders(engine, as_of)
-        logger.info(
-            f"  breadth={breadth['advances']}A/{breadth['declines']}D, "
-            f"idx_breadth={len(idx_breadth)} indexes, "
-            f"sector_breadth={len(sector_breadth_df)} sectors, "
-            f"themes={len(themes_df)}, "
-            f"vol_surge={len(vol_df)}, earnings_movers={len(earnings_df)}, "
-            f"gainers={len(gainers_df)}, losers={len(losers_df)}, "
-            f"rs_leaders={len(rs_leaders_df)}, edition=#{edition_num}"
-        )
-    except Exception as e:
-        logger.error(f"Email digest query failed: {e}", exc_info=True)
+    def _q(fn, *args, default=None, **kwargs):
+        """Run a query function; log errors and return default instead of crashing."""
+        try:
+            return fn(*args, **kwargs)
+        except Exception as _e:
+            logger.error(f"Digest query {fn.__name__} failed (non-fatal): {_e}", exc_info=True)
+            return default if default is not None else pd.DataFrame()
+
+    edition_num       = _q(_get_edition_number,  engine, default=1)
+    breadth           = _q(_get_breadth,          engine, as_of,
+                           default={"total":0,"advances":0,"declines":0,
+                                    "unchanged":0,"pct_above_200":0.0,
+                                    "nifty50_ret":None,"bank_ret":None})
+    idx_breadth       = _q(_get_index_breadth,    engine, as_of)
+    sector_breadth_df = _q(_get_sector_breadth,   engine, as_of)
+    themes_df         = _q(_get_top_themes,       engine, as_of)
+    vol_df            = _q(_get_volume_surge,     engine, as_of)
+    earnings_df       = _q(_get_earnings_movers,  engine, as_of)
+    movers            = _q(_get_top_movers,       engine, as_of,
+                           default=(pd.DataFrame(), pd.DataFrame()))
+    gainers_df, losers_df = movers if isinstance(movers, tuple) else (pd.DataFrame(), pd.DataFrame())
+    rs_leaders_df     = _q(_get_rs_leaders,       engine, as_of)
+
+    if breadth["total"] == 0:
+        logger.error("Market breadth query returned no stocks — aborting digest (no data for today?)")
         return False
+
+    logger.info(
+        f"  breadth={breadth['advances']}A/{breadth['declines']}D, "
+        f"idx_breadth={len(idx_breadth)} indexes, "
+        f"sector_breadth={len(sector_breadth_df)} sectors, "
+        f"themes={len(themes_df)}, "
+        f"vol_surge={len(vol_df)}, earnings_movers={len(earnings_df)}, "
+        f"gainers={len(gainers_df)}, losers={len(losers_df)}, "
+        f"rs_leaders={len(rs_leaders_df)}, edition=#{edition_num}"
+    )
 
     html_body = build_html_email(
         as_of, breadth, idx_breadth, themes_df,
