@@ -2802,9 +2802,10 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     if mode == "season":
         disp["Result Date"] = pd.to_datetime(df["result_date"]).dt.strftime("%d %b %Y")
-    disp["Ann. Day Return"] = df["announcement_day_return"].map(_fmt_pct)
+    # Store as float (×100 = percentage points) so st.dataframe sorts numerically
+    disp["Ann. Day Return"] = pd.to_numeric(df["announcement_day_return"], errors="coerce") * 100
     if mode == "season":
-        disp["Return Since Ann."] = df["return_since_announcement"].map(_fmt_pct)
+        disp["Return Since Ann."] = pd.to_numeric(df["return_since_announcement"], errors="coerce") * 100
     disp["Chart"] = df.apply(
         lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
     )
@@ -2820,6 +2821,8 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     col_cfg = {
         "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
         "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
+        "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
+        "Return Since Ann.": st.column_config.NumberColumn("Return Since Ann.", format="%.2f%%"),
     }
     st.dataframe(styled, use_container_width=True, hide_index=True, height=600,
                  column_config=col_cfg)
