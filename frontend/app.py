@@ -2930,25 +2930,29 @@ def _frag_quarterly_results(snap_date):
                         ec.symbol,
                         s.name,
                         ec.result_date,
-                        sd_ann.market_cap_cr,
-                        sd_ann.ret_1d AS announcement_day_return,
+                        COALESCE(sd_ann.market_cap_cr, next_td.market_cap_cr) AS market_cap_cr,
+                        COALESCE(sd_ann.ret_1d, next_td.ret_1d) AS announcement_day_return,
                         CASE
                             WHEN sd_ann.cmp > 0 AND latest.cmp > 0
                             THEN ROUND(
                                 CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
+                            )
+                            WHEN COALESCE(prev_td.cmp, 0) > 0 AND latest.cmp > 0
+                            THEN ROUND(
+                                CAST((latest.cmp - prev_td.cmp) / prev_td.cmp AS NUMERIC), 6
                             )
                             ELSE NULL
                         END AS return_since_announcement,
                         ROUND(
                             COALESCE(mt.criteria_count, 0) / 8.0 * 25
                             + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
-                            + CASE WHEN sd_ann.cmp > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                            + CASE WHEN COALESCE(sd_ann.cmp, next_td.cmp) > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
                             + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
                             + CASE
-                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.10 THEN 20
-                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.05 THEN 15
-                                WHEN COALESCE(sd_ann.ret_1d, 0) >= 0.02 THEN 10
-                                WHEN COALESCE(sd_ann.ret_1d, 0) >  0    THEN 5
+                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.10 THEN 20
+                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.05 THEN 15
+                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.02 THEN 10
+                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >  0    THEN 5
                                 ELSE 0
                               END
                             + CASE
@@ -2971,6 +2975,18 @@ def _frag_quarterly_results(snap_date):
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd_ann
                         ON ec.symbol = sd_ann.symbol AND sd_ann.date = ec.result_date
+                    LEFT JOIN LATERAL (
+                        SELECT cmp
+                        FROM snapshots_daily
+                        WHERE symbol = ec.symbol AND date < ec.result_date
+                        ORDER BY date DESC LIMIT 1
+                    ) prev_td ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT ret_1d, market_cap_cr, cmp
+                        FROM snapshots_daily
+                        WHERE symbol = ec.symbol AND date > ec.result_date
+                        ORDER BY date ASC LIMIT 1
+                    ) next_td ON TRUE
                     LEFT JOIN LATERAL (
                         SELECT cmp FROM snapshots_daily
                         WHERE symbol = ec.symbol

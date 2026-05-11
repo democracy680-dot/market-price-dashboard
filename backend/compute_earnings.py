@@ -40,12 +40,16 @@ def get_earnings_season(engine, today) -> pd.DataFrame:
             ec.symbol,
             s.name,
             ec.result_date,
-            sd_ann.market_cap_cr,
-            sd_ann.ret_1d AS announcement_day_return,
+            COALESCE(sd_ann.market_cap_cr, next_td.market_cap_cr) AS market_cap_cr,
+            COALESCE(sd_ann.ret_1d, next_td.ret_1d) AS announcement_day_return,
             CASE
                 WHEN sd_ann.cmp > 0 AND latest.cmp > 0
                 THEN ROUND(
                     CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
+                )
+                WHEN COALESCE(prev_td.cmp, 0) > 0 AND latest.cmp > 0
+                THEN ROUND(
+                    CAST((latest.cmp - prev_td.cmp) / prev_td.cmp AS NUMERIC), 6
                 )
                 ELSE NULL
             END AS return_since_announcement
@@ -56,12 +60,23 @@ def get_earnings_season(engine, today) -> pd.DataFrame:
         LEFT JOIN LATERAL (
             SELECT cmp
             FROM snapshots_daily
+            WHERE symbol = ec.symbol AND date < ec.result_date
+            ORDER BY date DESC LIMIT 1
+        ) prev_td ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT ret_1d, market_cap_cr
+            FROM snapshots_daily
+            WHERE symbol = ec.symbol AND date > ec.result_date
+            ORDER BY date ASC LIMIT 1
+        ) next_td ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT cmp
+            FROM snapshots_daily
             WHERE symbol = ec.symbol
-            ORDER BY date DESC
-            LIMIT 1
+            ORDER BY date DESC LIMIT 1
         ) latest ON TRUE
         WHERE ec.result_date <= :today
-        ORDER BY ec.result_date DESC, sd_ann.ret_1d DESC NULLS LAST
+        ORDER BY ec.result_date DESC, COALESCE(sd_ann.ret_1d, next_td.ret_1d) DESC NULLS LAST
     """)
     with engine.connect() as conn:
         rows = conn.execute(sql, {"today": today}).fetchall()
