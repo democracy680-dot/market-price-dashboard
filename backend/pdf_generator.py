@@ -780,9 +780,12 @@ def _add_sector_breadth(story: list, df: pd.DataFrame):
 
 
 def _add_rs_leaders(story: list, df: pd.DataFrame):
+    # Cap at 7 rows: chart + stock cells (2-line each) + heading reaches ~240 mm
+    # with 10 rows — right at the frame limit.  7 rows sits comfortably at ~200 mm.
+    df = df.head(7)
     items = _section_flowables(
         "RS Leaders",
-        "Top 10 stocks outperforming Nifty 50 on a 1-month basis",
+        "Top 7 stocks outperforming Nifty 50 on a 1-month basis",
     )
     chart = _chart_rs_leaders(df)
     if chart:
