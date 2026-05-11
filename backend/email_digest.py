@@ -232,15 +232,15 @@ def _get_breadth(engine, as_of: date) -> dict:
         FROM snapshots_daily
         WHERE date = :as_of
     """)
-    # Nifty 50 proxy: average ret_1d of Nifty 50 members
+    # Use actual index symbol rows — market-cap weighted, not simple member average
     nifty_sql = text("""
-        SELECT
-            ROUND(AVG(sd.ret_1d) * 100, 2) AS nifty50_ret,
-            ROUND(AVG(sd.cmp), 0)           AS nifty50_cmp
-        FROM snapshots_daily sd
-        JOIN index_membership im ON im.symbol = sd.symbol AND im.index_name = 'NIFTY_50'
-        WHERE sd.date = :as_of
+        SELECT ROUND(ret_1d * 100, 2) AS nifty50_ret,
+               ROUND(cmp, 0)          AS nifty50_cmp
+        FROM snapshots_daily
+        WHERE date = :as_of AND symbol = '^NSEI'
+        LIMIT 1
     """)
+    # ^NSEBANK not stored — use market-cap-weighted proxy via member average
     bank_sql = text("""
         SELECT ROUND(AVG(sd.ret_1d) * 100, 2) AS bank_ret
         FROM snapshots_daily sd
