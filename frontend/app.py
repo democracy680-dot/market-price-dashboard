@@ -2463,6 +2463,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
                         ),
                     )
                     st.plotly_chart(fig, use_container_width=True,
+                                    key=f"breadth_{section_key}_{key}",
                                     config={"displayModeBar": False})
 
                     # ── Stats strip ──────────────────────────────────────────
@@ -2501,7 +2502,7 @@ def render_breadth_tab(snap_date, universes: list, section_key: str):
 
 
 def _render_topbottom_chart(df: pd.DataFrame, ret_col: str, n: int,
-                             universe_label: str, ret_label: str):
+                             universe_label: str, ret_label: str, chart_key: str = ""):
     """Render Top-N (green) and Bottom-N (red) charts side by side."""
     df_valid = df[df[ret_col].notna()].copy()
     # Ensure numeric dtype — SQL returns object when all values are NULL
@@ -2529,6 +2530,7 @@ def _render_topbottom_chart(df: pd.DataFrame, ret_col: str, n: int,
             st.plotly_chart(
                 _build_ranked_chart(top_n, "#22c55e", ret_label),
                 use_container_width=True,
+                key=f"top_{chart_key}",
                 config={"displayModeBar": False},
             )
 
@@ -2546,6 +2548,7 @@ def _render_topbottom_chart(df: pd.DataFrame, ret_col: str, n: int,
             st.plotly_chart(
                 _build_ranked_chart(bottom_n, "#ef4444", ret_label),
                 use_container_width=True,
+                key=f"bot_{chart_key}",
                 config={"displayModeBar": False},
             )
 
@@ -2603,7 +2606,7 @@ def render_analysis_tab(snap_date, universes: list, section_key: str):
             unsafe_allow_html=True,
         )
 
-        _render_topbottom_chart(df, ret_col, n, label, ret_label)
+        _render_topbottom_chart(df, ret_col, n, label, ret_label, chart_key=f"{section_key}_{key}_{selected_tf}")
         st.divider()
 
 
