@@ -403,7 +403,8 @@ def run():
     logger.info("Sending daily email digest...")
     try:
         from email_digest import send_digest
-        as_of_date = snapshots["date"].max().date() if not snapshots.empty else __import__("datetime").date.today()
+        raw = snapshots["date"].max() if not snapshots.empty else __import__("datetime").date.today()
+        as_of_date = raw.date() if hasattr(raw, "date") else raw
         send_digest(as_of_date)
     except Exception as digest_err:
         logger.error(f"  Email digest failed (non-fatal): {digest_err}", exc_info=True)
