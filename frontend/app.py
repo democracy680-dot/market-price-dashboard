@@ -2810,6 +2810,8 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     if mode == "season":
         disp["Return Since Ann."] = pd.to_numeric(df["return_since_announcement"], errors="coerce") * 100
         disp["Today's Return"] = pd.to_numeric(df["today_return"], errors="coerce") * 100
+    if mode == "season" and "presentation_url" in df.columns:
+        disp["PPT"] = df["presentation_url"].fillna("")
     disp["Chart"] = df.apply(
         lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
     )
@@ -2824,6 +2826,7 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
         styled = styled.map(_color_return, subset=["Today's Return"])
 
     col_cfg = {
+        "PPT": st.column_config.LinkColumn("PPT", display_text="📊"),
         "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
         "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
@@ -2980,7 +2983,8 @@ def _frag_quarterly_results(snap_date):
                             + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                        , 0) AS score
+                        , 0) AS score,
+                        ec.presentation_url
                     FROM earnings_calendar ec
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd_ann
@@ -3030,7 +3034,8 @@ def _frag_quarterly_results(snap_date):
             return
         df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
                                                  "announcement_day_return",
-                                                 "return_since_announcement", "today_return", "score"])
+                                                 "return_since_announcement", "today_return", "score",
+                                                 "presentation_url"])
         if df_season.empty:
             st.info("No results announced yet this season.")
         else:
