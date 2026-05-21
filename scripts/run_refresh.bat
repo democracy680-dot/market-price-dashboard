@@ -12,3 +12,12 @@ if %ERRORLEVEL% EQU 0 (
 ) else (
     echo [%DATE% %TIME%] Refresh FAILED with exit code %ERRORLEVEL%. Check logs\refresh.log
 )
+
+echo [%DATE% %TIME%] Fetching BSE investor presentations...
+"C:\Users\Sumit meena\AppData\Local\Programs\Python\Python311\python.exe" backend\fetch_bse_presentations.py >> logs\refresh.log 2>&1
+
+if %ERRORLEVEL% EQU 0 (
+    echo [%DATE% %TIME%] BSE presentations fetch completed.
+) else (
+    echo [%DATE% %TIME%] BSE presentations fetch failed (non-critical). Check logs\refresh.log
+)

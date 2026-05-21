@@ -34,3 +34,10 @@ jobs:
           DIGEST_EMAIL_TO:      democracy680@gmail.com
         working-directory: backend
         run: python daily_refresh.py
+
+      - name: Fetch BSE investor presentations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        working-directory: backend
+        run: python fetch_bse_presentations.py
+        continue-on-error: true
