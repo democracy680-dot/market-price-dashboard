@@ -2809,6 +2809,7 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     disp["Ann. Day Return"] = pd.to_numeric(df["announcement_day_return"], errors="coerce") * 100
     if mode == "season":
         disp["Return Since Ann."] = pd.to_numeric(df["return_since_announcement"], errors="coerce") * 100
+        disp["Today's Return"] = pd.to_numeric(df["today_return"], errors="coerce") * 100
     disp["Chart"] = df.apply(
         lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
     )
@@ -2820,12 +2821,14 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     styled = styled.map(_color_return, subset=["Ann. Day Return"])
     if mode == "season" and "Return Since Ann." in disp.columns:
         styled = styled.map(_color_return, subset=["Return Since Ann."])
+        styled = styled.map(_color_return, subset=["Today's Return"])
 
     col_cfg = {
         "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
         "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
         "Return Since Ann.": st.column_config.NumberColumn("Return Since Ann.", format="%.2f%%"),
+        "Today's Return": st.column_config.NumberColumn("Today's Return", format="%.2f%%"),
     }
     st.dataframe(styled, use_container_width=True, hide_index=True, height=600,
                  column_config=col_cfg)
@@ -2949,6 +2952,7 @@ def _frag_quarterly_results(snap_date):
                             )
                             ELSE NULL
                         END AS return_since_announcement,
+                        latest.ret_1d AS today_return,
                         ROUND(
                             COALESCE(mt.criteria_count, 0) / 8.0 * 25
                             + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
@@ -2994,7 +2998,7 @@ def _frag_quarterly_results(snap_date):
                         ORDER BY date ASC LIMIT 1
                     ) next_td ON TRUE
                     LEFT JOIN LATERAL (
-                        SELECT cmp FROM snapshots_daily
+                        SELECT cmp, ret_1d FROM snapshots_daily
                         WHERE symbol = ec.symbol
                         ORDER BY date DESC LIMIT 1
                     ) latest ON TRUE
@@ -3026,7 +3030,7 @@ def _frag_quarterly_results(snap_date):
             return
         df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
                                                  "announcement_day_return",
-                                                 "return_since_announcement", "score"])
+                                                 "return_since_announcement", "today_return", "score"])
         if df_season.empty:
             st.info("No results announced yet this season.")
         else:
