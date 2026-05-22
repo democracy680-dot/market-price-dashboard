@@ -50,12 +50,7 @@ HEADERS = {
 PRESENTATION_SUBCATS = {"investor presentation"}
 PRESENTATION_KEYWORDS = ["investor presentation", "corporate presentation"]
 
-# Financial Results PDF endpoint — no strSearch filter; client-side filtering picks the right filing
-BSE_ANN_URL_RESULTS = (
-    "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
-    "?strCat=-1&strType=C&strScrip={scrip}"
-    "&strPrevDate={from_dt}&strToDate={to_dt}"
-)
+# Financial Results use the same BSE endpoint as presentations (strSearch=P is required)
 RESULTS_SUBCATS = {"financial results", "quarterly results"}
 RESULTS_KEYWORDS = [
     "unaudited financial results",
@@ -127,7 +122,7 @@ def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
     """Return PDF URL of the quarterly Financial Results filing, if found."""
     from_dt = result_date.strftime("%Y%m%d")
     to_dt = (result_date + timedelta(days=7)).strftime("%Y%m%d")
-    url = BSE_ANN_URL_RESULTS.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
+    url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
         resp.raise_for_status()
