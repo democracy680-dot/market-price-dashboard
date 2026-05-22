@@ -2810,8 +2810,10 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     if mode == "season":
         disp["Return Since Ann."] = pd.to_numeric(df["return_since_announcement"], errors="coerce") * 100
         disp["Today's Return"] = pd.to_numeric(df["today_return"], errors="coerce") * 100
-    if mode == "season" and "presentation_url" in df.columns:
+    if "presentation_url" in df.columns:
         disp["PPT"] = df["presentation_url"].fillna("")
+    if "result_pdf_url" in df.columns:
+        disp["PDF"] = df["result_pdf_url"].fillna("")
     disp["Chart"] = df.apply(
         lambda r: f"https://www.tradingview.com/chart/?symbol=NSE%3A{r['symbol']}", axis=1
     )
@@ -2827,6 +2829,7 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
 
     col_cfg = {
         "PPT": st.column_config.LinkColumn("PPT", display_text="📊"),
+        "PDF": st.column_config.LinkColumn("PDF", display_text="📄"),
         "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
         "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
@@ -2885,7 +2888,9 @@ def _frag_quarterly_results(snap_date):
                             + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                        , 0) AS score
+                        , 0) AS score,
+                        ec.presentation_url,
+                        ec.result_pdf_url
                     FROM earnings_calendar ec
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd
@@ -2917,7 +2922,8 @@ def _frag_quarterly_results(snap_date):
             st.error(f"Could not load today's earnings data: {e}")
             return
         df_today = pd.DataFrame(rows, columns=["symbol", "name", "market_cap_cr",
-                                               "announcement_day_return", "cmp", "score"])
+                                               "announcement_day_return", "cmp", "score",
+                                               "presentation_url", "result_pdf_url"])
         if df_today.empty:
             st.info(
                 f"No quarterly result announcements scheduled for "
@@ -2984,7 +2990,8 @@ def _frag_quarterly_results(snap_date):
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
                                    WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
                         , 0) AS score,
-                        ec.presentation_url
+                        ec.presentation_url,
+                        ec.result_pdf_url
                     FROM earnings_calendar ec
                     JOIN stocks s ON ec.symbol = s.symbol
                     LEFT JOIN snapshots_daily sd_ann
@@ -3035,7 +3042,7 @@ def _frag_quarterly_results(snap_date):
         df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
                                                  "announcement_day_return",
                                                  "return_since_announcement", "today_return", "score",
-                                                 "presentation_url"])
+                                                 "presentation_url", "result_pdf_url"])
         if df_season.empty:
             st.info("No results announced yet this season.")
         else:
