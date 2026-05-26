@@ -51,7 +51,8 @@ PRESENTATION_SUBCATS = {"investor presentation"}
 PRESENTATION_KEYWORDS = ["investor presentation", "corporate presentation"]
 
 # Financial Results use the same BSE endpoint as presentations (strSearch=P is required)
-RESULTS_SUBCATS = {"financial results", "quarterly results"}
+# BSE typically returns SUBCATNAME = "Results" (not "financial results")
+RESULTS_SUBCATS = {"financial results", "quarterly results", "results", "half yearly results", "annual results"}
 RESULTS_KEYWORDS = [
     "unaudited financial results",
     "audited financial results",
@@ -59,6 +60,11 @@ RESULTS_KEYWORDS = [
     "financial results for",
     "standalone financial results",
     "consolidated financial results",
+    "outcome of board meeting",
+    "board meeting outcome",
+    "results for the quarter",
+    "results for the half",
+    "results for the year",
 ]
 
 
@@ -120,7 +126,8 @@ def find_presentation_url(scrip_code: str, result_date: date) -> str | None:
 
 def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
     """Return PDF URL of the quarterly Financial Results filing, if found."""
-    from_dt = result_date.strftime("%Y%m%d")
+    # Start 2 days before result_date — some companies file just before the board meeting date
+    from_dt = (result_date - timedelta(days=2)).strftime("%Y%m%d")
     to_dt = (result_date + timedelta(days=7)).strftime("%Y%m%d")
     url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
@@ -140,6 +147,10 @@ def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
             matches.append(ann)
 
     if not matches:
+        # Log what BSE actually returned so we can tune keywords if needed
+        seen = {(a.get("SUBCATNAME",""), a.get("NEWSSUB",""))[:80] for a in announcements[:5]}
+        if seen:
+            log.debug(f"  scrip {scrip_code}: no result match. BSE returned: {seen}")
         return None
 
     best = sorted(matches, key=lambda a: a.get("NEWS_DT", ""), reverse=True)[0]
