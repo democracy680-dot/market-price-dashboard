@@ -70,10 +70,10 @@ def load_active_stocks(conn) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["symbol", "yahoo_symbol", "sector"])
 
 
-def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict):
+def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict, chunk_size: int = 10_000):
     """
     Bulk-upsert rows into prices_daily using psycopg2 execute_values.
-    Much faster than SQLAlchemy parametrized inserts for large datasets.
+    Commits in chunks to avoid dropping the connection on large datasets.
     """
     if prices_df.empty:
         return 0
@@ -96,14 +96,19 @@ def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict):
             close  = EXCLUDED.close,
             volume = EXCLUDED.volume
     """
-    conn = get_psycopg2_conn()
-    try:
-        with conn.cursor() as cur:
-            execute_values(cur, sql, rows, page_size=2000)
-        conn.commit()
-    finally:
-        conn.close()
-    return len(rows)
+    total = 0
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        conn = get_psycopg2_conn()
+        try:
+            with conn.cursor() as cur:
+                execute_values(cur, sql, chunk, page_size=500)
+            conn.commit()
+            total += len(chunk)
+            logger.info(f"  prices_daily: {total}/{len(rows)} rows committed")
+        finally:
+            conn.close()
+    return total
 
 
 def _clean(v):
@@ -307,12 +312,23 @@ def run():
     sectors_to_update = fundamentals[fundamentals["sector"].notna()][["symbol", "sector"]]
     if not sectors_to_update.empty:
         logger.info(f"Updating sectors for {len(sectors_to_update)} stocks...")
-        with engine.begin() as conn:
-            for _, row in sectors_to_update.iterrows():
-                conn.execute(
-                    text("UPDATE stocks SET sector = :sector WHERE symbol = :symbol AND (sector IS NULL OR sector != :sector)"),
-                    {"symbol": row["symbol"], "sector": row["sector"]},
+        rows_s = list(sectors_to_update.itertuples(index=False, name=None))
+        conn_s = get_psycopg2_conn()
+        try:
+            with conn_s.cursor() as cur:
+                execute_values(
+                    cur,
+                    """
+                    UPDATE stocks SET sector = data.sector
+                    FROM (VALUES %s) AS data(symbol, sector)
+                    WHERE stocks.symbol = data.symbol
+                      AND (stocks.sector IS NULL OR stocks.sector != data.sector)
+                    """,
+                    rows_s,
                 )
+            conn_s.commit()
+        finally:
+            conn_s.close()
         logger.info("  Sectors updated.")
 
     n_snaps = upsert_snapshots(snapshots)

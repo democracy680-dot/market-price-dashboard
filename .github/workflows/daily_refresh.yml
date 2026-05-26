@@ -2,7 +2,7 @@ name: Daily Refresh
 
 on:
   schedule:
-    # 11:00 UTC = 4:30 PM IST, Monday–Friday
+    # 11:00 UTC = 4:30 PM IST, Monday–Friday (GitHub may delay 15–60 min)
     - cron: "0 11 * * 1-5"
   workflow_dispatch:
     # Manual trigger button in GitHub UI (for ad-hoc runs)

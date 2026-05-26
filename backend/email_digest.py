@@ -109,7 +109,7 @@ def _upload_to_drive(file_path: str, filename: str) -> str | None:
 def _get_edition_number(engine) -> int:
     with engine.connect() as conn:
         result = conn.execute(text(
-            "SELECT COUNT(*) FROM refresh_log WHERE status IN ('complete', 'partial')"
+            "SELECT COUNT(*) FROM refresh_log WHERE status IN ('success', 'complete', 'partial')"
         )).scalar()
     return int(result) if result else 1
 
