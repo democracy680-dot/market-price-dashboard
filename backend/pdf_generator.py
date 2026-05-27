@@ -355,40 +355,46 @@ def _setup_ax(ax, title: str = ""):
 def _chart_breadth_donut(b: dict) -> Image:
     adv   = b["advances"]
     dec   = b["declines"]
-    unch  = b["unchanged"]
+    unch  = b.get("unchanged", 0)
     total = adv + dec + unch
     adv_pct = round(100 * adv / total, 1) if total else 0
-    dec_pct = round(100 * dec / total, 1) if total else 0
 
-    fig, ax = plt.subplots(figsize=(3.2, 3.2), facecolor="white")
+    fig, ax = plt.subplots(figsize=(3.2, 3.4), facecolor="white")
     sizes  = [adv, dec, unch] if unch > 0 else [adv, dec]
     clrs   = [M_GREEN, M_RED, "#e2e8f0"][:len(sizes)]
     wedges, _ = ax.pie(
         sizes, colors=clrs, startangle=90,
         wedgeprops=dict(width=0.54, edgecolor="white", linewidth=2.5),
     )
-    ax.text(0,  0.22, f"{adv:,}", ha="center", va="center",
-            fontsize=16, fontweight="bold", color=M_GREEN)
-    ax.text(0, -0.02, "Advances", ha="center", va="center",
-            fontsize=6.5, color=M_GREEN)
-    ax.text(0, -0.28, f"{dec:,}", ha="center", va="center",
-            fontsize=16, fontweight="bold", color=M_RED)
-    ax.text(0, -0.50, "Declines", ha="center", va="center",
-            fontsize=6.5, color=M_RED)
-    labels_pct = [f"Adv  {adv_pct:.1f}%", f"Dec  {dec_pct:.1f}%"]
+
+    # Center label: headline pct + counts — no overlap
+    ax.text(0,  0.10, f"{adv_pct:.1f}%", ha="center", va="center",
+            fontsize=17, fontweight="bold", color=M_GREEN)
+    ax.text(0, -0.18, "Adv", ha="center", va="center",
+            fontsize=7.5, color=M_MUTED, fontstyle="italic")
+    ax.text(0, -0.38, f"{adv:,} / {dec:,}" + (f" / {unch:,}" if unch else ""),
+            ha="center", va="center", fontsize=6.5, color=M_MUTED)
+
+    # Legend: mpatches so colours render as filled squares, not unicode ■
+    patches = [
+        mpatches.Patch(color=M_GREEN, label=f"Adv  {adv_pct:.1f}%"),
+        mpatches.Patch(color=M_RED,   label=f"Dec  {round(100*dec/total,1):.1f}%"),
+    ]
     if unch > 0:
-        labels_pct.append(f"Unch  {round(100*unch/total,1):.1f}%")
-    leg = ax.legend(wedges, labels_pct[:len(wedges)],
-                    loc="lower center", bbox_to_anchor=(0.5, -0.12),
-                    ncol=len(wedges), fontsize=6.5, frameon=False,
-                    handlelength=1.2, handletextpad=0.4)
+        patches.append(mpatches.Patch(color="#e2e8f0",
+                                      label=f"Unch  {round(100*unch/total,1):.1f}%"))
+    leg = ax.legend(handles=patches, loc="lower center",
+                    bbox_to_anchor=(0.5, -0.16), ncol=len(patches),
+                    fontsize=6.5, frameon=False,
+                    handlelength=1.0, handletextpad=0.4)
     for t in leg.get_texts():
         t.set_color(M_MUTED)
+
     ax.set_facecolor("white")
     fig.patch.set_facecolor("white")
     ax.set_title("Advance / Decline", fontsize=8.5, fontweight="bold",
                  color=M_NAVY, pad=4)
-    fig.tight_layout(pad=0.3)
+    fig.tight_layout(pad=0.4)
     return _fig_to_image(fig, 65)
 
 
