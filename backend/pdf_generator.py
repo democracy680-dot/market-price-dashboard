@@ -617,35 +617,44 @@ def _add_executive_summary(story: list, breadth: dict, themes_df: pd.DataFrame,
     )
     if not themes_df.empty:
         t = themes_df.iloc[0]
-        tc   = "#15803d" if float(t["avg_ret_1w"]) > 0 else "#b91c1c"
-        sign = "+" if float(t["avg_ret_1w"]) > 0 else ""
-        bullets.append(
-            f'<b>Top Theme:</b> {t["theme_name"]} — avg '
-            f'<font color="{tc}"><b>{sign}{float(t["avg_ret_1w"]):.2f}%</b></font> (1-week)'
-        )
+        tv = _safe_float(t["avg_ret_1w"])
+        if tv is not None:
+            tc   = POSITIVE if tv > 0 else NEGATIVE
+            sign = "+" if tv > 0 else ""
+            bullets.append(
+                f'<b>Top Theme:</b> {_html.escape(str(t["theme_name"]))} — avg '
+                f'<font color="{tc}"><b>{sign}{tv:.2f}%</b></font> (1-week)'
+            )
     if not vol_df.empty:
-        vs = vol_df.iloc[0]
-        bullets.append(
-            f'<b>Volume Surge:</b> <b>{vs["symbol"]}</b> at '
-            f'<font color="#1d4ed8"><b>{float(vs["surge_ratio"]):.1f}x</b></font> normal volume'
-        )
+        vs  = vol_df.iloc[0]
+        srv = _safe_float(vs["surge_ratio"], str(vs["symbol"]))
+        if srv is not None:
+            bullets.append(
+                f'<b>Volume Surge:</b> <b>{vs["symbol"]}</b> at '
+                f'<font color="#1d4ed8"><b>{srv:.1f}x</b></font> normal volume'
+            )
     if not gainers_df.empty and not losers_df.empty:
-        g = gainers_df.iloc[0]
+        g  = gainers_df.iloc[0]
         lo = losers_df.iloc[0]
-        bullets.append(
-            f'<b>Top Movers:</b> '
-            f'<font color="#15803d"><b>{g["symbol"]} +{float(g["ret_1d_pct"]):.2f}%</b></font>'
-            f'  &nbsp;·&nbsp;  '
-            f'<font color="#b91c1c"><b>{lo["symbol"]} {float(lo["ret_1d_pct"]):.2f}%</b></font>'
-        )
+        gv = _safe_float(g["ret_1d_pct"],  str(g["symbol"]))
+        lv = _safe_float(lo["ret_1d_pct"], str(lo["symbol"]))
+        if gv is not None and lv is not None:
+            bullets.append(
+                f'<b>Top Movers:</b> '
+                f'<font color="{POSITIVE}"><b>{g["symbol"]} +{gv:.2f}%</b></font>'
+                f'  &nbsp;·&nbsp;  '
+                f'<font color="{NEGATIVE}"><b>{lo["symbol"]} {lv:.2f}%</b></font>'
+            )
     if not earnings_df.empty:
-        e = earnings_df.iloc[0]
-        ec   = "#15803d" if float(e["ret_1d_pct"]) > 0 else "#b91c1c"
-        sign = "+" if float(e["ret_1d_pct"]) > 0 else ""
-        bullets.append(
-            f'<b>Results Mover:</b> <b>{e["symbol"]}</b> moved '
-            f'<font color="{ec}"><b>{sign}{float(e["ret_1d_pct"]):.2f}%</b></font> post-earnings'
-        )
+        e  = earnings_df.iloc[0]
+        ev = _safe_float(e["ret_1d_pct"], str(e["symbol"]))
+        if ev is not None:
+            ec   = POSITIVE if ev > 0 else NEGATIVE
+            sign = "+" if ev > 0 else ""
+            bullets.append(
+                f'<b>Results Mover:</b> <b>{e["symbol"]}</b> moved '
+                f'<font color="{ec}"><b>{sign}{ev:.2f}%</b></font> post-earnings'
+            )
 
     # Tone badge alongside section label
     tone_badge_color = "#15803d" if tone == "Bullish" else ("#b91c1c" if tone == "Bearish" else "#d97706")
