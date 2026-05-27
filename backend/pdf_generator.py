@@ -827,6 +827,23 @@ def _add_sector_breadth(story: list, df: pd.DataFrame):
     story.append(KeepTogether(items))
 
 
+def _rs_bucket_badge(bucket: str) -> Paragraph:
+    """Compact coloured pill for RS bucket label — never wraps."""
+    _MAP = {
+        "Strong Outperformer": ("SO", POSITIVE),
+        "Outperformer":        ("OP", "#16803d"),
+        "Neutral":             ("N",  NEUTRAL),
+        "Underperformer":      ("UP", "#d97706"),
+        "Strong Underperformer": ("SU", NEGATIVE),
+    }
+    label, colour = _MAP.get(bucket, (bucket[:3] if bucket else "—", NEUTRAL))
+    return Paragraph(
+        f'<font color="{colour}"><b>{label}</b></font>',
+        ParagraphStyle("badge", fontSize=7.5, fontName=_FONT_BOLD,
+                       alignment=TA_CENTER, leading=10),
+    )
+
+
 def _add_rs_leaders(story: list, df: pd.DataFrame):
     # Cap at 7 rows: chart + stock cells (2-line each) + heading reaches ~240 mm
     # with 10 rows — right at the frame limit.  7 rows sits comfortably at ~200 mm.
@@ -842,26 +859,29 @@ def _add_rs_leaders(story: list, df: pd.DataFrame):
     if df.empty:
         items.append(Paragraph("No relative strength data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "1M RS vs Nifty", "RS Bucket")
+        header = _th("#", "Stock", "CMP", "1D Ret", "1M RS", "Bucket")
         rows   = [header]
         for rank, (_, r) in enumerate(df.iterrows(), 1):
-            rs_val  = float(r["rs_1m"])
-            rs_col  = "#15803d" if rs_val > 0 else "#b91c1c"
+            rs_val  = _safe_float(r["rs_1m"], str(r["symbol"])) or 0.0
+            rs_col  = POSITIVE if rs_val > 0 else NEGATIVE
             rs_sign = "+" if rs_val > 0 else ""
+            cmp_val = _safe_float(r["cmp"], str(r["symbol"]))
+            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(f"<font color='#1d4ed8'><b>{rank}</b></font>", S_CELB),
                 _stock_cell_pdf(r["symbol"], r["name"],
                                 r.get("tradingview_url"), r.get("screener_url")),
-                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
+                Paragraph(cmp_str, S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], str(r['symbol']))}</b></font>",
                     S_CELB),
                 Paragraph(
                     f"<font color='{rs_col}'><b>{rs_sign}{rs_val:.1f}%</b></font>",
                     S_CELB),
-                Paragraph(str(r.get("rs_1m_bucket") or "—"), S_CELL),
+                _rs_bucket_badge(str(r.get("rs_1m_bucket") or "")),
             ])
-        t = Table(rows, colWidths=[10*mm, 76*mm, 24*mm, 24*mm, 28*mm, 16*mm])
+        # Widened Bucket col (28 mm) borrowed from Stock col (now 62 mm)
+        t = Table(rows, colWidths=[10*mm, 62*mm, 24*mm, 22*mm, 28*mm, 28*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
@@ -936,7 +956,7 @@ def _add_volume_surge(story: list, df: pd.DataFrame):
                     f"<font color='#1d4ed8'><b>{float(r['surge_ratio']):.1f}x</b></font>",
                     S_CELB),
             ])
-        t = Table(rows, colWidths=[8*mm, 72*mm, 22*mm, 22*mm, 22*mm, 22*mm, 10*mm])
+        t = Table(rows, colWidths=[8*mm, 62*mm, 22*mm, 22*mm, 22*mm, 22*mm, 20*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
