@@ -216,35 +216,50 @@ def _draw_page(canvas, doc):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────────
 
-def _pct(val) -> str:
+def _safe_float(val, ticker: str = "") -> float | None:
+    """Return float or None; log a warning for NaN/inf so upstream can be fixed."""
     try:
         v = float(val)
-        return f"{'+'if v>0 else ''}{v:.2f}%"
+        if v != v or v == float("inf") or v == float("-inf"):   # NaN / inf check
+            if ticker:
+                logger.warning("NaN/inf value detected for ticker %r — rendering as '—'", ticker)
+            return None
+        return v
     except (TypeError, ValueError):
-        return "—"
+        return None
 
-def _vol(val) -> str:
-    try:
-        v = int(val)
-        if v >= 10_000_000: return f"{v/10_000_000:.1f} Cr"
-        if v >= 100_000:    return f"{v/100_000:.1f} L"
-        return f"{v:,}"
-    except (TypeError, ValueError):
-        return "—"
 
-def _mcap(val) -> str:
-    try:
-        v = float(val)
-        if v >= 1_00_000: return f"₹{v/1_00_000:.1f}L Cr"
-        return f"₹{v:,.0f} Cr"
-    except (TypeError, ValueError):
+def _pct(val, ticker: str = "") -> str:
+    v = _safe_float(val, ticker)
+    if v is None:
         return "—"
+    return f"{'+'if v>0 else ''}{v:.2f}%"
+
+
+def _vol(val, ticker: str = "") -> str:
+    v = _safe_float(val, ticker)
+    if v is None:
+        return "—"
+    iv = int(v)
+    if iv >= 10_000_000: return f"{iv/10_000_000:.1f} Cr"
+    if iv >= 100_000:    return f"{iv/100_000:.1f} L"
+    return f"{iv:,}"
+
+
+def _mcap(val, ticker: str = "") -> str:
+    v = _safe_float(val, ticker)
+    if v is None:
+        return "—"
+    if v >= 1_00_000:
+        return f"₹{v/1_00_000:.1f}L Cr"
+    return f"₹{v:,.0f} Cr"
+
 
 def _gc(val) -> str:
-    try:
-        return "#15803d" if float(val) > 0 else "#b91c1c"
-    except (TypeError, ValueError):
-        return "#64748b"
+    v = _safe_float(val)
+    if v is None:
+        return NEUTRAL
+    return POSITIVE if v > 0 else NEGATIVE
 
 def _th(*labels):
     return [Paragraph(l, S_TH) for l in labels]
