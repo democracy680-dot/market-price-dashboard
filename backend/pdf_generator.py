@@ -8,6 +8,8 @@ prevents thin slivers of orphaned white space on prior pages.
 """
 
 import io
+import logging
+import os as _os
 from datetime import date
 from pathlib import Path
 
@@ -24,6 +26,8 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     CondPageBreak,
@@ -38,33 +42,55 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-# ── Palette ──────────────────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
+
+# ── Font registration (DejaVu Sans — full Unicode incl. ₹ U+20B9) ────────────
+_MPL_TTF = _os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
+pdfmetrics.registerFont(TTFont("DejaVuSans",      _os.path.join(_MPL_TTF, "DejaVuSans.ttf")))
+pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", _os.path.join(_MPL_TTF, "DejaVuSans-Bold.ttf")))
+pdfmetrics.registerFontFamily("DejaVuSans", normal="DejaVuSans", bold="DejaVuSans-Bold")
+
+_FONT      = "DejaVuSans"
+_FONT_BOLD = "DejaVuSans-Bold"
+
+# Also set matplotlib default so chart text matches
+matplotlib.rcParams["font.family"] = "DejaVu Sans"
+
+# ── Canonical palette constants ───────────────────────────────────────────────
+# Edit these to retheme the entire document.
+POSITIVE = "#16A34A"   # green  — gains, advances
+NEGATIVE = "#DC2626"   # red    — losses, declines
+NEUTRAL  = "#475569"   # slate  — muted / neutral
+ACCENT   = "#1E3A8A"   # navy   — header bar, links, key numbers
+BG_ALT   = "#F8FAFC"   # off-white — table zebra stripe
+
+# ── ReportLab colour objects ──────────────────────────────────────────────────
 _INK       = colors.HexColor("#0c1527")   # near-black body text
-_NAVY      = colors.HexColor("#0f172a")   # header bar, heavy text
+_NAVY      = colors.HexColor(ACCENT)      # header bar, heavy text
 _NAVY2     = colors.HexColor("#132240")   # table header background
 _STEEL     = colors.HexColor("#1e293b")   # paragraph text
-_SLATE     = colors.HexColor("#475569")   # muted subtitles
+_SLATE     = colors.HexColor(NEUTRAL)     # muted subtitles
 _RULE      = colors.HexColor("#cbd5e1")   # thin rules & borders
 _RULE_H    = colors.HexColor("#334155")   # heavy section rule
 _ACCENT    = colors.HexColor("#1d4ed8")   # blue links / key numbers
 _ACCENT_L  = colors.HexColor("#3b82f6")   # light blue
 _GOLD      = colors.HexColor("#b45309")   # amber — section label accent
-_GREEN     = colors.HexColor("#15803d")
+_GREEN     = colors.HexColor(POSITIVE)
 _GREEN_L   = colors.HexColor("#bbf7d0")
 _GREEN_XL  = colors.HexColor("#f0fdf4")
-_RED       = colors.HexColor("#b91c1c")
+_RED       = colors.HexColor(NEGATIVE)
 _RED_L     = colors.HexColor("#fecaca")
 _RED_XL    = colors.HexColor("#fef2f2")
-_BG_STRIPE = colors.HexColor("#f8fafc")
+_BG_STRIPE = colors.HexColor(BG_ALT)
 _WHITE     = colors.white
 
-# Matplotlib equivalents
+# ── Matplotlib palette (mirrors canonical constants) ──────────────────────────
 M_NAVY   = "#0f172a"
 M_BLUE   = "#3b82f6"
-M_GREEN  = "#15803d"
-M_RED    = "#b91c1c"
+M_GREEN  = POSITIVE
+M_RED    = NEGATIVE
 M_AMBER  = "#d97706"
-M_MUTED  = "#475569"
+M_MUTED  = NEUTRAL
 M_BG     = "#ffffff"
 M_BORDER = "#cbd5e1"
 M_200DMA = "#d97706"
@@ -80,51 +106,51 @@ FRAME_H  = PAGE_H - TOP_H - BOT_H   # ≈ 261 mm — usable vertical space per p
 
 # ── Type styles ──────────────────────────────────────────────────────────────────
 S_SEC = ParagraphStyle(
-    "sec", fontSize=9.5, fontName="Helvetica-Bold",
+    "sec", fontSize=9.5, fontName=_FONT_BOLD,
     textColor=_NAVY, spaceBefore=0, spaceAfter=1, leading=12,
 )
 S_SEC_SUB = ParagraphStyle(
-    "secSub", fontSize=7.5, fontName="Helvetica",
+    "secSub", fontSize=7.5, fontName=_FONT,
     textColor=_SLATE, spaceAfter=0, leading=10,
 )
 S_CELL = ParagraphStyle(
-    "c", fontSize=8.5, fontName="Helvetica",
+    "c", fontSize=8.5, fontName=_FONT,
     textColor=_STEEL, leading=11,
 )
 S_CELB = ParagraphStyle(
-    "cb", fontSize=8.5, fontName="Helvetica-Bold",
+    "cb", fontSize=8.5, fontName=_FONT_BOLD,
     textColor=_INK, leading=11,
 )
 S_CELM = ParagraphStyle(
-    "cm", fontSize=7.5, fontName="Helvetica",
+    "cm", fontSize=7.5, fontName=_FONT,
     textColor=_SLATE, leading=10,
 )
 S_TH = ParagraphStyle(
-    "th", fontSize=8, fontName="Helvetica-Bold",
+    "th", fontSize=8, fontName=_FONT_BOLD,
     textColor=colors.white, leading=10,
 )
 S_FOOT = ParagraphStyle(
-    "ft", fontSize=7, fontName="Helvetica",
+    "ft", fontSize=7, fontName=_FONT,
     textColor=_SLATE, alignment=TA_CENTER,
 )
 S_LINK = ParagraphStyle(
-    "lnk", fontSize=6.5, fontName="Helvetica",
+    "lnk", fontSize=6.5, fontName=_FONT,
     textColor=_ACCENT_L, leading=9,
 )
 S_CARD_L = ParagraphStyle(
-    "cl", fontSize=6.5, fontName="Helvetica",
+    "cl", fontSize=6.5, fontName=_FONT,
     textColor=_SLATE, alignment=TA_CENTER, spaceAfter=1,
 )
 S_CARD_V = ParagraphStyle(
-    "cv", fontSize=13, fontName="Helvetica-Bold",
+    "cv", fontSize=13, fontName=_FONT_BOLD,
     textColor=_INK, alignment=TA_CENTER, leading=15,
 )
 S_BRIEF_HDR = ParagraphStyle(
-    "bh", fontSize=7, fontName="Helvetica-Bold",
+    "bh", fontSize=7, fontName=_FONT_BOLD,
     textColor=_GOLD, leading=9, spaceAfter=3,
 )
 S_BRIEF_BODY = ParagraphStyle(
-    "bb", fontSize=8.5, fontName="Helvetica",
+    "bb", fontSize=8.5, fontName=_FONT,
     textColor=_STEEL, leading=13,
 )
 
@@ -142,47 +168,48 @@ def _draw_page(canvas, doc):
     canvas.setFillColor(colors.HexColor("#b45309"))
     canvas.rect(0, PAGE_H - TOP_H - 1.2*mm, PAGE_W, 1.2*mm, fill=1, stroke=0)
 
-    # Logo badge
+    # Logo badge — rounded, vertically centred, even padding
+    badge_y = PAGE_H - TOP_H + (TOP_H - 11*mm) / 2
     canvas.setFillColor(_ACCENT_L)
-    canvas.roundRect(MARGIN, PAGE_H - 15.5*mm, 10*mm, 10*mm, 2*mm, fill=1, stroke=0)
+    canvas.roundRect(MARGIN, badge_y, 11*mm, 11*mm, 2.5*mm, fill=1, stroke=0)
     canvas.setFillColor(_WHITE)
-    canvas.setFont("Helvetica-Bold", 11)
-    canvas.drawCentredString(MARGIN + 5*mm, PAGE_H - 11.5*mm, "S")
+    canvas.setFont(_FONT_BOLD, 12)
+    canvas.drawCentredString(MARGIN + 5.5*mm, badge_y + 3.5*mm, "S")
 
     # Masthead
     canvas.setFillColor(_WHITE)
-    canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(MARGIN + 12*mm, PAGE_H - 9.5*mm, "StockStack")
+    canvas.setFont(_FONT_BOLD, 12)
+    canvas.drawString(MARGIN + 13*mm, PAGE_H - 9.5*mm, "StockStack")
     canvas.setFillColor(colors.HexColor("#94a3b8"))
-    canvas.setFont("Helvetica", 7)
-    canvas.drawString(MARGIN + 12*mm, PAGE_H - 14*mm, "DAILY MARKET DIGEST  ·  NSE INDIA")
+    canvas.setFont(_FONT, 7)
+    canvas.drawString(MARGIN + 13*mm, PAGE_H - 14*mm, "DAILY MARKET DIGEST  ·  NSE INDIA")
 
     # Date block (right-aligned)
     canvas.setFillColor(_WHITE)
-    canvas.setFont("Helvetica-Bold", 10)
+    canvas.setFont(_FONT_BOLD, 10)
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 9.5*mm,
                            doc.digest_date.strftime("%d %B %Y"))
     canvas.setFillColor(colors.HexColor("#94a3b8"))
-    canvas.setFont("Helvetica", 7)
+    canvas.setFont(_FONT, 7)
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 14*mm,
                            doc.digest_date.strftime("%A").upper())
 
     edition_num = getattr(doc, "edition_num", None)
     if edition_num:
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.setFont("Helvetica", 6.5)
+        canvas.setFont(_FONT, 6.5)
         canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 18.5*mm,
                                f"ISSUE #{edition_num}")
 
-    # ── Footer ──────────────────────────────────────────────────────────────────
+    # ── Footer — rule sits 6 mm above BOT_H so it never touches last table row
     canvas.setStrokeColor(_RULE)
     canvas.setLineWidth(0.5)
-    canvas.line(MARGIN, BOT_H - 4*mm, PAGE_W - MARGIN, BOT_H - 4*mm)
+    canvas.line(MARGIN, BOT_H - 2*mm, PAGE_W - MARGIN, BOT_H - 2*mm)
     canvas.setFillColor(_SLATE)
-    canvas.setFont("Helvetica", 6.5)
-    canvas.drawString(MARGIN, BOT_H - 7*mm,
+    canvas.setFont(_FONT, 6.5)
+    canvas.drawString(MARGIN, BOT_H - 5.5*mm,
                       "StockStack  ·  Data: NSE / yfinance  ·  Personal use only. Not investment advice.")
-    canvas.drawRightString(PAGE_W - MARGIN, BOT_H - 7*mm,
+    canvas.drawRightString(PAGE_W - MARGIN, BOT_H - 5.5*mm,
                            f"Page {doc.page}")
     canvas.restoreState()
 
@@ -263,7 +290,7 @@ def _table_style(n_rows: int, header_bg=None, alt_bg=None):
     ts = [
         ("BACKGROUND",    (0, 0), (-1, 0),   hbg),
         ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),   "Helvetica-Bold"),
+        ("FONTNAME",      (0, 0), (-1, 0),   _FONT_BOLD),
         ("FONTSIZE",      (0, 0), (-1, 0),   8),
         ("GRID",          (0, 0), (-1, -1),  0.35, _RULE),
         ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
@@ -579,7 +606,7 @@ def _add_executive_summary(story: list, breadth: dict, themes_df: pd.DataFrame,
                 Paragraph("TODAY'S BRIEFING", S_BRIEF_HDR),
                 Paragraph(
                     f'<font color="{tone_badge_color}"><b>◆ {tone.upper()}</b></font>',
-                    ParagraphStyle("tone", fontSize=7, fontName="Helvetica-Bold",
+                    ParagraphStyle("tone", fontSize=7, fontName=_FONT_BOLD,
                                    textColor=colors.HexColor(tone_badge_color),
                                    alignment=TA_RIGHT, leading=9),
                 ),
