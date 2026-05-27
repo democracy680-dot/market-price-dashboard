@@ -303,19 +303,23 @@ def _links_cell_pdf(tv_url=None, sc_url=None) -> Paragraph:
 
 def _section_flowables(title: str, subtitle: str = "") -> list:
     """
-    Editorial-style section header: heavy rule, UPPERCASE title, subtitle, thin rule.
-    Returns a list of flowables to be prepended to the section's KeepTogether group.
+    Editorial-style section header — consistent across all pages:
+      6 mm spacer → heavy dark rule → UPPERCASE title (bold, 9.5 pt)
+      → 3 mm orange accent bar → optional subtitle → 0.4 pt light rule → 4 mm spacer
     """
     items = [
-        Spacer(1, 5*mm),
-        HRFlowable(width=USABLE_W, thickness=1.5, color=_RULE_H,
-                   spaceAfter=2*mm, spaceBefore=0),
+        Spacer(1, 6*mm),
+        HRFlowable(width=USABLE_W, thickness=1.8, color=_RULE_H,
+                   spaceAfter=1.5*mm, spaceBefore=0),
         Paragraph(title.upper(), S_SEC),
+        # Orange accent underline (the visual "bar" under the title)
+        HRFlowable(width=30*mm, thickness=2.5, color=_GOLD,
+                   spaceAfter=1*mm, spaceBefore=1*mm),
     ]
     if subtitle:
         items.append(Paragraph(subtitle, S_SEC_SUB))
     items.append(HRFlowable(width=USABLE_W, thickness=0.4, color=_RULE,
-                             spaceAfter=4*mm, spaceBefore=2*mm))
+                             spaceAfter=4*mm, spaceBefore=1.5*mm))
     return items
 
 
