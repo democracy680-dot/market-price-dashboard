@@ -274,21 +274,31 @@ def _clean_label(s: str, maxlen: int = 30) -> str:
     return s
 
 
+_S_LINK_ICON = ParagraphStyle(
+    "li", fontSize=6.5, fontName=_FONT,
+    textColor=colors.HexColor("#64748b"),
+    alignment=TA_RIGHT, leading=9, spaceAfter=1,
+)
+
+
 def _stock_cell_pdf(symbol: str, name: str, tv_url=None, sc_url=None) -> Paragraph:
-    links = []
-    if tv_url and str(tv_url).startswith("http"):
-        links.append(f'<link href="{tv_url}"><u>TV</u></link>')
-    if sc_url and str(sc_url).startswith("http"):
-        links.append(f'<link href="{sc_url}"><u>Screener</u></link>')
-    links_html = (
-        f'  <font color="#3b82f6" size="6">' + "  ·  ".join(links) + "</font>"
-    ) if links else ""
+    """Symbol + name cell — links moved to separate _links_cell_pdf column."""
     return Paragraph(
         f'<b><font color="#0c1527">{symbol}</font></b>'
-        f'  <font color="#475569" size="7.5">{name}</font>'
-        + (f"<br/>{links_html}" if links_html else ""),
+        f'  <font color="#475569" size="7.5">{_html.escape(name)}</font>',
         S_CELL,
     )
+
+
+def _links_cell_pdf(tv_url=None, sc_url=None) -> Paragraph:
+    """Compact right-aligned icon links in a dedicated column."""
+    parts = []
+    if tv_url and str(tv_url).startswith("http"):
+        parts.append(f'<link href="{tv_url}"><font color="#3b82f6">↗ TV</font></link>')
+    if sc_url and str(sc_url).startswith("http"):
+        parts.append(f'<link href="{sc_url}"><font color="#3b82f6">↗ SC</font></link>')
+    body = "<br/>".join(parts) if parts else '<font color="#94a3b8">—</font>'
+    return Paragraph(body, _S_LINK_ICON)
 
 
 def _section_flowables(title: str, subtitle: str = "") -> list:
@@ -876,7 +886,7 @@ def _add_rs_leaders(story: list, df: pd.DataFrame):
     if df.empty:
         items.append(Paragraph("No relative strength data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Ret", "1M RS", "Bucket")
+        header = _th("#", "Stock", "CMP", "1D Ret", "1M RS", "Bucket", "Links")
         rows   = [header]
         for rank, (_, r) in enumerate(df.iterrows(), 1):
             rs_val  = _safe_float(r["rs_1m"], str(r["symbol"])) or 0.0
@@ -886,8 +896,7 @@ def _add_rs_leaders(story: list, df: pd.DataFrame):
             cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(f"<font color='#1d4ed8'><b>{rank}</b></font>", S_CELB),
-                _stock_cell_pdf(r["symbol"], r["name"],
-                                r.get("tradingview_url"), r.get("screener_url")),
+                _stock_cell_pdf(r["symbol"], r["name"]),
                 Paragraph(cmp_str, S_CELL),
                 Paragraph(
                     f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], str(r['symbol']))}</b></font>",
@@ -896,9 +905,9 @@ def _add_rs_leaders(story: list, df: pd.DataFrame):
                     f"<font color='{rs_col}'><b>{rs_sign}{rs_val:.1f}%</b></font>",
                     S_CELB),
                 _rs_bucket_badge(str(r.get("rs_1m_bucket") or "")),
+                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
             ])
-        # Widened Bucket col (28 mm) borrowed from Stock col (now 62 mm)
-        t = Table(rows, colWidths=[10*mm, 62*mm, 24*mm, 22*mm, 28*mm, 28*mm])
+        t = Table(rows, colWidths=[10*mm, 52*mm, 22*mm, 20*mm, 26*mm, 24*mm, 14*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
@@ -956,24 +965,27 @@ def _add_volume_surge(story: list, df: pd.DataFrame):
     if df.empty:
         items.append(Paragraph("No volume surge data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "Today Vol", "20D Avg", "Surge")
+        header = _th("#", "Stock", "CMP", "1D Ret", "Vol", "20D Avg", "Surge", "Links")
         rows = [header]
         for i, (_, r) in enumerate(df.iterrows(), 1):
+            sym     = str(r["symbol"])
+            cmp_val = _safe_float(r["cmp"], sym)
+            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
+            sur_val = _safe_float(r["surge_ratio"], sym)
+            sur_str = f"{sur_val:.1f}x" if sur_val is not None else "—"
             rows.append([
                 Paragraph(str(i), S_CELL),
-                _stock_cell_pdf(r["symbol"], r["name"],
-                                r.get("tradingview_url"), r.get("screener_url")),
-                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"]),
+                Paragraph(cmp_str, S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
                     S_CELB),
-                Paragraph(_vol(r["today_vol"]),   S_CELL),
-                Paragraph(_vol(r["avg_vol_20d"]), S_CELL),
-                Paragraph(
-                    f"<font color='#1d4ed8'><b>{float(r['surge_ratio']):.1f}x</b></font>",
-                    S_CELB),
+                Paragraph(_vol(r["today_vol"],   sym), S_CELL),
+                Paragraph(_vol(r["avg_vol_20d"], sym), S_CELL),
+                Paragraph(f"<font color='#1d4ed8'><b>{sur_str}</b></font>", S_CELB),
+                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
             ])
-        t = Table(rows, colWidths=[8*mm, 62*mm, 22*mm, 22*mm, 22*mm, 22*mm, 20*mm])
+        t = Table(rows, colWidths=[8*mm, 50*mm, 20*mm, 20*mm, 22*mm, 22*mm, 18*mm, 14*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
@@ -992,20 +1004,23 @@ def _add_earnings(story: list, df: pd.DataFrame):
         items.append(Paragraph(
             "No quarterly result stocks moved more than 5% today.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
+        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap", "Links")
         rows = [header]
         for i, (_, r) in enumerate(df.iterrows(), 1):
+            sym     = str(r["symbol"])
+            cmp_val = _safe_float(r["cmp"], sym)
+            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(str(i), S_CELL),
-                _stock_cell_pdf(r["symbol"], r["name"],
-                                r.get("tradingview_url"), r.get("screener_url")),
-                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"]),
+                Paragraph(cmp_str, S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
                     S_CELB),
-                Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
+                Paragraph(_mcap(r["market_cap_cr"], sym), S_CELL),
+                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
             ])
-        t = Table(rows, colWidths=[8*mm, 90*mm, 24*mm, 26*mm, 30*mm])
+        t = Table(rows, colWidths=[8*mm, 76*mm, 22*mm, 24*mm, 28*mm, 16*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(t)
 
@@ -1025,22 +1040,25 @@ def _add_movers(story: list, df: pd.DataFrame, title: str, is_gainers: bool):
     if df.empty:
         items.append(Paragraph("No data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
+        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap", "Links")
         rows = [header]
-        accent = "#15803d" if is_gainers else "#b91c1c"
+        accent = POSITIVE if is_gainers else NEGATIVE
         for rank, (_, r) in enumerate(df.iterrows(), 1):
+            sym     = str(r["symbol"])
+            cmp_val = _safe_float(r["cmp"], sym)
+            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(f"<font color='{accent}'><b>{rank}</b></font>", S_CELB),
-                _stock_cell_pdf(r["symbol"], r["name"],
-                                r.get("tradingview_url"), r.get("screener_url")),
-                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"]),
+                Paragraph(cmp_str, S_CELL),
                 Paragraph(
-                    f"<font color='{accent}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
+                    f"<font color='{accent}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
                     S_CELB),
-                Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
+                Paragraph(_mcap(r["market_cap_cr"], sym), S_CELL),
+                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
             ])
         row_bg = _GREEN_XL if is_gainers else _RED_XL
-        t = Table(rows, colWidths=[10*mm, 92*mm, 24*mm, 26*mm, 26*mm])
+        t = Table(rows, colWidths=[10*mm, 76*mm, 22*mm, 24*mm, 26*mm, 16*mm])
         t.setStyle(_table_style(len(rows), alt_bg=row_bg))
         items.append(Spacer(1, 3*mm))
         items.append(t)
