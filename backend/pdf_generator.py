@@ -7,6 +7,7 @@ from their charts or tables. CondPageBreak before heavy sections
 prevents thin slivers of orphaned white space on prior pages.
 """
 
+import html as _html
 import io
 import logging
 import os as _os
@@ -265,6 +266,14 @@ def _th(*labels):
     return [Paragraph(l, S_TH) for l in labels]
 
 
+def _clean_label(s: str, maxlen: int = 30) -> str:
+    """Unescape HTML entities (fixes &amp;→& round-trip) and truncate."""
+    s = _html.unescape(str(s))
+    if len(s) > maxlen:
+        s = s[:maxlen - 1] + "…"
+    return s
+
+
 def _stock_cell_pdf(symbol: str, name: str, tv_url=None, sc_url=None) -> Paragraph:
     links = []
     if tv_url and str(tv_url).startswith("http"):
@@ -401,7 +410,7 @@ def _chart_breadth_donut(b: dict) -> Image:
 def _chart_index_breadth(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    labels = df["index"].tolist()
+    labels = [_clean_label(l) for l in df["index"].tolist()]
     pct200 = df["pct_200"].tolist()
     pct50  = df["pct_50"].tolist()
     y, h   = np.arange(len(labels)), 0.30
@@ -434,7 +443,7 @@ def _chart_index_breadth(df: pd.DataFrame) -> Image:
 def _chart_sector_breadth(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    labels = df["index"].tolist()
+    labels = [_clean_label(l, maxlen=34) for l in df["index"].tolist()]
     pct200 = df["pct_200"].tolist()
     pct50  = df["pct_50"].tolist()
     y, h   = np.arange(len(labels)), 0.30
@@ -452,7 +461,7 @@ def _chart_sector_breadth(df: pd.DataFrame) -> Image:
         ax.text(min(v + 1, 97), bar.get_y() + bar.get_height()/2,
                 f"{v:.0f}%", va="center", fontsize=6, color=M_NAVY, fontweight="bold")
     ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=7.5, color=M_NAVY)
+    ax.set_yticklabels(labels, fontsize=7, color=M_NAVY)
     ax.set_xlim(0, 108)
     ax.axvline(50, color=M_BORDER, linewidth=0.8, linestyle="--")
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
@@ -462,14 +471,15 @@ def _chart_sector_breadth(df: pd.DataFrame) -> Image:
     leg  = ax.legend(handles=[p200, p50], fontsize=6.5, loc="lower right",
                      frameon=True, facecolor="white", edgecolor=M_BORDER)
     for t in leg.get_texts(): t.set_color(M_MUTED)
-    fig.tight_layout(pad=0.5)
+    fig.subplots_adjust(left=0.32)   # wider left margin for long sector names
+    fig.tight_layout(pad=0.5, rect=[0.30, 0, 1, 1])
     return _fig_to_image(fig, USABLE_W / mm)
 
 
 def _chart_themes(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    names = [n if len(n) <= 28 else n[:26] + "…" for n in df["theme_name"].tolist()]
+    names = [_clean_label(n, maxlen=28) for n in df["theme_name"].tolist()]
     vals  = df["avg_ret_1w"].tolist()
     clrs  = [M_GREEN if v >= 0 else M_RED for v in vals]
 
@@ -516,7 +526,7 @@ def _chart_volume_surge(df: pd.DataFrame) -> Image:
 def _chart_movers(df: pd.DataFrame, title: str, is_gainers: bool) -> Image:
     if df.empty:
         return None
-    syms = df["symbol"].tolist()
+    syms = [_clean_label(s, maxlen=12) for s in df["symbol"].tolist()]
     vals = df["ret_1d_pct"].tolist()
     clr  = M_GREEN if is_gainers else M_RED
 
@@ -524,15 +534,22 @@ def _chart_movers(df: pd.DataFrame, title: str, is_gainers: bool) -> Image:
     ax.set_facecolor("white")
     y    = np.arange(len(syms))
     bars = ax.barh(y, vals, 0.55, color=clr, alpha=0.82)
+
+    # Value labels placed strictly beyond bar end — never overlapping ticker label
+    pad = abs(max(vals, key=abs)) * 0.04 + 0.1  # 4 % of range + 0.1pp baseline
     for bar, v in zip(bars, vals):
-        xpos = v + 0.05 if v >= 0 else v - 0.05
-        ha = "left" if v >= 0 else "right"
-        ax.text(xpos, bar.get_y() + bar.get_height()/2,
+        xpos = v + pad if v >= 0 else v - pad
+        ha   = "left" if v >= 0 else "right"
+        ax.text(xpos, bar.get_y() + bar.get_height() / 2,
                 f"{'+'if v>0 else ''}{v:.2f}%",
                 va="center", ha=ha, fontsize=6.5, color=M_NAVY, fontweight="bold")
+
     ax.set_yticks(y)
     ax.set_yticklabels(syms, fontsize=7.5, color=M_NAVY, fontweight="bold")
     ax.axvline(0, color=M_BORDER, linewidth=0.8)
+    # Add 20 % extra axis room so value labels don't clip
+    lo, hi = ax.get_xlim()
+    ax.set_xlim(lo * 1.20, hi * 1.20)
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:+.1f}%"))
     _setup_ax(ax, title)
     fig.tight_layout(pad=0.5)
