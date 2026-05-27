@@ -3,10 +3,15 @@ fetcher.py — yfinance wrapper with batching, retry logic, and error handling.
 
 Fetches OHLCV data for batches of NSE stocks. Never aborts on a single
 bad ticker — logs and continues.
+
+Incremental mode (default): caller passes start_date = last date in DB.
+  → yfinance fetches only from that date forward (typically 1–5 rows per stock).
+Full-history mode: start_date=None → fetches period="2y" (used on first seed only).
 """
 
 import time
 import logging
+from datetime import date, timedelta
 from functools import wraps
 import concurrent.futures
 import pandas as pd
@@ -55,14 +60,37 @@ def with_retry(max_attempts: int = 3, backoff: float = 2.0):
     return decorator
 
 
-def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
+def fetch_prices(yahoo_symbols: list[str], start_date: date | None = None) -> pd.DataFrame:
     """
-    Fetch 2 years of daily OHLCV for all yahoo_symbols.
-    Uses unadjusted Close prices so returns match NSE / screener.in.
+    Fetch daily OHLCV for all yahoo_symbols.
+
+    Incremental (default for daily refresh):
+        Pass start_date = last date already in prices_daily.
+        yfinance will fetch from that date onward — typically 1–5 rows per stock.
+        A 5-day buffer is subtracted so weekends/holidays don't create gaps.
+
+    Full history (first-ever seed, or start_date is None):
+        Falls back to period="2y" to populate the DB from scratch.
 
     Returns a DataFrame with columns:
         yahoo_symbol, date, open, high, low, close, volume
     """
+    # Build yfinance kwargs based on whether we have a known last date
+    if start_date is not None:
+        # Go back 5 extra days as a safety buffer (weekends, public holidays, etc.)
+        fetch_from = start_date - timedelta(days=5)
+        yf_kwargs = {
+            "start": fetch_from.strftime("%Y-%m-%d"),
+            "end":   (date.today() + timedelta(days=1)).strftime("%Y-%m-%d"),  # inclusive of today
+        }
+        logger.info(
+            f"Incremental fetch from {fetch_from} "
+            f"(last DB date: {start_date}, buffer: 5 days)"
+        )
+    else:
+        yf_kwargs = {"period": "2y"}
+        logger.info("No existing data found — fetching full 2-year history (first seed)")
+
     all_frames = []
     batches = list(_chunks(yahoo_symbols, BATCH_SIZE))
     logger.info(f"Fetching {len(yahoo_symbols)} symbols in {len(batches)} batches")
@@ -71,11 +99,11 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
     def _download_batch(batch):
         return yf.download(
             tickers=batch,
-            period="2y",
             interval="1d",
             auto_adjust=False,
             progress=False,
             threads=True,
+            **yf_kwargs,
         )
 
     for i, batch in enumerate(batches, 1):
@@ -103,7 +131,6 @@ def fetch_prices(yahoo_symbols: list[str]) -> pd.DataFrame:
         raw.columns = [c.lower() for c in raw.columns]
 
         # With auto_adjust=False yfinance gives both 'close' and 'adj close'
-        # Rename 'adj close' if present, we use raw 'close'
         if "adj close" in raw.columns:
             raw = raw.drop(columns=["adj close"])
 

@@ -88,7 +88,8 @@ def get_psycopg2_conn():
                                     keepalives_idle=30, keepalives_interval=5,
                                     keepalives_count=3)
         except psycopg2.OperationalError as exc:
-            if "EMAXCONNSESSION" in str(exc):
+            err = str(exc).lower()
+            if "max_client_conn" in err or "remaining connection slots" in err or "too many clients" in err:
                 logger.warning("Session pooler full, retrying with transaction pooler...")
                 continue
             raise

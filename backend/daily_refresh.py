@@ -261,9 +261,18 @@ def run():
     yahoo_symbols = stocks["yahoo_symbol"].dropna().tolist()
     symbol_map = dict(zip(stocks["yahoo_symbol"], stocks["symbol"]))
 
-    # ── 2. Fetch OHLCV ───────────────────────────────────────────────────────
+    # ── 2. Fetch OHLCV (incremental — only rows newer than what's in the DB) ──
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT MAX(date) FROM prices_daily")).fetchone()
+        last_db_date = row[0] if row and row[0] else None
+
+    if last_db_date:
+        logger.info(f"Latest date in prices_daily: {last_db_date} — fetching incrementally")
+    else:
+        logger.info("prices_daily is empty — fetching full 2-year history (first seed)")
+
     logger.info("Fetching prices from yfinance...")
-    prices_df = fetch_prices(yahoo_symbols)
+    prices_df = fetch_prices(yahoo_symbols, start_date=last_db_date)
 
     success = prices_df["yahoo_symbol"].nunique() if not prices_df.empty else 0
     failed = total - success
