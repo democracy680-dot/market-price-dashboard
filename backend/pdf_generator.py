@@ -7,10 +7,7 @@ from their charts or tables. CondPageBreak before heavy sections
 prevents thin slivers of orphaned white space on prior pages.
 """
 
-import html as _html
 import io
-import logging
-import os as _os
 from datetime import date
 from pathlib import Path
 
@@ -27,8 +24,6 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     BaseDocTemplate,
     CondPageBreak,
@@ -43,55 +38,33 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-logger = logging.getLogger(__name__)
-
-# ── Font registration (DejaVu Sans — full Unicode incl. ₹ U+20B9) ────────────
-_MPL_TTF = _os.path.join(matplotlib.get_data_path(), "fonts", "ttf")
-pdfmetrics.registerFont(TTFont("DejaVuSans",      _os.path.join(_MPL_TTF, "DejaVuSans.ttf")))
-pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", _os.path.join(_MPL_TTF, "DejaVuSans-Bold.ttf")))
-pdfmetrics.registerFontFamily("DejaVuSans", normal="DejaVuSans", bold="DejaVuSans-Bold")
-
-_FONT      = "DejaVuSans"
-_FONT_BOLD = "DejaVuSans-Bold"
-
-# Also set matplotlib default so chart text matches
-matplotlib.rcParams["font.family"] = "DejaVu Sans"
-
-# ── Canonical palette constants ───────────────────────────────────────────────
-# Edit these to retheme the entire document.
-POSITIVE = "#16A34A"   # green  — gains, advances
-NEGATIVE = "#DC2626"   # red    — losses, declines
-NEUTRAL  = "#475569"   # slate  — muted / neutral
-ACCENT   = "#1E3A8A"   # navy   — header bar, links, key numbers
-BG_ALT   = "#F8FAFC"   # off-white — table zebra stripe
-
-# ── ReportLab colour objects ──────────────────────────────────────────────────
+# ── Palette ──────────────────────────────────────────────────────────────────────
 _INK       = colors.HexColor("#0c1527")   # near-black body text
-_NAVY      = colors.HexColor(ACCENT)      # header bar, heavy text
+_NAVY      = colors.HexColor("#0f172a")   # header bar, heavy text
 _NAVY2     = colors.HexColor("#132240")   # table header background
 _STEEL     = colors.HexColor("#1e293b")   # paragraph text
-_SLATE     = colors.HexColor(NEUTRAL)     # muted subtitles
+_SLATE     = colors.HexColor("#475569")   # muted subtitles
 _RULE      = colors.HexColor("#cbd5e1")   # thin rules & borders
 _RULE_H    = colors.HexColor("#334155")   # heavy section rule
 _ACCENT    = colors.HexColor("#1d4ed8")   # blue links / key numbers
 _ACCENT_L  = colors.HexColor("#3b82f6")   # light blue
 _GOLD      = colors.HexColor("#b45309")   # amber — section label accent
-_GREEN     = colors.HexColor(POSITIVE)
+_GREEN     = colors.HexColor("#15803d")
 _GREEN_L   = colors.HexColor("#bbf7d0")
 _GREEN_XL  = colors.HexColor("#f0fdf4")
-_RED       = colors.HexColor(NEGATIVE)
+_RED       = colors.HexColor("#b91c1c")
 _RED_L     = colors.HexColor("#fecaca")
 _RED_XL    = colors.HexColor("#fef2f2")
-_BG_STRIPE = colors.HexColor(BG_ALT)
+_BG_STRIPE = colors.HexColor("#f8fafc")
 _WHITE     = colors.white
 
-# ── Matplotlib palette (mirrors canonical constants) ──────────────────────────
+# Matplotlib equivalents
 M_NAVY   = "#0f172a"
 M_BLUE   = "#3b82f6"
-M_GREEN  = POSITIVE
-M_RED    = NEGATIVE
+M_GREEN  = "#15803d"
+M_RED    = "#b91c1c"
 M_AMBER  = "#d97706"
-M_MUTED  = NEUTRAL
+M_MUTED  = "#475569"
 M_BG     = "#ffffff"
 M_BORDER = "#cbd5e1"
 M_200DMA = "#d97706"
@@ -107,51 +80,51 @@ FRAME_H  = PAGE_H - TOP_H - BOT_H   # ≈ 261 mm — usable vertical space per p
 
 # ── Type styles ──────────────────────────────────────────────────────────────────
 S_SEC = ParagraphStyle(
-    "sec", fontSize=9.5, fontName=_FONT_BOLD,
+    "sec", fontSize=9.5, fontName="Helvetica-Bold",
     textColor=_NAVY, spaceBefore=0, spaceAfter=1, leading=12,
 )
 S_SEC_SUB = ParagraphStyle(
-    "secSub", fontSize=7.5, fontName=_FONT,
+    "secSub", fontSize=7.5, fontName="Helvetica",
     textColor=_SLATE, spaceAfter=0, leading=10,
 )
 S_CELL = ParagraphStyle(
-    "c", fontSize=8.5, fontName=_FONT,
+    "c", fontSize=8.5, fontName="Helvetica",
     textColor=_STEEL, leading=11,
 )
 S_CELB = ParagraphStyle(
-    "cb", fontSize=8.5, fontName=_FONT_BOLD,
+    "cb", fontSize=8.5, fontName="Helvetica-Bold",
     textColor=_INK, leading=11,
 )
 S_CELM = ParagraphStyle(
-    "cm", fontSize=7.5, fontName=_FONT,
+    "cm", fontSize=7.5, fontName="Helvetica",
     textColor=_SLATE, leading=10,
 )
 S_TH = ParagraphStyle(
-    "th", fontSize=8, fontName=_FONT_BOLD,
+    "th", fontSize=8, fontName="Helvetica-Bold",
     textColor=colors.white, leading=10,
 )
 S_FOOT = ParagraphStyle(
-    "ft", fontSize=7, fontName=_FONT,
+    "ft", fontSize=7, fontName="Helvetica",
     textColor=_SLATE, alignment=TA_CENTER,
 )
 S_LINK = ParagraphStyle(
-    "lnk", fontSize=6.5, fontName=_FONT,
+    "lnk", fontSize=6.5, fontName="Helvetica",
     textColor=_ACCENT_L, leading=9,
 )
 S_CARD_L = ParagraphStyle(
-    "cl", fontSize=6.5, fontName=_FONT,
+    "cl", fontSize=6.5, fontName="Helvetica",
     textColor=_SLATE, alignment=TA_CENTER, spaceAfter=1,
 )
 S_CARD_V = ParagraphStyle(
-    "cv", fontSize=13, fontName=_FONT_BOLD,
+    "cv", fontSize=13, fontName="Helvetica-Bold",
     textColor=_INK, alignment=TA_CENTER, leading=15,
 )
 S_BRIEF_HDR = ParagraphStyle(
-    "bh", fontSize=7, fontName=_FONT_BOLD,
+    "bh", fontSize=7, fontName="Helvetica-Bold",
     textColor=_GOLD, leading=9, spaceAfter=3,
 )
 S_BRIEF_BODY = ParagraphStyle(
-    "bb", fontSize=8.5, fontName=_FONT,
+    "bb", fontSize=8.5, fontName="Helvetica",
     textColor=_STEEL, leading=13,
 )
 
@@ -169,157 +142,119 @@ def _draw_page(canvas, doc):
     canvas.setFillColor(colors.HexColor("#b45309"))
     canvas.rect(0, PAGE_H - TOP_H - 1.2*mm, PAGE_W, 1.2*mm, fill=1, stroke=0)
 
-    # Logo badge — rounded, vertically centred, even padding
-    badge_y = PAGE_H - TOP_H + (TOP_H - 11*mm) / 2
+    # Logo badge
     canvas.setFillColor(_ACCENT_L)
-    canvas.roundRect(MARGIN, badge_y, 11*mm, 11*mm, 2.5*mm, fill=1, stroke=0)
+    canvas.roundRect(MARGIN, PAGE_H - 15.5*mm, 10*mm, 10*mm, 2*mm, fill=1, stroke=0)
     canvas.setFillColor(_WHITE)
-    canvas.setFont(_FONT_BOLD, 12)
-    canvas.drawCentredString(MARGIN + 5.5*mm, badge_y + 3.5*mm, "S")
+    canvas.setFont("Helvetica-Bold", 11)
+    canvas.drawCentredString(MARGIN + 5*mm, PAGE_H - 11.5*mm, "S")
 
     # Masthead
     canvas.setFillColor(_WHITE)
-    canvas.setFont(_FONT_BOLD, 12)
-    canvas.drawString(MARGIN + 13*mm, PAGE_H - 9.5*mm, "StockStack")
+    canvas.setFont("Helvetica-Bold", 12)
+    canvas.drawString(MARGIN + 12*mm, PAGE_H - 9.5*mm, "StockStack")
     canvas.setFillColor(colors.HexColor("#94a3b8"))
-    canvas.setFont(_FONT, 7)
-    canvas.drawString(MARGIN + 13*mm, PAGE_H - 14*mm, "DAILY MARKET DIGEST  ·  NSE INDIA")
+    canvas.setFont("Helvetica", 7)
+    canvas.drawString(MARGIN + 12*mm, PAGE_H - 14*mm, "DAILY MARKET DIGEST  ·  NSE INDIA")
 
     # Date block (right-aligned)
     canvas.setFillColor(_WHITE)
-    canvas.setFont(_FONT_BOLD, 10)
+    canvas.setFont("Helvetica-Bold", 10)
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 9.5*mm,
                            doc.digest_date.strftime("%d %B %Y"))
     canvas.setFillColor(colors.HexColor("#94a3b8"))
-    canvas.setFont(_FONT, 7)
+    canvas.setFont("Helvetica", 7)
     canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 14*mm,
                            doc.digest_date.strftime("%A").upper())
 
     edition_num = getattr(doc, "edition_num", None)
     if edition_num:
         canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.setFont(_FONT, 6.5)
+        canvas.setFont("Helvetica", 6.5)
         canvas.drawRightString(PAGE_W - MARGIN, PAGE_H - 18.5*mm,
                                f"ISSUE #{edition_num}")
 
-    # ── Footer — rule sits 6 mm above BOT_H so it never touches last table row
+    # ── Footer ──────────────────────────────────────────────────────────────────
     canvas.setStrokeColor(_RULE)
     canvas.setLineWidth(0.5)
-    canvas.line(MARGIN, BOT_H - 2*mm, PAGE_W - MARGIN, BOT_H - 2*mm)
+    canvas.line(MARGIN, BOT_H - 4*mm, PAGE_W - MARGIN, BOT_H - 4*mm)
     canvas.setFillColor(_SLATE)
-    canvas.setFont(_FONT, 6.5)
-    canvas.drawString(MARGIN, BOT_H - 5.5*mm,
+    canvas.setFont("Helvetica", 6.5)
+    canvas.drawString(MARGIN, BOT_H - 7*mm,
                       "StockStack  ·  Data: NSE / yfinance  ·  Personal use only. Not investment advice.")
-    canvas.drawRightString(PAGE_W - MARGIN, BOT_H - 5.5*mm,
+    canvas.drawRightString(PAGE_W - MARGIN, BOT_H - 7*mm,
                            f"Page {doc.page}")
     canvas.restoreState()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────────
 
-def _safe_float(val, ticker: str = "") -> float | None:
-    """Return float or None; log a warning for NaN/inf so upstream can be fixed."""
+def _pct(val) -> str:
     try:
         v = float(val)
-        if v != v or v == float("inf") or v == float("-inf"):   # NaN / inf check
-            if ticker:
-                logger.warning("NaN/inf value detected for ticker %r — rendering as '—'", ticker)
-            return None
-        return v
+        return f"{'+'if v>0 else ''}{v:.2f}%"
     except (TypeError, ValueError):
-        return None
-
-
-def _pct(val, ticker: str = "") -> str:
-    v = _safe_float(val, ticker)
-    if v is None:
         return "—"
-    return f"{'+'if v>0 else ''}{v:.2f}%"
 
-
-def _vol(val, ticker: str = "") -> str:
-    v = _safe_float(val, ticker)
-    if v is None:
+def _vol(val) -> str:
+    try:
+        v = int(val)
+        if v >= 10_000_000: return f"{v/10_000_000:.1f} Cr"
+        if v >= 100_000:    return f"{v/100_000:.1f} L"
+        return f"{v:,}"
+    except (TypeError, ValueError):
         return "—"
-    iv = int(v)
-    if iv >= 10_000_000: return f"{iv/10_000_000:.1f} Cr"
-    if iv >= 100_000:    return f"{iv/100_000:.1f} L"
-    return f"{iv:,}"
 
-
-def _mcap(val, ticker: str = "") -> str:
-    v = _safe_float(val, ticker)
-    if v is None:
+def _mcap(val) -> str:
+    try:
+        v = float(val)
+        if v >= 1_00_000: return f"₹{v/1_00_000:.1f}L Cr"
+        return f"₹{v:,.0f} Cr"
+    except (TypeError, ValueError):
         return "—"
-    if v >= 1_00_000:
-        return f"₹{v/1_00_000:.1f}L Cr"
-    return f"₹{v:,.0f} Cr"
-
 
 def _gc(val) -> str:
-    v = _safe_float(val)
-    if v is None:
-        return NEUTRAL
-    return POSITIVE if v > 0 else NEGATIVE
+    try:
+        return "#15803d" if float(val) > 0 else "#b91c1c"
+    except (TypeError, ValueError):
+        return "#64748b"
 
 def _th(*labels):
     return [Paragraph(l, S_TH) for l in labels]
 
 
-def _clean_label(s: str, maxlen: int = 30) -> str:
-    """Unescape HTML entities (fixes &amp;→& round-trip) and truncate."""
-    s = _html.unescape(str(s))
-    if len(s) > maxlen:
-        s = s[:maxlen - 1] + "…"
-    return s
-
-
-_S_LINK_ICON = ParagraphStyle(
-    "li", fontSize=6.5, fontName=_FONT,
-    textColor=colors.HexColor("#64748b"),
-    alignment=TA_RIGHT, leading=9, spaceAfter=1,
-)
-
-
 def _stock_cell_pdf(symbol: str, name: str, tv_url=None, sc_url=None) -> Paragraph:
-    """Symbol + name cell — links moved to separate _links_cell_pdf column."""
+    links = []
+    if tv_url and str(tv_url).startswith("http"):
+        links.append(f'<link href="{tv_url}"><u>TV</u></link>')
+    if sc_url and str(sc_url).startswith("http"):
+        links.append(f'<link href="{sc_url}"><u>Screener</u></link>')
+    links_html = (
+        f'  <font color="#3b82f6" size="6">' + "  ·  ".join(links) + "</font>"
+    ) if links else ""
     return Paragraph(
         f'<b><font color="#0c1527">{symbol}</font></b>'
-        f'  <font color="#475569" size="7.5">{_html.escape(name)}</font>',
+        f'  <font color="#475569" size="7.5">{name}</font>'
+        + (f"<br/>{links_html}" if links_html else ""),
         S_CELL,
     )
 
 
-def _links_cell_pdf(tv_url=None, sc_url=None) -> Paragraph:
-    """Compact right-aligned icon links in a dedicated column."""
-    parts = []
-    if tv_url and str(tv_url).startswith("http"):
-        parts.append(f'<link href="{tv_url}"><font color="#3b82f6">↗ TV</font></link>')
-    if sc_url and str(sc_url).startswith("http"):
-        parts.append(f'<link href="{sc_url}"><font color="#3b82f6">↗ SC</font></link>')
-    body = "<br/>".join(parts) if parts else '<font color="#94a3b8">—</font>'
-    return Paragraph(body, _S_LINK_ICON)
-
-
 def _section_flowables(title: str, subtitle: str = "") -> list:
     """
-    Editorial-style section header — consistent across all pages:
-      6 mm spacer → heavy dark rule → UPPERCASE title (bold, 9.5 pt)
-      → 3 mm orange accent bar → optional subtitle → 0.4 pt light rule → 4 mm spacer
+    Editorial-style section header: heavy rule, UPPERCASE title, subtitle, thin rule.
+    Returns a list of flowables to be prepended to the section's KeepTogether group.
     """
     items = [
-        Spacer(1, 6*mm),
-        HRFlowable(width=USABLE_W, thickness=1.8, color=_RULE_H,
-                   spaceAfter=1.5*mm, spaceBefore=0),
+        Spacer(1, 5*mm),
+        HRFlowable(width=USABLE_W, thickness=1.5, color=_RULE_H,
+                   spaceAfter=2*mm, spaceBefore=0),
         Paragraph(title.upper(), S_SEC),
-        # Orange accent underline (the visual "bar" under the title)
-        HRFlowable(width=30*mm, thickness=2.5, color=_GOLD,
-                   spaceAfter=1*mm, spaceBefore=1*mm),
     ]
     if subtitle:
         items.append(Paragraph(subtitle, S_SEC_SUB))
     items.append(HRFlowable(width=USABLE_W, thickness=0.4, color=_RULE,
-                             spaceAfter=4*mm, spaceBefore=1.5*mm))
+                             spaceAfter=4*mm, spaceBefore=2*mm))
     return items
 
 
@@ -328,7 +263,7 @@ def _table_style(n_rows: int, header_bg=None, alt_bg=None):
     ts = [
         ("BACKGROUND",    (0, 0), (-1, 0),   hbg),
         ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),   _FONT_BOLD),
+        ("FONTNAME",      (0, 0), (-1, 0),   "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, 0),   8),
         ("GRID",          (0, 0), (-1, -1),  0.35, _RULE),
         ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
@@ -378,53 +313,47 @@ def _setup_ax(ax, title: str = ""):
 def _chart_breadth_donut(b: dict) -> Image:
     adv   = b["advances"]
     dec   = b["declines"]
-    unch  = b.get("unchanged", 0)
+    unch  = b["unchanged"]
     total = adv + dec + unch
     adv_pct = round(100 * adv / total, 1) if total else 0
+    dec_pct = round(100 * dec / total, 1) if total else 0
 
-    fig, ax = plt.subplots(figsize=(3.2, 3.4), facecolor="white")
+    fig, ax = plt.subplots(figsize=(3.2, 3.2), facecolor="white")
     sizes  = [adv, dec, unch] if unch > 0 else [adv, dec]
     clrs   = [M_GREEN, M_RED, "#e2e8f0"][:len(sizes)]
     wedges, _ = ax.pie(
         sizes, colors=clrs, startangle=90,
         wedgeprops=dict(width=0.54, edgecolor="white", linewidth=2.5),
     )
-
-    # Center label: headline pct + counts — no overlap
-    ax.text(0,  0.10, f"{adv_pct:.1f}%", ha="center", va="center",
-            fontsize=17, fontweight="bold", color=M_GREEN)
-    ax.text(0, -0.18, "Adv", ha="center", va="center",
-            fontsize=7.5, color=M_MUTED, fontstyle="italic")
-    ax.text(0, -0.38, f"{adv:,} / {dec:,}" + (f" / {unch:,}" if unch else ""),
-            ha="center", va="center", fontsize=6.5, color=M_MUTED)
-
-    # Legend: mpatches so colours render as filled squares, not unicode ■
-    patches = [
-        mpatches.Patch(color=M_GREEN, label=f"Adv  {adv_pct:.1f}%"),
-        mpatches.Patch(color=M_RED,   label=f"Dec  {round(100*dec/total,1):.1f}%"),
-    ]
+    ax.text(0,  0.22, f"{adv:,}", ha="center", va="center",
+            fontsize=16, fontweight="bold", color=M_GREEN)
+    ax.text(0, -0.02, "Advances", ha="center", va="center",
+            fontsize=6.5, color=M_GREEN)
+    ax.text(0, -0.28, f"{dec:,}", ha="center", va="center",
+            fontsize=16, fontweight="bold", color=M_RED)
+    ax.text(0, -0.50, "Declines", ha="center", va="center",
+            fontsize=6.5, color=M_RED)
+    labels_pct = [f"Adv  {adv_pct:.1f}%", f"Dec  {dec_pct:.1f}%"]
     if unch > 0:
-        patches.append(mpatches.Patch(color="#e2e8f0",
-                                      label=f"Unch  {round(100*unch/total,1):.1f}%"))
-    leg = ax.legend(handles=patches, loc="lower center",
-                    bbox_to_anchor=(0.5, -0.16), ncol=len(patches),
-                    fontsize=6.5, frameon=False,
-                    handlelength=1.0, handletextpad=0.4)
+        labels_pct.append(f"Unch  {round(100*unch/total,1):.1f}%")
+    leg = ax.legend(wedges, labels_pct[:len(wedges)],
+                    loc="lower center", bbox_to_anchor=(0.5, -0.12),
+                    ncol=len(wedges), fontsize=6.5, frameon=False,
+                    handlelength=1.2, handletextpad=0.4)
     for t in leg.get_texts():
         t.set_color(M_MUTED)
-
     ax.set_facecolor("white")
     fig.patch.set_facecolor("white")
     ax.set_title("Advance / Decline", fontsize=8.5, fontweight="bold",
                  color=M_NAVY, pad=4)
-    fig.tight_layout(pad=0.4)
+    fig.tight_layout(pad=0.3)
     return _fig_to_image(fig, 65)
 
 
 def _chart_index_breadth(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    labels = [_clean_label(l) for l in df["index"].tolist()]
+    labels = df["index"].tolist()
     pct200 = df["pct_200"].tolist()
     pct50  = df["pct_50"].tolist()
     y, h   = np.arange(len(labels)), 0.30
@@ -457,7 +386,7 @@ def _chart_index_breadth(df: pd.DataFrame) -> Image:
 def _chart_sector_breadth(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    labels = [_clean_label(l, maxlen=34) for l in df["index"].tolist()]
+    labels = df["index"].tolist()
     pct200 = df["pct_200"].tolist()
     pct50  = df["pct_50"].tolist()
     y, h   = np.arange(len(labels)), 0.30
@@ -475,7 +404,7 @@ def _chart_sector_breadth(df: pd.DataFrame) -> Image:
         ax.text(min(v + 1, 97), bar.get_y() + bar.get_height()/2,
                 f"{v:.0f}%", va="center", fontsize=6, color=M_NAVY, fontweight="bold")
     ax.set_yticks(y)
-    ax.set_yticklabels(labels, fontsize=7, color=M_NAVY)
+    ax.set_yticklabels(labels, fontsize=7.5, color=M_NAVY)
     ax.set_xlim(0, 108)
     ax.axvline(50, color=M_BORDER, linewidth=0.8, linestyle="--")
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
@@ -485,15 +414,14 @@ def _chart_sector_breadth(df: pd.DataFrame) -> Image:
     leg  = ax.legend(handles=[p200, p50], fontsize=6.5, loc="lower right",
                      frameon=True, facecolor="white", edgecolor=M_BORDER)
     for t in leg.get_texts(): t.set_color(M_MUTED)
-    fig.subplots_adjust(left=0.32)   # wider left margin for long sector names
-    fig.tight_layout(pad=0.5, rect=[0.30, 0, 1, 1])
+    fig.tight_layout(pad=0.5)
     return _fig_to_image(fig, USABLE_W / mm)
 
 
 def _chart_themes(df: pd.DataFrame) -> Image:
     if df.empty:
         return None
-    names = [_clean_label(n, maxlen=28) for n in df["theme_name"].tolist()]
+    names = [n if len(n) <= 28 else n[:26] + "…" for n in df["theme_name"].tolist()]
     vals  = df["avg_ret_1w"].tolist()
     clrs  = [M_GREEN if v >= 0 else M_RED for v in vals]
 
@@ -540,7 +468,7 @@ def _chart_volume_surge(df: pd.DataFrame) -> Image:
 def _chart_movers(df: pd.DataFrame, title: str, is_gainers: bool) -> Image:
     if df.empty:
         return None
-    syms = [_clean_label(s, maxlen=12) for s in df["symbol"].tolist()]
+    syms = df["symbol"].tolist()
     vals = df["ret_1d_pct"].tolist()
     clr  = M_GREEN if is_gainers else M_RED
 
@@ -548,22 +476,15 @@ def _chart_movers(df: pd.DataFrame, title: str, is_gainers: bool) -> Image:
     ax.set_facecolor("white")
     y    = np.arange(len(syms))
     bars = ax.barh(y, vals, 0.55, color=clr, alpha=0.82)
-
-    # Value labels placed strictly beyond bar end — never overlapping ticker label
-    pad = abs(max(vals, key=abs)) * 0.04 + 0.1  # 4 % of range + 0.1pp baseline
     for bar, v in zip(bars, vals):
-        xpos = v + pad if v >= 0 else v - pad
-        ha   = "left" if v >= 0 else "right"
-        ax.text(xpos, bar.get_y() + bar.get_height() / 2,
+        xpos = v + 0.05 if v >= 0 else v - 0.05
+        ha = "left" if v >= 0 else "right"
+        ax.text(xpos, bar.get_y() + bar.get_height()/2,
                 f"{'+'if v>0 else ''}{v:.2f}%",
                 va="center", ha=ha, fontsize=6.5, color=M_NAVY, fontweight="bold")
-
     ax.set_yticks(y)
     ax.set_yticklabels(syms, fontsize=7.5, color=M_NAVY, fontweight="bold")
     ax.axvline(0, color=M_BORDER, linewidth=0.8)
-    # Add 20 % extra axis room so value labels don't clip
-    lo, hi = ax.get_xlim()
-    ax.set_xlim(lo * 1.20, hi * 1.20)
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:+.1f}%"))
     _setup_ax(ax, title)
     fig.tight_layout(pad=0.5)
@@ -617,44 +538,35 @@ def _add_executive_summary(story: list, breadth: dict, themes_df: pd.DataFrame,
     )
     if not themes_df.empty:
         t = themes_df.iloc[0]
-        tv = _safe_float(t["avg_ret_1w"])
-        if tv is not None:
-            tc   = POSITIVE if tv > 0 else NEGATIVE
-            sign = "+" if tv > 0 else ""
-            bullets.append(
-                f'<b>Top Theme:</b> {_html.escape(str(t["theme_name"]))} — avg '
-                f'<font color="{tc}"><b>{sign}{tv:.2f}%</b></font> (1-week)'
-            )
+        tc   = "#15803d" if float(t["avg_ret_1w"]) > 0 else "#b91c1c"
+        sign = "+" if float(t["avg_ret_1w"]) > 0 else ""
+        bullets.append(
+            f'<b>Top Theme:</b> {t["theme_name"]} — avg '
+            f'<font color="{tc}"><b>{sign}{float(t["avg_ret_1w"]):.2f}%</b></font> (1-week)'
+        )
     if not vol_df.empty:
-        vs  = vol_df.iloc[0]
-        srv = _safe_float(vs["surge_ratio"], str(vs["symbol"]))
-        if srv is not None:
-            bullets.append(
-                f'<b>Volume Surge:</b> <b>{vs["symbol"]}</b> at '
-                f'<font color="#1d4ed8"><b>{srv:.1f}x</b></font> normal volume'
-            )
+        vs = vol_df.iloc[0]
+        bullets.append(
+            f'<b>Volume Surge:</b> <b>{vs["symbol"]}</b> at '
+            f'<font color="#1d4ed8"><b>{float(vs["surge_ratio"]):.1f}x</b></font> normal volume'
+        )
     if not gainers_df.empty and not losers_df.empty:
-        g  = gainers_df.iloc[0]
+        g = gainers_df.iloc[0]
         lo = losers_df.iloc[0]
-        gv = _safe_float(g["ret_1d_pct"],  str(g["symbol"]))
-        lv = _safe_float(lo["ret_1d_pct"], str(lo["symbol"]))
-        if gv is not None and lv is not None:
-            bullets.append(
-                f'<b>Top Movers:</b> '
-                f'<font color="{POSITIVE}"><b>{g["symbol"]} +{gv:.2f}%</b></font>'
-                f'  &nbsp;·&nbsp;  '
-                f'<font color="{NEGATIVE}"><b>{lo["symbol"]} {lv:.2f}%</b></font>'
-            )
+        bullets.append(
+            f'<b>Top Movers:</b> '
+            f'<font color="#15803d"><b>{g["symbol"]} +{float(g["ret_1d_pct"]):.2f}%</b></font>'
+            f'  &nbsp;·&nbsp;  '
+            f'<font color="#b91c1c"><b>{lo["symbol"]} {float(lo["ret_1d_pct"]):.2f}%</b></font>'
+        )
     if not earnings_df.empty:
-        e  = earnings_df.iloc[0]
-        ev = _safe_float(e["ret_1d_pct"], str(e["symbol"]))
-        if ev is not None:
-            ec   = POSITIVE if ev > 0 else NEGATIVE
-            sign = "+" if ev > 0 else ""
-            bullets.append(
-                f'<b>Results Mover:</b> <b>{e["symbol"]}</b> moved '
-                f'<font color="{ec}"><b>{sign}{ev:.2f}%</b></font> post-earnings'
-            )
+        e = earnings_df.iloc[0]
+        ec   = "#15803d" if float(e["ret_1d_pct"]) > 0 else "#b91c1c"
+        sign = "+" if float(e["ret_1d_pct"]) > 0 else ""
+        bullets.append(
+            f'<b>Results Mover:</b> <b>{e["symbol"]}</b> moved '
+            f'<font color="{ec}"><b>{sign}{float(e["ret_1d_pct"]):.2f}%</b></font> post-earnings'
+        )
 
     # Tone badge alongside section label
     tone_badge_color = "#15803d" if tone == "Bullish" else ("#b91c1c" if tone == "Bearish" else "#d97706")
@@ -667,7 +579,7 @@ def _add_executive_summary(story: list, breadth: dict, themes_df: pd.DataFrame,
                 Paragraph("TODAY'S BRIEFING", S_BRIEF_HDR),
                 Paragraph(
                     f'<font color="{tone_badge_color}"><b>◆ {tone.upper()}</b></font>',
-                    ParagraphStyle("tone", fontSize=7, fontName=_FONT_BOLD,
+                    ParagraphStyle("tone", fontSize=7, fontName="Helvetica-Bold",
                                    textColor=colors.HexColor(tone_badge_color),
                                    alignment=TA_RIGHT, leading=9),
                 ),
@@ -867,23 +779,6 @@ def _add_sector_breadth(story: list, df: pd.DataFrame):
     story.append(KeepTogether(items))
 
 
-def _rs_bucket_badge(bucket: str) -> Paragraph:
-    """Compact coloured pill for RS bucket label — never wraps."""
-    _MAP = {
-        "Strong Outperformer": ("SO", POSITIVE),
-        "Outperformer":        ("OP", "#16803d"),
-        "Neutral":             ("N",  NEUTRAL),
-        "Underperformer":      ("UP", "#d97706"),
-        "Strong Underperformer": ("SU", NEGATIVE),
-    }
-    label, colour = _MAP.get(bucket, (bucket[:3] if bucket else "—", NEUTRAL))
-    return Paragraph(
-        f'<font color="{colour}"><b>{label}</b></font>',
-        ParagraphStyle("badge", fontSize=7.5, fontName=_FONT_BOLD,
-                       alignment=TA_CENTER, leading=10),
-    )
-
-
 def _add_rs_leaders(story: list, df: pd.DataFrame):
     # Cap at 7 rows: chart + stock cells (2-line each) + heading reaches ~240 mm
     # with 10 rows — right at the frame limit.  7 rows sits comfortably at ~200 mm.
@@ -899,28 +794,26 @@ def _add_rs_leaders(story: list, df: pd.DataFrame):
     if df.empty:
         items.append(Paragraph("No relative strength data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Ret", "1M RS", "Bucket", "Links")
+        header = _th("#", "Stock", "CMP", "1D Return", "1M RS vs Nifty", "RS Bucket")
         rows   = [header]
         for rank, (_, r) in enumerate(df.iterrows(), 1):
-            rs_val  = _safe_float(r["rs_1m"], str(r["symbol"])) or 0.0
-            rs_col  = POSITIVE if rs_val > 0 else NEGATIVE
+            rs_val  = float(r["rs_1m"])
+            rs_col  = "#15803d" if rs_val > 0 else "#b91c1c"
             rs_sign = "+" if rs_val > 0 else ""
-            cmp_val = _safe_float(r["cmp"], str(r["symbol"]))
-            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(f"<font color='#1d4ed8'><b>{rank}</b></font>", S_CELB),
-                _stock_cell_pdf(r["symbol"], r["name"]),
-                Paragraph(cmp_str, S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"],
+                                r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], str(r['symbol']))}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
                     S_CELB),
                 Paragraph(
                     f"<font color='{rs_col}'><b>{rs_sign}{rs_val:.1f}%</b></font>",
                     S_CELB),
-                _rs_bucket_badge(str(r.get("rs_1m_bucket") or "")),
-                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(str(r.get("rs_1m_bucket") or "—"), S_CELL),
             ])
-        t = Table(rows, colWidths=[10*mm, 52*mm, 22*mm, 20*mm, 26*mm, 24*mm, 14*mm])
+        t = Table(rows, colWidths=[10*mm, 76*mm, 24*mm, 24*mm, 28*mm, 16*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
@@ -978,27 +871,24 @@ def _add_volume_surge(story: list, df: pd.DataFrame):
     if df.empty:
         items.append(Paragraph("No volume surge data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Ret", "Vol", "20D Avg", "Surge", "Links")
+        header = _th("#", "Stock", "CMP", "1D Return", "Today Vol", "20D Avg", "Surge")
         rows = [header]
         for i, (_, r) in enumerate(df.iterrows(), 1):
-            sym     = str(r["symbol"])
-            cmp_val = _safe_float(r["cmp"], sym)
-            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
-            sur_val = _safe_float(r["surge_ratio"], sym)
-            sur_str = f"{sur_val:.1f}x" if sur_val is not None else "—"
             rows.append([
                 Paragraph(str(i), S_CELL),
-                _stock_cell_pdf(r["symbol"], r["name"]),
-                Paragraph(cmp_str, S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"],
+                                r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
                     S_CELB),
-                Paragraph(_vol(r["today_vol"],   sym), S_CELL),
-                Paragraph(_vol(r["avg_vol_20d"], sym), S_CELL),
-                Paragraph(f"<font color='#1d4ed8'><b>{sur_str}</b></font>", S_CELB),
-                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(_vol(r["today_vol"]),   S_CELL),
+                Paragraph(_vol(r["avg_vol_20d"]), S_CELL),
+                Paragraph(
+                    f"<font color='#1d4ed8'><b>{float(r['surge_ratio']):.1f}x</b></font>",
+                    S_CELB),
             ])
-        t = Table(rows, colWidths=[8*mm, 50*mm, 20*mm, 20*mm, 22*mm, 22*mm, 18*mm, 14*mm])
+        t = Table(rows, colWidths=[8*mm, 72*mm, 22*mm, 22*mm, 22*mm, 22*mm, 10*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(Spacer(1, 3*mm))
         items.append(t)
@@ -1017,23 +907,20 @@ def _add_earnings(story: list, df: pd.DataFrame):
         items.append(Paragraph(
             "No quarterly result stocks moved more than 5% today.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap", "Links")
+        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
         rows = [header]
         for i, (_, r) in enumerate(df.iterrows(), 1):
-            sym     = str(r["symbol"])
-            cmp_val = _safe_float(r["cmp"], sym)
-            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(str(i), S_CELL),
-                _stock_cell_pdf(r["symbol"], r["name"]),
-                Paragraph(cmp_str, S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"],
+                                r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
                 Paragraph(
-                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
+                    f"<font color='{_gc(r['ret_1d_pct'])}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
                     S_CELB),
-                Paragraph(_mcap(r["market_cap_cr"], sym), S_CELL),
-                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
             ])
-        t = Table(rows, colWidths=[8*mm, 76*mm, 22*mm, 24*mm, 28*mm, 16*mm])
+        t = Table(rows, colWidths=[8*mm, 90*mm, 24*mm, 26*mm, 30*mm])
         t.setStyle(_table_style(len(rows)))
         items.append(t)
 
@@ -1053,25 +940,22 @@ def _add_movers(story: list, df: pd.DataFrame, title: str, is_gainers: bool):
     if df.empty:
         items.append(Paragraph("No data.", S_CELL))
     else:
-        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap", "Links")
+        header = _th("#", "Stock", "CMP", "1D Return", "Market Cap")
         rows = [header]
-        accent = POSITIVE if is_gainers else NEGATIVE
+        accent = "#15803d" if is_gainers else "#b91c1c"
         for rank, (_, r) in enumerate(df.iterrows(), 1):
-            sym     = str(r["symbol"])
-            cmp_val = _safe_float(r["cmp"], sym)
-            cmp_str = f"₹{cmp_val:.2f}" if cmp_val is not None else "—"
             rows.append([
                 Paragraph(f"<font color='{accent}'><b>{rank}</b></font>", S_CELB),
-                _stock_cell_pdf(r["symbol"], r["name"]),
-                Paragraph(cmp_str, S_CELL),
+                _stock_cell_pdf(r["symbol"], r["name"],
+                                r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(f"₹{float(r['cmp']):.2f}", S_CELL),
                 Paragraph(
-                    f"<font color='{accent}'><b>{_pct(r['ret_1d_pct'], sym)}</b></font>",
+                    f"<font color='{accent}'><b>{_pct(r['ret_1d_pct'])}</b></font>",
                     S_CELB),
-                Paragraph(_mcap(r["market_cap_cr"], sym), S_CELL),
-                _links_cell_pdf(r.get("tradingview_url"), r.get("screener_url")),
+                Paragraph(_mcap(r["market_cap_cr"]), S_CELL),
             ])
         row_bg = _GREEN_XL if is_gainers else _RED_XL
-        t = Table(rows, colWidths=[10*mm, 76*mm, 22*mm, 24*mm, 26*mm, 16*mm])
+        t = Table(rows, colWidths=[10*mm, 92*mm, 24*mm, 26*mm, 26*mm])
         t.setStyle(_table_style(len(rows), alt_bg=row_bg))
         items.append(Spacer(1, 3*mm))
         items.append(t)
