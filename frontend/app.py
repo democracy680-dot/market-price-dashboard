@@ -787,9 +787,9 @@ def _get_engine():
         "keepalives_count": 3,
         "options": "-c statement_timeout=30000",
     }
-    # Try session pooler (5432) then transaction pooler (6543); use NullPool to
-    # avoid holding idle connections against Supabase's per-project limit.
-    for attempt_url in [url, tx_url]:
+    # Try transaction pooler (6543) first — designed for stateless apps like Streamlit.
+    # Fall back to session pooler (5432) only if transaction pooler is unavailable.
+    for attempt_url in [tx_url, url]:
         for attempt in range(3):
             try:
                 eng = create_engine(attempt_url, poolclass=NullPool, connect_args=connect_args)

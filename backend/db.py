@@ -47,7 +47,7 @@ def get_engine(max_attempts: int = 3):
     pooler (6543) if the session pool is exhausted.
     NullPool avoids stale PgBouncer connections across long-running loops.
     """
-    urls_to_try = [get_db_url(), get_tx_url()]
+    urls_to_try = [get_tx_url(), get_db_url()]
     last_exc = None
     for url in urls_to_try:
         for attempt in range(max_attempts):
