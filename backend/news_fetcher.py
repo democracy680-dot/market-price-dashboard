@@ -110,18 +110,26 @@ def _fetch_feed_bytes(url: str) -> bytes | None:
         return None
 
 
-def parse_feed(source: dict) -> list[dict]:
+def parse_feed(source: dict) -> tuple[list[dict], bool]:
+    """Returns (articles, network_failed).
+
+    network_failed=True only when we couldn't reach the server at all (HTTP/network
+    error on every attempt). Malformed-XML (bozo) feeds from the upstream source are
+    NOT counted as network failures — that's the feed provider's problem.
+    """
     articles = []
+    http_failures = 0
     for attempt in range(FEED_RETRIES):
         try:
             raw = _fetch_feed_bytes(source["feed_url"])
             if raw is None:
+                http_failures += 1
                 continue
             # Pass raw bytes — feedparser auto-detects encoding from XML declaration
             parsed = feedparser.parse(raw)
             if parsed.bozo and not parsed.entries:
-                logger.warning(f"  {source['source_id']}: bozo error — {parsed.bozo_exception}")
-                continue
+                logger.warning(f"  {source['source_id']}: bozo feed (upstream XML error) — {parsed.bozo_exception}")
+                return [], False  # upstream content problem, not a network failure
 
             for entry in parsed.entries:
                 url = entry.get("link", "").strip()
@@ -153,12 +161,13 @@ def parse_feed(source: dict) -> list[dict]:
                     "url":         url[:1000],
                     "published_at": pub_date,
                 })
-            break  # success
+            return articles, False  # success
 
         except Exception as exc:
             logger.warning(f"  {source['source_id']} attempt {attempt + 1} failed: {exc}")
+            http_failures += 1
 
-    return articles
+    return articles, http_failures >= FEED_RETRIES
 
 
 # ── Stock lookup ───────────────────────────────────────────────────────────────
@@ -317,8 +326,8 @@ def run():
     failed_sources = 0
 
     for src in sources:
-        articles = parse_feed(src)
-        if not articles:
+        articles, network_failed = parse_feed(src)
+        if network_failed:
             failed_sources += 1
         all_articles.extend(articles)
         logger.info(f"  {src['source_id']}: {len(articles)} articles")
