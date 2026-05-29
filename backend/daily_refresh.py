@@ -82,6 +82,7 @@ def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict, chunk_size: int = 1
     df["symbol"] = df["yahoo_symbol"].map(symbol_map)
     df = df.dropna(subset=["symbol"])
     df = df[["symbol", "date", "open", "high", "low", "close", "volume"]]
+    df = df.drop_duplicates(subset=["symbol", "date"], keep="last")
     df = df.where(pd.notnull(df), None)
 
     rows = list(df.itertuples(index=False, name=None))
