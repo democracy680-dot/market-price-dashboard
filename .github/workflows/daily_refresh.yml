@@ -26,12 +26,34 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Debug environment
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          echo "Secret set: ${{ secrets.SUPABASE_DB_URL != '' }}"
+          echo "URL length: ${#SUPABASE_DB_URL}"
+          echo "URL prefix: ${SUPABASE_DB_URL:0:30}..."
+          python -c "import psycopg2; print('psycopg2 ok:', psycopg2.__version__)"
+          python -c "
+          import os, psycopg2
+          url = os.environ.get('SUPABASE_DB_URL', '')
+          print('URL length:', len(url))
+          print('Starts with postgresql://', url.startswith('postgresql://'))
+          try:
+              conn = psycopg2.connect(url)
+              print('DB connection: SUCCESS')
+              conn.close()
+          except Exception as e:
+              print('DB connection FAILED:', e)
+          "
+
       - name: Run daily refresh
         env:
           SUPABASE_DB_URL:      ${{ secrets.SUPABASE_DB_URL }}
           GMAIL_APP_PASSWORD:   ${{ secrets.GMAIL_APP_PASSWORD }}
           DIGEST_EMAIL_FROM:    democracy680@gmail.com
           DIGEST_EMAIL_TO:      democracy680@gmail.com
+          PYTHONUNBUFFERED:     "1"
         working-directory: backend
         run: python daily_refresh.py
 
