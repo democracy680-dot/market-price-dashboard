@@ -32,7 +32,7 @@ def get_db_url() -> str:
     url = os.environ.get("SUPABASE_DB_URL")
     if not url:
         raise RuntimeError("SUPABASE_DB_URL environment variable not set.")
-    return url
+    return url.strip()
 
 
 def get_tx_url() -> str:
