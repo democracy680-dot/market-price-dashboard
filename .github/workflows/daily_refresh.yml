@@ -1,9 +1,11 @@
 name: Daily Refresh
 
 on:
+  schedule:
+    # 4:30 PM IST = 11:00 UTC, Mon–Fri
+    - cron: "0 11 * * 1-5"
   workflow_dispatch:
-    # Triggered by cron-job.org at 4:30 PM IST (11:00 UTC) Mon–Fri
-    # Manual trigger also available via GitHub UI
+    # Manual trigger via GitHub UI for testing
 
 jobs:
   refresh:
