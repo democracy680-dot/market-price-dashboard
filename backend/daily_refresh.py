@@ -82,10 +82,19 @@ def upsert_prices(prices_df: pd.DataFrame, symbol_map: dict, chunk_size: int = 1
     df["symbol"] = df["yahoo_symbol"].map(symbol_map)
     df = df.dropna(subset=["symbol"])
     df = df[["symbol", "date", "open", "high", "low", "close", "volume"]]
+    # Normalise date to datetime.date so pandas drop_duplicates compares correctly
+    df["date"] = pd.to_datetime(df["date"]).dt.date
     df = df.drop_duplicates(subset=["symbol", "date"], keep="last")
     df = df.where(pd.notnull(df), None)
 
-    rows = list(df.itertuples(index=False, name=None))
+    # Second deduplication on the row list itself — guards against mixed Python
+    # date types that pandas considers distinct but PostgreSQL maps to the same DATE.
+    seen: dict = {}
+    for row in df.itertuples(index=False, name=None):
+        seen[(row[0], str(row[1]))] = row  # key: (symbol, date-as-string)
+    rows = list(seen.values())
+    if len(rows) < len(df):
+        logger.warning(f"  Dropped {len(df) - len(rows)} extra duplicate rows before upsert")
 
     sql = """
         INSERT INTO prices_daily (symbol, date, open, high, low, close, volume)
