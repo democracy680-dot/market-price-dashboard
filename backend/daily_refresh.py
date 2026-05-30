@@ -300,13 +300,19 @@ def run():
     n_prices = upsert_prices(prices_df, symbol_map)
     logger.info(f"  {n_prices} rows upserted into prices_daily")
 
-    # ── 4. Compute snapshots ─────────────────────────────────────────────────
-    logger.info("Computing snapshots...")
-    prices_nse = prices_df.copy()
-    prices_nse["symbol"] = prices_nse["yahoo_symbol"].map(symbol_map)
-    prices_nse = prices_nse.dropna(subset=["symbol"])
-
-    snapshots = compute_snapshots(prices_nse[["symbol", "date", "close"]])
+    # ── 4. Compute snapshots (needs full history for multi-period returns) ─────
+    logger.info("Computing snapshots — loading full price history from DB...")
+    with engine.connect() as conn:
+        full_prices = pd.read_sql(
+            text("""
+                SELECT symbol, date, close
+                FROM prices_daily
+                WHERE date >= CURRENT_DATE - INTERVAL '400 days'
+                ORDER BY symbol, date
+            """),
+            conn,
+        )
+    snapshots = compute_snapshots(full_prices)
     logger.info(f"  Computed {len(snapshots)} snapshot rows")
 
     # ── 4b. Fetch fundamentals (market cap, PE, sector) ─────────────────────
