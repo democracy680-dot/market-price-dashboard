@@ -4643,15 +4643,17 @@ _VS_PCT_COLS = {"ret_1d", "ret_1w", "ret_30d", "ret_365d", "pct_from_52wh"}
 
 def render_volspike_view(snap_date):
     df = _load_all_snapshots(snap_date)
-
-    if "vol_spike" not in df.columns or df["vol_spike"].isna().all():
+    if df.empty:
         st.info(
             "Volume spike data isn't available yet — it requires `prices_daily` "
             "data for this date. Try a more recent date or wait for the next refresh."
         )
         return
 
-    df = df[df["vol_spike"].notna() & (df["vol_spike"] > 0)].copy()
+    # Merge weekly/monthly spike ratios (cached; computed once regardless of the
+    # selected period so toggling the Timeline dropdown never re-queries).
+    period_df = _load_period_vol_spikes(snap_date)
+    df = df.merge(period_df, on="symbol", how="left")
 
     # ── Filters (row 1) + sort (row 2) ───────────────────────────────────────
     spike_options = {"Any (all)": 0.0, "1.5×+": 1.5, "2×+": 2.0, "3×+": 3.0, "5×+": 5.0}
@@ -4660,7 +4662,10 @@ def render_volspike_view(snap_date):
         "Within 20%": 0.20, "Within 30%": 0.30,
     }
 
-    fc1, fc2, fc3 = st.columns(3)
+    fc0, fc1, fc2, fc3 = st.columns(4)
+    with fc0:
+        period = st.selectbox("Timeline", list(VOLSPIKE_TIMELINE_COLUMNS.keys()),
+                              index=0, key="vs_timeline")
     with fc1:
         min_label = st.selectbox("Min spike", list(spike_options.keys()), index=2, key="vs_min")
         min_val   = spike_options[min_label]
@@ -4680,10 +4685,27 @@ def render_volspike_view(snap_date):
         dir_label = st.selectbox("Direction", ["Highest first", "Lowest first"],
                                  index=0, key="vs_sort_dir")
 
-    st.caption(
-        "Stocks where today's volume significantly exceeds the 30-day average — "
-        "often signals unusual activity, breakouts, or news-driven moves."
-    )
+    # Swap in the selected period's spike value, then drop rows without a valid
+    # spike for THAT period (mirrors the old today-only notna/>0 filter).
+    df = _apply_timeline(df, period)
+    if "vol_spike" not in df.columns or df["vol_spike"].isna().all():
+        st.info(
+            f"{period} volume-spike data isn't available for this date yet — it "
+            "needs enough `prices_daily` history. Try a more recent date or "
+            "another timeline."
+        )
+        return
+    df = df[df["vol_spike"].notna() & (df["vol_spike"] > 0)].copy()
+
+    _vs_captions = {
+        "Today": "Stocks where today's volume significantly exceeds the 30-day "
+                 "average — often signals unusual activity, breakouts, or news-driven moves.",
+        "Weekly": "Stocks whose last-week total volume (5 trading days) most exceeds "
+                  "a typical week, measured against the trailing 3-month average.",
+        "Monthly": "Stocks whose last-month total volume (21 trading days) most exceeds "
+                   "a typical month, measured against the trailing 3-month average.",
+    }
+    st.caption(_vs_captions.get(period, _vs_captions["Today"]))
 
     sort_col  = VOLSPIKE_SORT_COLUMNS[sort_label]
     ascending = (dir_label == "Lowest first")
