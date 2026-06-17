@@ -1454,18 +1454,37 @@ def _fmt_mcap(val):
     return f"₹{val:,.2f} Cr"
 
 
+def _fmt_cmp(v):
+    return f"₹{v:,.2f}" if pd.notna(v) else "—"
+
+
+def _fmt_pe(v):
+    return f"{v:.1f}" if pd.notna(v) else "—"
+
+
+def _fmt_vol_spike(v):
+    return f"{v:.1f}×" if pd.notna(v) else "—"
+
+
+# Display-only formatters keyed by the pretty (renamed) column. Applied via
+# Styler.format so the underlying DataFrame stays numeric and st.dataframe sorts
+# numerically (formatted strings would sort lexicographically — the sort bug).
+DISPLAY_FORMATTERS = {
+    "CMP": _fmt_cmp,
+    "MCap (Cr)": _fmt_mcap,
+    "P/E": _fmt_pe,
+    "Vol Spike": _fmt_vol_spike,
+    **{DISPLAY_COLS[c]: _fmt_pct for c in PCT_COLS},
+}
+
+
 def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     # Only include columns that actually exist in df (vol_spike may be absent on cached data)
     available = {k: v for k, v in DISPLAY_COLS.items() if k in df.columns}
-    d = df[list(available.keys())].copy()
-    d = d.rename(columns=available)
-    for raw, pretty in available.items():
-        if raw in PCT_COLS:
-            d[pretty] = df[raw].map(_fmt_pct)
-    d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    d["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
-    d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
-    # DMA colored badges
+    # Keep numeric columns NUMERIC — formatting happens later in the Styler layer
+    # so the interactive table sorts by real numbers, not formatted text.
+    d = df[list(available.keys())].copy().rename(columns=available)
+    # DMA badges are categorical text (no numeric sort needed)
     if "50DMA" in d.columns:
         d["50DMA"] = df["status_50dma"].map(
             lambda v: "▲ Above" if v == "Above 50DMA" else ("▼ Below" if v == "Below 50DMA" else "—")
@@ -1474,9 +1493,6 @@ def prepare_display(df: pd.DataFrame) -> pd.DataFrame:
         d["200DMA"] = df["status_200dma"].map(
             lambda v: "▲ Above" if v == "Above 200DMA" else ("▼ Below" if v == "Below 200DMA" else "—")
         )
-    # Volume spike ratio
-    if "Vol Spike" in d.columns:
-        d["Vol Spike"] = df["vol_spike"].map(lambda v: f"{v:.1f}×" if pd.notna(v) else "—")
     return d
 
 # ---------------------------------------------------------------------------
@@ -1776,7 +1792,9 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
     _visible_cols = [c for c in display.columns if c not in _hidden]
     display = display[_visible_cols]
 
-    styled = display.style
+    styled = display.style.format(
+        {c: fn for c, fn in DISPLAY_FORMATTERS.items() if c in display.columns}
+    )
     for raw, pretty in DISPLAY_COLS.items():
         if raw in PCT_COLS and pretty in display.columns:
             styled = styled.map(_color_return, subset=[pretty])
@@ -1877,24 +1895,29 @@ THEME_DISPLAY_COLS = {
 }
 
 
+def _fmt_mcap_cr(v):
+    return f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
+
+
+# Display-only formatters for the themes table (keyed by pretty column name).
+THEME_DISPLAY_FORMATTERS = {
+    "CMP": _fmt_cmp,
+    "Market Cap (₹ Cr)": _fmt_mcap_cr,
+    "P/E": _fmt_pe,
+    **{THEME_DISPLAY_COLS[c]: _fmt_pct for c in THEME_PCT_COLS},
+}
+
+
 def _prepare_theme_display(df: pd.DataFrame) -> pd.DataFrame:
     # BUGFIX: only select columns that actually exist in df — the theme SQL uses LEFT JOINs
     # so a stock with no snapshot data would still produce all columns, but defensive
     # filtering prevents KeyError if the schema ever drifts.
+    # Columns stay NUMERIC; formatting is applied via Styler.format at render time so
+    # the interactive table sorts numerically instead of lexicographically.
     available_keys = [k for k in THEME_DISPLAY_COLS.keys() if k in df.columns]
-    d = df[available_keys].copy()
-    d = d.rename(columns=THEME_DISPLAY_COLS)
-    for raw, pretty in THEME_DISPLAY_COLS.items():
-        if raw in THEME_PCT_COLS and raw in df.columns:
-            d[pretty] = df[raw].map(_fmt_pct)
-    if "cmp" in df.columns:
-        d["CMP"] = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    if "market_cap_cr" in df.columns:
-        d["Market Cap (₹ Cr)"] = df["market_cap_cr"].map(
-            lambda v: f"₹{v:,.2f} Cr" if pd.notna(v) else "—"
-        )
-    if "pe_ratio" in df.columns:
-        d["P/E"] = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
+    d = df[available_keys].copy().rename(
+        columns={k: THEME_DISPLAY_COLS[k] for k in available_keys}
+    )
     return d
 
 
@@ -2108,7 +2131,9 @@ def render_themes_view():
         _themes_visible = [c for c in display.columns if c not in _themes_hidden]
         display = display[_themes_visible]
 
-        styled = display.style
+        styled = display.style.format(
+            {c: fn for c, fn in THEME_DISPLAY_FORMATTERS.items() if c in display.columns}
+        )
         for raw, pretty in THEME_DISPLAY_COLS.items():
             if raw in THEME_PCT_COLS and pretty in display.columns:
                 styled = styled.map(_color_return, subset=[pretty])
@@ -3354,10 +3379,8 @@ def _frag_sector_performance(snap_date, refresh_ts=None):
     keep_cols += ["day_change_pct", "week_chg_pct", "month_chg_pct",
                   "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]
 
+    # Keep % columns NUMERIC so the table sorts numerically; format via Styler below.
     disp = sector_df[keep_cols].copy()
-    for c in ["day_change_pct", "week_chg_pct", "month_chg_pct",
-              "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]:
-        disp[c] = disp[c].map(_fmt_pct)
 
     rename_map = {
         "sector": "Sector", "num_companies": "# Stocks",
@@ -3367,10 +3390,18 @@ def _frag_sector_performance(snap_date, refresh_ts=None):
         "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
     }
     disp = disp.rename(columns={k: v for k, v in rename_map.items() if k in disp.columns})
+    _sector_pct_cols = ["1D%", "1W%", "30D%", "60D%", "180D%", "365D%"]
     _sector_all_cols = list(disp.columns)
     _sector_hidden = _render_col_visibility_ui("sector", _sector_all_cols)
     _sector_visible = [c for c in disp.columns if c not in _sector_hidden]
-    st.dataframe(disp[_sector_visible], use_container_width=True, hide_index=True)
+    disp = disp[_sector_visible]
+    styled = disp.style.format(
+        {c: _fmt_pct for c in _sector_pct_cols if c in disp.columns}
+    )
+    for c in _sector_pct_cols:
+        if c in disp.columns:
+            styled = styled.map(_color_return, subset=[c])
+    st.dataframe(styled, use_container_width=True, hide_index=True)
     st.divider()
 
     chart_df = sector_df.copy()
@@ -3522,32 +3553,28 @@ def _render_minervini_screener():
             "return_12m":        "12M Return",
         }
         available = [c for c in disp_cols if c in df.columns]
-        display_df = df[available].copy()
+        # Keep columns NUMERIC so the table sorts by value, not formatted text.
+        display_df = df[available].copy().rename(columns={c: disp_cols[c] for c in available})
 
-        def _fmt(col, val):
-            if pd.isna(val):
-                return "—"
-            if col == "template_score":
-                return f"{val:.1f}/10"
-            if col == "criteria_count":
-                return f"{int(val)}/8"
-            if col == "rs_rank_12m":
-                return f"{val:.0f}"
-            if col == "pct_from_52w_high":
-                return f"{val:+.1f}%"
-            if col in ("pct_above_52w_low", "return_12m"):
-                return f"{val:+.1f}%"
-            if col == "sma_200_slope_22d":
-                return f"{val:+.2f}%"
-            if col == "cmp":
-                return f"₹{val:,.1f}"
-            return val
+        def _na(fmt):
+            return lambda v: fmt(v) if pd.notna(v) else "—"
 
-        for col in display_df.columns:
-            display_df[col] = display_df[col].apply(lambda v, c=col: _fmt(c, v))
-
-        display_df.columns = [disp_cols[c] for c in available]
-        st.dataframe(display_df, use_container_width=True, hide_index=True, height=580)
+        # Display-only formatters keyed by pretty column name (sorting uses the
+        # underlying numeric values).
+        _m_fmt = {
+            "CMP":                _na(lambda v: f"₹{v:,.1f}"),
+            "Score":              _na(lambda v: f"{v:.1f}/10"),
+            "Criteria":           _na(lambda v: f"{int(v)}/8"),
+            "RS Rank":            _na(lambda v: f"{v:.0f}"),
+            "% from 52W High":    _na(lambda v: f"{v:+.1f}%"),
+            "% above 52W Low":    _na(lambda v: f"{v:+.1f}%"),
+            "200 DMA Slope (1M)": _na(lambda v: f"{v:+.2f}%"),
+            "12M Return":         _na(lambda v: f"{v:+.1f}%"),
+        }
+        styled = display_df.style.format(
+            {c: fn for c, fn in _m_fmt.items() if c in display_df.columns}
+        )
+        st.dataframe(styled, use_container_width=True, hide_index=True, height=580)
 
         st.download_button(
             "📥 Download as CSV",
@@ -3609,7 +3636,7 @@ def _fmt_volume_ind(v):
 
 def _color_rsi(val):
     """Style RSI cell: red if overbought (>70), green if oversold (<30)."""
-    if val == "—":
+    if pd.isna(val) or val == "—":
         return ""
     try:
         v = float(val)
@@ -3624,7 +3651,7 @@ def _color_rsi(val):
 
 def _style_adx(val):
     """Highlight ADX > 25 in amber — signals strong trend."""
-    if val == "—":
+    if pd.isna(val) or val == "—":
         return ""
     try:
         if float(val) > 25:
@@ -3643,10 +3670,10 @@ def _fmt_slope(v) -> str:
 
 def _color_slope(val) -> str:
     """Color SMA200 slope: green if rising >+1%, red if falling <-1%, gray otherwise."""
-    if val == "—":
+    if pd.isna(val) or val == "—":
         return ""
     try:
-        v = float(val.replace("%", "").replace("+", ""))
+        v = float(str(val).replace("%", "").replace("+", ""))
         if v > 1.0:
             return "color: #22c55e; font-weight: 600"
         if v < -1.0:
@@ -3658,10 +3685,10 @@ def _color_slope(val) -> str:
 
 def _color_52wh(val) -> str:
     """Color % from 52W High: green if < -5%, orange if -20% to -5%, red if < -20%."""
-    if val == "—":
+    if pd.isna(val) or val == "—":
         return ""
     try:
-        v = float(val.replace("%", ""))
+        v = float(str(val).replace("%", ""))
         if v >= -5:
             return "color: #22c55e; font-weight: 600"
         if v >= -20:
@@ -3680,10 +3707,10 @@ def _fmt_vol_ratio(v) -> str:
 
 def _style_vol_ratio(val) -> str:
     """Bold volume ratio >= 1.5x."""
-    if val == "—":
+    if pd.isna(val) or val == "—":
         return ""
     try:
-        if float(val.replace("x", "")) >= 1.5:
+        if float(str(val).replace("x", "").replace("×", "")) >= 1.5:
             return "font-weight: 700; color: #f59e0b"
     except (ValueError, TypeError):
         pass
@@ -3746,12 +3773,16 @@ def _render_technical_table(
     df_page = df.iloc[start:end].copy()
 
     # ── Build display columns (only for the current page) ────────────────────
+    # Numeric columns are kept NUMERIC; display formatting is applied via
+    # Styler.format below so the interactive table sorts by value, not by text.
+    _nan = float("nan")
     disp = pd.DataFrame()
     disp["Ticker"]    = df_page["symbol"]
     disp["Name"]      = df_page["name"]
     disp["Sector"]    = df_page["sector"].fillna("—") if "sector" in df_page.columns else "—"
-    disp["CMP"]       = df_page["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["RSI (14)"]  = df_page["rsi_14"].map(lambda v: f"{v:.2f}" if pd.notna(v) else "—")
+    disp["CMP"]       = df_page["cmp"]
+    disp["RSI (14)"]  = df_page["rsi_14"]
+    # MACD is a composite of three values — kept as text (not a single sortable number)
     disp["MACD"]      = df_page.apply(
         lambda r: (
             f"L: {r['macd_line']:.2f} | S: {r['macd_signal']:.2f} | H: {r['macd_histogram']:.2f}"
@@ -3760,14 +3791,14 @@ def _render_technical_table(
         ),
         axis=1,
     )
-    disp["ADX (14)"]  = df_page["adx_14"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
-    disp["% from ATH"] = df_page["pct_from_ath"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_ath" in df_page.columns else "—"
-    disp["% from 52W High"] = df_page["pct_from_52wh"].map(lambda v: f"{v:.1f}%" if pd.notna(v) else "—") if "pct_from_52wh" in df_page.columns else "—"
-    disp["50 DMA"]    = df_page["sma_50"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["200 DMA"]   = df_page["sma_200"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["Volume"]      = df_page["volume"].map(_fmt_volume_ind)
-    disp["SMA200 Slope"] = df_page["sma_200_slope"].map(_fmt_slope) if "sma_200_slope" in df_page.columns else "—"
-    disp["Vol Ratio"]   = df_page["volume_ratio"].map(_fmt_vol_ratio) if "volume_ratio" in df_page.columns else "—"
+    disp["ADX (14)"]  = df_page["adx_14"]
+    disp["% from ATH"] = df_page["pct_from_ath"] if "pct_from_ath" in df_page.columns else _nan
+    disp["% from 52W High"] = df_page["pct_from_52wh"] if "pct_from_52wh" in df_page.columns else _nan
+    disp["50 DMA"]    = df_page["sma_50"]
+    disp["200 DMA"]   = df_page["sma_200"]
+    disp["Volume"]      = df_page["volume"]
+    disp["SMA200 Slope"] = df_page["sma_200_slope"] if "sma_200_slope" in df_page.columns else _nan
+    disp["Vol Ratio"]   = df_page["volume_ratio"] if "volume_ratio" in df_page.columns else _nan
     disp["Chart"]       = df_page["tradingview_url"].where(df_page["tradingview_url"].notna(), other=None)
     disp["Status"]      = df_page["technical_status"]
     if show_v1 and "technical_status_v1" in df_page.columns:
@@ -3793,7 +3824,22 @@ def _render_technical_table(
     disp = disp[visible_cols]
 
     # ── Styling (runs on page slice only — ~100 rows, not 1500) ──────────────
-    styled = disp.style
+    def _na(fmt):
+        return lambda v: fmt(v) if pd.notna(v) else "—"
+
+    _tech_fmt = {
+        "CMP":             _na(lambda v: f"₹{v:,.2f}"),
+        "RSI (14)":        _na(lambda v: f"{v:.2f}"),
+        "ADX (14)":        _na(lambda v: f"{v:.1f}"),
+        "% from ATH":      _na(lambda v: f"{v:.1f}%"),
+        "% from 52W High": _na(lambda v: f"{v:.1f}%"),
+        "50 DMA":          _na(lambda v: f"₹{v:,.2f}"),
+        "200 DMA":         _na(lambda v: f"₹{v:,.2f}"),
+        "Volume":          _fmt_volume_ind,
+        "SMA200 Slope":    _fmt_slope,
+        "Vol Ratio":       _fmt_vol_ratio,
+    }
+    styled = disp.style.format({c: fn for c, fn in _tech_fmt.items() if c in disp.columns})
     if "RSI (14)" in disp.columns:
         styled = styled.map(_color_rsi,        subset=["RSI (14)"])
     if "ADX (14)" in disp.columns:
@@ -4532,18 +4578,18 @@ def render_volspike_view(snap_date):
     )
 
     # ── Build display df ────────────────────────────────────────────────────
+    # Columns stay NUMERIC; formatting is applied via Styler.format so the table
+    # sorts numerically instead of lexicographically.
     available = {k: v for k, v in _VS_COLS.items() if k in df.columns}
     disp = df[list(available.keys())].copy().rename(columns=available)
 
-    for raw, pretty in available.items():
-        if raw in _VS_PCT_COLS:
-            disp[pretty] = df[raw].map(_fmt_pct)
-
-    disp["CMP"]       = df["cmp"].map(lambda v: f"₹{v:,.2f}" if pd.notna(v) else "—")
-    disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
-    disp["P/E"]       = df["pe_ratio"].map(lambda v: f"{v:.1f}" if pd.notna(v) else "—")
-    if "Vol Spike" in disp.columns:
-        disp["Vol Spike"] = df["vol_spike"].map(lambda v: f"{v:.1f}×" if pd.notna(v) else "—")
+    _vs_fmt = {
+        "CMP": _fmt_cmp,
+        "MCap (Cr)": _fmt_mcap,
+        "P/E": _fmt_pe,
+        "Vol Spike": _fmt_vol_spike,
+        **{_VS_COLS[c]: _fmt_pct for c in _VS_PCT_COLS},
+    }
 
     # Chart link column
     disp["Chart"] = df["tradingview_url"].where(df["tradingview_url"].notna(), other=None)
@@ -4554,7 +4600,7 @@ def render_volspike_view(snap_date):
     disp = disp[_vs_visible]
 
     # ── Styling ─────────────────────────────────────────────────────────────
-    styled = disp.style
+    styled = disp.style.format({c: fn for c, fn in _vs_fmt.items() if c in disp.columns})
     for raw, pretty in available.items():
         if raw in _VS_PCT_COLS and pretty in disp.columns:
             styled = styled.map(_color_return, subset=[pretty])
