@@ -29,12 +29,42 @@ else about the tab stays the same.
 4. **Architecture = dedicated cached query** for the Vol Spikes tab; the shared
    `_load_all_snapshots()` query and all other tabs are left untouched.
 
+## Data integrity — twice-daily refresh
+
+The app currently refreshes up to twice a day. Verified against the live DB
+(2026-06-17): `prices_daily` and `snapshots_daily` are both
+`PRIMARY KEY (symbol, date)`, so a second same-day refresh **upserts** (last
+write wins) rather than appending — there is **exactly one row per
+(symbol, date)** (0 duplicate groups across the last 40 days). The trading-day
+windows below (one row = one trading day) are therefore accurate as-is.
+
+**Defensive dedup (belt-and-suspenders):** even though the PK guarantees
+uniqueness today, the period query begins with a CTE that collapses any
+`(symbol, date)` to a single row before ranking:
+
+```sql
+dedup AS (
+    SELECT symbol, date, MAX(volume) AS volume
+    FROM prices_daily
+    WHERE date <= CAST(:date AS date)
+    GROUP BY symbol, date
+)
+```
+
+All trading-day ranking and sums read from `dedup`, so the ratios stay correct
+even if the refresh schedule ever changes and a duplicate slips past the PK.
+
+> Note (out of scope): if a refresh runs *intraday*, the current day's row may
+> carry partial-session volume. This already affects today's existing spike and
+> is not introduced or changed by this feature.
+
 ## Definitions
 
-Windows are measured in **trading days** (rows in `prices_daily`), not calendar
+Windows are measured in **trading days** (rows in the deduped set), not calendar
 days, so market holidays don't distort the ratios. A per-symbol ranked CTE
-(`ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC)`) assigns each row
-a recency rank `rn` (1 = the snapshot date), and the windows are row-range sums.
+(`ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC)`) over `dedup`
+assigns each row a recency rank `rn` (1 = the snapshot date), and the windows
+are row-range sums.
 
 - **Today** (unchanged): `today_volume / avg_daily_volume_30d`.
 - **Weekly:** `Σ(volume where rn ≤ 5) / ( Σ(volume where 6 ≤ rn ≤ 70) / 13 )`
