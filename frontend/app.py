@@ -4576,10 +4576,15 @@ def render_volspike_view(snap_date):
 
     df = df[df["vol_spike"].notna() & (df["vol_spike"] > 0)].copy()
 
-    # ── Filters ─────────────────────────────────────────────────────────────
-    fc1, fc2, fc3 = st.columns([1, 1, 2])
+    # ── Filters (row 1) + sort (row 2) ───────────────────────────────────────
+    spike_options = {"Any (all)": 0.0, "1.5×+": 1.5, "2×+": 2.0, "3×+": 3.0, "5×+": 5.0}
+    near_high_options = {
+        "Any": None, "Within 5%": 0.05, "Within 10%": 0.10,
+        "Within 20%": 0.20, "Within 30%": 0.30,
+    }
+
+    fc1, fc2, fc3 = st.columns(3)
     with fc1:
-        spike_options = {"Any (all)": 0.0, "1.5×+": 1.5, "2×+": 2.0, "3×+": 3.0, "5×+": 5.0}
         min_label = st.selectbox("Min spike", list(spike_options.keys()), index=2, key="vs_min")
         min_val   = spike_options[min_label]
     with fc2:
@@ -4587,28 +4592,38 @@ def render_volspike_view(snap_date):
         sel_sector = st.multiselect("Sector", sectors, default=[], key="vs_sector",
                                     placeholder="All sectors")
     with fc3:
-        st.markdown(
-            f"<div style='font-size:11px;color:{_T['text_label']};padding-top:28px;'>"
-            "Stocks where today's volume significantly exceeds the 30-day average — "
-            "often signals unusual activity, breakouts, or news-driven moves.</div>",
-            unsafe_allow_html=True,
-        )
+        near_label = st.selectbox("52W High", list(near_high_options.keys()), index=0, key="vs_52wh")
+        near_thr   = near_high_options[near_label]
 
-    if min_val > 0:
-        df = df[df["vol_spike"] >= min_val]
-    if sel_sector:
-        df = df[df["sector"].isin(sel_sector)]
+    sc1, sc2, _sc3 = st.columns([1, 1, 2])
+    with sc1:
+        sort_label = st.selectbox("Sort by", list(VOLSPIKE_SORT_COLUMNS.keys()),
+                                  index=0, key="vs_sort_by")
+    with sc2:
+        dir_label = st.selectbox("Direction", ["Highest first", "Lowest first"],
+                                 index=0, key="vs_sort_dir")
 
-    df = df.sort_values("vol_spike", ascending=False).reset_index(drop=True)
+    st.caption(
+        "Stocks where today's volume significantly exceeds the 30-day average — "
+        "often signals unusual activity, breakouts, or news-driven moves."
+    )
+
+    sort_col  = VOLSPIKE_SORT_COLUMNS[sort_label]
+    ascending = (dir_label == "Lowest first")
+    df = _filter_sort_volspike(
+        df, min_spike=min_val, sectors=sel_sector, near_high_thr=near_thr,
+        sort_col=sort_col, ascending=ascending,
+    )
 
     total = len(df)
     if total == 0:
         st.warning("No stocks match the current filters.")
         return
 
+    _dir_word = "lowest first" if ascending else "highest first"
     st.markdown(
         f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
-        f"{total} stocks · sorted highest Vol Spike first"
+        f"{total} stocks · sorted by {sort_label}, {_dir_word}"
         f"</div>",
         unsafe_allow_html=True,
     )
