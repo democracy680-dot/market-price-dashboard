@@ -4716,7 +4716,13 @@ def render_volspike_view(snap_date):
 
     total = len(df)
     if total == 0:
-        st.warning("No stocks match the current filters.")
+        if period != "Today":
+            st.warning(
+                "No stocks match the current filters. Weekly/Monthly spikes are "
+                "typically smaller than daily spikes — try lowering **Min spike**."
+            )
+        else:
+            st.warning("No stocks match the current filters.")
         return
 
     _dir_word = "lowest first" if ascending else "highest first"
@@ -4772,7 +4778,7 @@ def render_volspike_view(snap_date):
     csv_bytes = df[csv_cols].to_csv(index=False).encode()
     _, dl_col = st.columns([5, 1])
     with dl_col:
-        st.download_button("⬇ CSV", csv_bytes, "vol_spikes.csv", "text/csv",
+        st.download_button("⬇ CSV", csv_bytes, f"vol_spikes_{period.lower()}.csv", "text/csv",
                            key="dl_vs", use_container_width=True)
 
 
