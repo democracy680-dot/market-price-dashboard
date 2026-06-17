@@ -4525,6 +4525,30 @@ VOLSPIKE_SORT_COLUMNS = {
     "P/E": "pe_ratio",
 }
 
+# Timeline options for the Vol Spikes tab: label → df column holding that period's spike.
+VOLSPIKE_TIMELINE_COLUMNS = {
+    "Today":   "vol_spike",
+    "Weekly":  "vol_spike_weekly",
+    "Monthly": "vol_spike_monthly",
+}
+
+
+def _apply_timeline(df, period):
+    """Return df with `vol_spike` set to the chosen period's column.
+
+    period ∈ {"Today", "Weekly", "Monthly"}. "Today" (or an unknown period, or a
+    missing source column) is a no-op that returns df unchanged. Otherwise the
+    chosen period's column is copied into `vol_spike` so every downstream
+    consumer (filter, sort, formatter, colouring) keeps operating on `vol_spike`.
+    NaNs are preserved. Pure (no Streamlit) for testability.
+    """
+    col = VOLSPIKE_TIMELINE_COLUMNS.get(period, "vol_spike")
+    if col == "vol_spike" or col not in df.columns:
+        return df
+    out = df.copy()
+    out["vol_spike"] = df[col]
+    return out
+
 
 def _filter_sort_volspike(df, *, min_spike=0.0, sectors=None, near_high_thr=None,
                           sort_col="vol_spike", ascending=False):
