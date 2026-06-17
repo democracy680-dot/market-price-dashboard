@@ -4511,6 +4511,42 @@ def render_technical_analysis_view(refresh_ts=None):
 # ---------------------------------------------------------------------------
 # Volume Spike screener — all stocks sorted by vol spike desc
 # ---------------------------------------------------------------------------
+
+# Sort options for the Vol Spikes tab: pretty label → underlying df column.
+VOLSPIKE_SORT_COLUMNS = {
+    "Vol Spike": "vol_spike",
+    "52W High%": "pct_from_52wh",
+    "1D%": "ret_1d",
+    "1W%": "ret_1w",
+    "30D%": "ret_30d",
+    "1Y%": "ret_365d",
+    "CMP": "cmp",
+    "MCap (Cr)": "market_cap_cr",
+    "P/E": "pe_ratio",
+}
+
+
+def _filter_sort_volspike(df, *, min_spike=0.0, sectors=None, near_high_thr=None,
+                          sort_col="vol_spike", ascending=False):
+    """Apply the Vol Spikes filters and sort. Pure (no Streamlit) for testability.
+
+    - min_spike: keep vol_spike >= min_spike when > 0
+    - sectors: keep sector in sectors when truthy
+    - near_high_thr: keep pct_from_52wh >= -near_high_thr (ratio; negative = below high)
+    - sort_col / ascending: sort with NaNs always last
+    """
+    out = df
+    if min_spike and min_spike > 0:
+        out = out[out["vol_spike"] >= min_spike]
+    if sectors:
+        out = out[out["sector"].isin(sectors)]
+    if near_high_thr is not None and "pct_from_52wh" in out.columns:
+        out = out[out["pct_from_52wh"] >= -near_high_thr]
+    if sort_col in out.columns:
+        out = out.sort_values(sort_col, ascending=ascending, na_position="last")
+    return out.reset_index(drop=True)
+
+
 _VS_COLS = {
     "symbol":        "Symbol",
     "name":          "Name",
