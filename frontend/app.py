@@ -1007,6 +1007,59 @@ def _load_all_snapshots(snap_date) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_period_vol_spikes(snap_date) -> pd.DataFrame:
+    """Weekly & monthly volume-spike ratios for all symbols on snap_date.
+
+    Period total vs trailing-3-month-average window, measured in trading days
+    (one row per (symbol, date)). A dedup CTE collapses any accidental duplicate
+    (symbol, date) before ranking, so the math stays correct even if the
+    twice-daily refresh ever produces a duplicate. Only the Vol Spikes tab calls
+    this; the shared _load_all_snapshots query is left untouched.
+    """
+    sql = text("""
+        WITH dedup AS (
+            SELECT symbol, date, MAX(volume) AS volume
+            FROM prices_daily
+            WHERE date <= CAST(:date AS date)
+              AND date >  CAST(:date AS date) - INTERVAL '400 days'
+            GROUP BY symbol, date
+        ),
+        ranked AS (
+            SELECT symbol, volume,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+            FROM dedup
+        ),
+        agg AS (
+            SELECT symbol,
+                SUM(volume) FILTER (WHERE rn <= 5)               AS wk_recent,
+                SUM(volume) FILTER (WHERE rn BETWEEN 6 AND 70)   AS wk_base_sum,
+                COUNT(*)    FILTER (WHERE rn BETWEEN 6 AND 70)   AS wk_base_days,
+                SUM(volume) FILTER (WHERE rn <= 21)              AS mo_recent,
+                SUM(volume) FILTER (WHERE rn BETWEEN 22 AND 147) AS mo_base_sum,
+                COUNT(*)    FILTER (WHERE rn BETWEEN 22 AND 147) AS mo_base_days
+            FROM ranked
+            GROUP BY symbol
+        )
+        SELECT symbol,
+            CASE WHEN wk_base_days >= 65 AND wk_base_sum > 0
+                 THEN ROUND((wk_recent / (wk_base_sum::numeric / 13))::numeric, 1)
+                 ELSE NULL END AS vol_spike_weekly,
+            CASE WHEN mo_base_days >= 126 AND mo_base_sum > 0
+                 THEN ROUND((mo_recent / (mo_base_sum::numeric / 6))::numeric, 1)
+                 ELSE NULL END AS vol_spike_monthly
+        FROM agg
+    """)
+    with measure("_load_period_vol_spikes__sql"):
+        with engine.connect() as conn:
+            df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
+
+    for c in ("vol_spike_weekly", "vol_spike_monthly"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    return df
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_index_membership() -> pd.DataFrame:
     """Load all memberships once — changes only when seeds are re-run."""
