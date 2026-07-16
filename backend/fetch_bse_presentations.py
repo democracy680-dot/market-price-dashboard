@@ -44,6 +44,8 @@ HEADERS = {
         "Chrome/124.0.0.0 Safari/537.36"
     ),
     "Referer": "https://www.bseindia.com/",
+    # BSE's scrip-master endpoint returns an HTML page unless JSON is requested
+    "Accept": "application/json, text/plain, */*",
 }
 
 # Primary: exact subcategory match. Fallback: keyword in headline.
@@ -68,16 +70,29 @@ RESULTS_KEYWORDS = [
 ]
 
 
-def fetch_scrip_master() -> dict[str, str]:
+def fetch_scrip_master(retries: int = 4) -> dict[str, str]:
     """Return {nse_symbol_upper: bse_scrip_code} for all active BSE equities.
 
     BSE scrip_id matches NSE symbol for ~99% of stocks, so we map by symbol
     rather than ISIN (which is unpopulated in our DB).
+
+    The endpoint intermittently serves an HTML page instead of JSON, so retry
+    with backoff before giving up.
     """
     log.info("Fetching BSE scrip master...")
-    resp = requests.get(BSE_SCRIP_MASTER_URL, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    data = None
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(BSE_SCRIP_MASTER_URL, headers=HEADERS, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except Exception as e:
+            if attempt == retries:
+                raise
+            wait = 2**attempt
+            log.warning(f"Scrip master attempt {attempt} failed ({e}); retrying in {wait}s")
+            time.sleep(wait)
     # API returns list directly or wrapped in a key — handle both
     items = data if isinstance(data, list) else data.get("Table", [])
     mapping = {}
@@ -161,12 +176,47 @@ def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
     return BSE_PDF_BASE + attachment
 
 
+def _get_conn(db_url: str):
+    """Open a fresh psycopg2 connection."""
+    return psycopg2.connect(db_url, connect_timeout=15)
+
+
+def _save_url(db_url: str, column: str, symbol: str, result_date, url: str):
+    """Write a single URL to earnings_calendar in its own short-lived connection."""
+    conn = _get_conn(db_url)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE earnings_calendar SET {column} = %s WHERE symbol = %s AND result_date = %s",
+                (url, symbol, result_date),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_pending(db_url: str, column: str, today: date):
+    """Fetch symbols still missing a URL for the given column."""
+    conn = _get_conn(db_url)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT ec.symbol, ec.result_date
+                FROM earnings_calendar ec
+                WHERE ec.result_date <= %s
+                  AND ec.{column} IS NULL
+                ORDER BY ec.result_date DESC
+                """,
+                (today,),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
 def main():
     db_url = os.environ["SUPABASE_DB_URL"].replace(":5432/", ":6543/")
-    conn = psycopg2.connect(db_url, connect_timeout=15)
-    conn.autocommit = False
-    cur = conn.cursor()
-
     today = date.today()
 
     # Load NSE symbol → BSE scrip code mapping
@@ -174,25 +224,13 @@ def main():
         symbol_to_scrip = fetch_scrip_master()
     except Exception as e:
         log.error(f"Could not fetch BSE scrip master: {e}. Aborting.")
-        conn.close()
         return
 
-    # Fetch all season companies missing a presentation URL
-    cur.execute(
-        """
-        SELECT ec.symbol, ec.result_date
-        FROM earnings_calendar ec
-        WHERE ec.result_date <= %s
-          AND ec.presentation_url IS NULL
-        ORDER BY ec.result_date DESC
-        """,
-        (today,),
-    )
-    rows = cur.fetchall()
-    log.info(f"Companies to check: {len(rows)}")
+    # ── Pass 1: Investor Presentations ───────────────────────────────────────
+    rows = _load_pending(db_url, "presentation_url", today)
+    log.info(f"Companies to check for presentations: {len(rows)}")
 
-    found = 0
-    skipped = 0
+    found = skipped = 0
     for symbol, result_date in rows:
         scrip_code = symbol_to_scrip.get(symbol.upper())
         if not scrip_code:
@@ -202,33 +240,22 @@ def main():
 
         pdf_url = find_presentation_url(scrip_code, result_date)
         if pdf_url:
-            cur.execute(
-                "UPDATE earnings_calendar SET presentation_url = %s WHERE symbol = %s AND result_date = %s",
-                (pdf_url, symbol, result_date),
-            )
-            log.info(f"  {symbol} ({result_date}): found → {pdf_url}")
+            _save_url(db_url, "presentation_url", symbol, result_date, pdf_url)
+            log.info(f"  {symbol} ({result_date}): presentation → {pdf_url}")
             found += 1
         else:
             log.info(f"  {symbol} ({result_date}): no presentation yet")
 
-        time.sleep(0.5)  # be polite to BSE
+        time.sleep(0.5)
 
-    # --- Fetch Financial Results PDFs ---
-    cur.execute(
-        """
-        SELECT ec.symbol, ec.result_date
-        FROM earnings_calendar ec
-        WHERE ec.result_date <= %s
-          AND ec.result_pdf_url IS NULL
-        ORDER BY ec.result_date DESC
-        """,
-        (today,),
-    )
-    result_rows = cur.fetchall()
+    not_found = len(rows) - found - skipped
+    log.info(f"Presentations — Found: {found} | Not found: {not_found} | No scrip: {skipped}")
+
+    # ── Pass 2: Financial Results PDFs ────────────────────────────────────────
+    result_rows = _load_pending(db_url, "result_pdf_url", today)
     log.info(f"Companies to check for result PDFs: {len(result_rows)}")
 
-    found_pdf = 0
-    skipped_pdf = 0
+    found_pdf = skipped_pdf = 0
     for symbol, result_date in result_rows:
         scrip_code = symbol_to_scrip.get(symbol.upper())
         if not scrip_code:
@@ -238,10 +265,7 @@ def main():
 
         pdf_url = find_result_pdf_url(scrip_code, result_date)
         if pdf_url:
-            cur.execute(
-                "UPDATE earnings_calendar SET result_pdf_url = %s WHERE symbol = %s AND result_date = %s",
-                (pdf_url, symbol, result_date),
-            )
+            _save_url(db_url, "result_pdf_url", symbol, result_date, pdf_url)
             log.info(f"  {symbol} ({result_date}): result PDF → {pdf_url}")
             found_pdf += 1
         else:
@@ -251,11 +275,6 @@ def main():
 
     not_found_pdf = len(result_rows) - found_pdf - skipped_pdf
     log.info(f"Result PDFs — Found: {found_pdf} | Not found: {not_found_pdf} | No scrip: {skipped_pdf}")
-
-    conn.commit()
-    conn.close()
-    not_found = len(rows) - found - skipped
-    log.info(f"Done. Found: {found} | Not found: {not_found} | No BSE scrip code: {skipped}")
 
 
 if __name__ == "__main__":
