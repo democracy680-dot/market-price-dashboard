@@ -2868,11 +2868,13 @@ def _color_score(val):
         return ""
 
 
-def _render_earnings_table(df: pd.DataFrame, mode: str):
+def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
     """Render an earnings results table.
 
     mode='today'  → symbol, name, score, market_cap_cr, announcement_day_return, cmp
     mode='season' → adds result_date and return_since_announcement
+    key_suffix distinguishes widget keys when the same mode renders in
+    multiple quarter sub-tabs.
     """
     disp = pd.DataFrame()
     disp["Symbol"] = df["symbol"]
@@ -2920,219 +2922,237 @@ def _render_earnings_table(df: pd.DataFrame, mode: str):
     csv_bytes = df.to_csv(index=False).encode()
     _, dl_col = st.columns([5, 1])
     with dl_col:
-        fname = "earnings_today.csv" if mode == "today" else "earnings_season.csv"
+        fname = f"earnings_{mode}{key_suffix}.csv"
         st.download_button("⬇ CSV", csv_bytes, fname, "text/csv",
-                           key=f"dl_earn_{mode}", use_container_width=True)
+                           key=f"dl_earn_{mode}{key_suffix}", use_container_width=True)
+
+
+_CURRENT_QUARTER = "Q1FY27"
+_PREV_QUARTER = "Q4FY26"
+
+
+def _render_earnings_today(snap_date, quarter):
+    try:
+        rows = engine.connect().execute(
+            text("""
+                SELECT
+                    ec.symbol,
+                    s.name,
+                    sd.market_cap_cr,
+                    sd.ret_1d  AS announcement_day_return,
+                    sd.cmp,
+                    ROUND(
+                        COALESCE(mt.criteria_count, 0) / 8.0 * 25
+                        + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
+                        + CASE WHEN sd.cmp > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                        + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
+                        + CASE
+                            WHEN COALESCE(sd.ret_1d, 0) >= 0.10 THEN 20
+                            WHEN COALESCE(sd.ret_1d, 0) >= 0.05 THEN 15
+                            WHEN COALESCE(sd.ret_1d, 0) >= 0.02 THEN 10
+                            WHEN COALESCE(sd.ret_1d, 0) >  0    THEN 5
+                            ELSE 0
+                          END
+                        + CASE
+                            WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
+                            WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
+                            WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
+                            ELSE 0
+                          END
+                        + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
+                               WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
+                               WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
+                        + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
+                               WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
+                               WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                        + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
+                               WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
+                               WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                    , 0) AS score,
+                    ec.presentation_url,
+                    ec.result_pdf_url
+                FROM earnings_calendar ec
+                JOIN stocks s ON ec.symbol = s.symbol
+                LEFT JOIN snapshots_daily sd
+                    ON ec.symbol = sd.symbol AND sd.date = ec.result_date
+                LEFT JOIN LATERAL (
+                    SELECT criteria_count, rs_rank_12m
+                    FROM minervini_template_daily
+                    WHERE symbol = ec.symbol
+                    ORDER BY date DESC LIMIT 1
+                ) mt ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT sma_200, sma_200_slope, volume_ratio
+                    FROM technicals_daily
+                    WHERE symbol = ec.symbol
+                    ORDER BY date DESC LIMIT 1
+                ) td ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT roe, revenue_growth_yoy, pat_growth_yoy
+                    FROM financials_snapshots
+                    WHERE symbol = ec.symbol
+                    ORDER BY fetched_at DESC LIMIT 1
+                ) fs ON TRUE
+                WHERE ec.result_date = :today
+                  AND ec.quarter = :quarter
+                ORDER BY score DESC NULLS LAST
+            """),
+            {"today": snap_date, "quarter": quarter},
+        ).fetchall()
+    except Exception as e:
+        st.error(f"Could not load today's earnings data: {e}")
+        return
+    df_today = pd.DataFrame(rows, columns=["symbol", "name", "market_cap_cr",
+                                           "announcement_day_return", "cmp", "score",
+                                           "presentation_url", "result_pdf_url"])
+    if df_today.empty:
+        st.info(
+            f"No quarterly result announcements scheduled for "
+            f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}."
+        )
+    else:
+        n = len(df_today)
+        announced = df_today["announcement_day_return"].notna().sum()
+        st.markdown(
+            f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
+            f"{n} companies scheduled · {announced} with price data · "
+            f"sorted by Post-Result Strength Score ↓</div>",
+            unsafe_allow_html=True,
+        )
+        _render_earnings_table(df_today, mode="today", key_suffix=f"_{quarter}")
+
+
+def _render_earnings_season(snap_date, quarter):
+    try:
+        rows = engine.connect().execute(
+            text("""
+                SELECT
+                    ec.symbol,
+                    s.name,
+                    ec.result_date,
+                    COALESCE(sd_ann.market_cap_cr, next_td.market_cap_cr) AS market_cap_cr,
+                    COALESCE(sd_ann.ret_1d, next_td.ret_1d) AS announcement_day_return,
+                    CASE
+                        WHEN sd_ann.cmp > 0 AND latest.cmp > 0
+                        THEN ROUND(
+                            CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
+                        )
+                        WHEN COALESCE(prev_td.cmp, 0) > 0 AND latest.cmp > 0
+                        THEN ROUND(
+                            CAST((latest.cmp - prev_td.cmp) / prev_td.cmp AS NUMERIC), 6
+                        )
+                        ELSE NULL
+                    END AS return_since_announcement,
+                    latest.ret_1d AS today_return,
+                    ROUND(
+                        COALESCE(mt.criteria_count, 0) / 8.0 * 25
+                        + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
+                        + CASE WHEN COALESCE(sd_ann.cmp, next_td.cmp) > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                        + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
+                        + CASE
+                            WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.10 THEN 20
+                            WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.05 THEN 15
+                            WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.02 THEN 10
+                            WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >  0    THEN 5
+                            ELSE 0
+                          END
+                        + CASE
+                            WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
+                            WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
+                            WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
+                            ELSE 0
+                          END
+                        + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
+                               WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
+                               WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
+                        + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
+                               WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
+                               WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                        + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
+                               WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
+                               WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
+                    , 0) AS score,
+                    ec.presentation_url,
+                    ec.result_pdf_url
+                FROM earnings_calendar ec
+                JOIN stocks s ON ec.symbol = s.symbol
+                LEFT JOIN snapshots_daily sd_ann
+                    ON ec.symbol = sd_ann.symbol AND sd_ann.date = ec.result_date
+                LEFT JOIN LATERAL (
+                    SELECT cmp
+                    FROM snapshots_daily
+                    WHERE symbol = ec.symbol AND date < ec.result_date
+                    ORDER BY date DESC LIMIT 1
+                ) prev_td ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT ret_1d, market_cap_cr, cmp
+                    FROM snapshots_daily
+                    WHERE symbol = ec.symbol AND date > ec.result_date
+                    ORDER BY date ASC LIMIT 1
+                ) next_td ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT cmp, ret_1d FROM snapshots_daily
+                    WHERE symbol = ec.symbol
+                    ORDER BY date DESC LIMIT 1
+                ) latest ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT criteria_count, rs_rank_12m
+                    FROM minervini_template_daily
+                    WHERE symbol = ec.symbol
+                    ORDER BY date DESC LIMIT 1
+                ) mt ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT sma_200, sma_200_slope, volume_ratio
+                    FROM technicals_daily
+                    WHERE symbol = ec.symbol
+                    ORDER BY date DESC LIMIT 1
+                ) td ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT roe, revenue_growth_yoy, pat_growth_yoy
+                    FROM financials_snapshots
+                    WHERE symbol = ec.symbol
+                    ORDER BY fetched_at DESC LIMIT 1
+                ) fs ON TRUE
+                WHERE ec.result_date <= :today
+                  AND ec.quarter = :quarter
+                ORDER BY score DESC NULLS LAST, ec.result_date DESC
+            """),
+            {"today": snap_date, "quarter": quarter},
+        ).fetchall()
+    except Exception as e:
+        st.error(f"Could not load season earnings data: {e}")
+        return
+    df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
+                                             "announcement_day_return",
+                                             "return_since_announcement", "today_return", "score",
+                                             "presentation_url", "result_pdf_url"])
+    if df_season.empty:
+        st.info("No results announced yet this season.")
+    else:
+        n = len(df_season)
+        dates = df_season["result_date"].nunique()
+        st.markdown(
+            f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
+            f"{n} companies across {dates} result dates · "
+            f"sorted by Post-Result Strength Score ↓</div>",
+            unsafe_allow_html=True,
+        )
+        _render_earnings_table(df_season, mode="season", key_suffix=f"_{quarter}")
 
 
 @st.fragment
 def _frag_quarterly_results(snap_date):
-    sub_today, sub_season = st.tabs(["Today's Results", "Season to Date"])
+    tab_cur, tab_prev = st.tabs([_CURRENT_QUARTER, _PREV_QUARTER])
 
-    with sub_today:
-        try:
-            rows = engine.connect().execute(
-                text("""
-                    SELECT
-                        ec.symbol,
-                        s.name,
-                        sd.market_cap_cr,
-                        sd.ret_1d  AS announcement_day_return,
-                        sd.cmp,
-                        ROUND(
-                            COALESCE(mt.criteria_count, 0) / 8.0 * 25
-                            + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
-                            + CASE WHEN sd.cmp > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
-                            + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
-                            + CASE
-                                WHEN COALESCE(sd.ret_1d, 0) >= 0.10 THEN 20
-                                WHEN COALESCE(sd.ret_1d, 0) >= 0.05 THEN 15
-                                WHEN COALESCE(sd.ret_1d, 0) >= 0.02 THEN 10
-                                WHEN COALESCE(sd.ret_1d, 0) >  0    THEN 5
-                                ELSE 0
-                              END
-                            + CASE
-                                WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
-                                WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
-                                WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
-                                ELSE 0
-                              END
-                            + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
-                                   WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
-                                   WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
-                            + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
-                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
-                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                            + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
-                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
-                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                        , 0) AS score,
-                        ec.presentation_url,
-                        ec.result_pdf_url
-                    FROM earnings_calendar ec
-                    JOIN stocks s ON ec.symbol = s.symbol
-                    LEFT JOIN snapshots_daily sd
-                        ON ec.symbol = sd.symbol AND sd.date = ec.result_date
-                    LEFT JOIN LATERAL (
-                        SELECT criteria_count, rs_rank_12m
-                        FROM minervini_template_daily
-                        WHERE symbol = ec.symbol
-                        ORDER BY date DESC LIMIT 1
-                    ) mt ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT sma_200, sma_200_slope, volume_ratio
-                        FROM technicals_daily
-                        WHERE symbol = ec.symbol
-                        ORDER BY date DESC LIMIT 1
-                    ) td ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT roe, revenue_growth_yoy, pat_growth_yoy
-                        FROM financials_snapshots
-                        WHERE symbol = ec.symbol
-                        ORDER BY fetched_at DESC LIMIT 1
-                    ) fs ON TRUE
-                    WHERE ec.result_date = :today
-                    ORDER BY score DESC NULLS LAST
-                """),
-                {"today": snap_date},
-            ).fetchall()
-        except Exception as e:
-            st.error(f"Could not load today's earnings data: {e}")
-            return
-        df_today = pd.DataFrame(rows, columns=["symbol", "name", "market_cap_cr",
-                                               "announcement_day_return", "cmp", "score",
-                                               "presentation_url", "result_pdf_url"])
-        if df_today.empty:
-            st.info(
-                f"No quarterly result announcements scheduled for "
-                f"{pd.Timestamp(snap_date).strftime('%d %b %Y')}."
-            )
-        else:
-            n = len(df_today)
-            announced = df_today["announcement_day_return"].notna().sum()
-            st.markdown(
-                f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
-                f"{n} companies scheduled · {announced} with price data · "
-                f"sorted by Post-Result Strength Score ↓</div>",
-                unsafe_allow_html=True,
-            )
-            _render_earnings_table(df_today, mode="today")
+    with tab_cur:
+        sub_today, sub_season = st.tabs(["Today's Results", "Season to Date"])
+        with sub_today:
+            _render_earnings_today(snap_date, _CURRENT_QUARTER)
+        with sub_season:
+            _render_earnings_season(snap_date, _CURRENT_QUARTER)
 
-    with sub_season:
-        try:
-            rows = engine.connect().execute(
-                text("""
-                    SELECT
-                        ec.symbol,
-                        s.name,
-                        ec.result_date,
-                        COALESCE(sd_ann.market_cap_cr, next_td.market_cap_cr) AS market_cap_cr,
-                        COALESCE(sd_ann.ret_1d, next_td.ret_1d) AS announcement_day_return,
-                        CASE
-                            WHEN sd_ann.cmp > 0 AND latest.cmp > 0
-                            THEN ROUND(
-                                CAST((latest.cmp - sd_ann.cmp) / sd_ann.cmp AS NUMERIC), 6
-                            )
-                            WHEN COALESCE(prev_td.cmp, 0) > 0 AND latest.cmp > 0
-                            THEN ROUND(
-                                CAST((latest.cmp - prev_td.cmp) / prev_td.cmp AS NUMERIC), 6
-                            )
-                            ELSE NULL
-                        END AS return_since_announcement,
-                        latest.ret_1d AS today_return,
-                        ROUND(
-                            COALESCE(mt.criteria_count, 0) / 8.0 * 25
-                            + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
-                            + CASE WHEN COALESCE(sd_ann.cmp, next_td.cmp) > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
-                            + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
-                            + CASE
-                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.10 THEN 20
-                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.05 THEN 15
-                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.02 THEN 10
-                                WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >  0    THEN 5
-                                ELSE 0
-                              END
-                            + CASE
-                                WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
-                                WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
-                                WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
-                                ELSE 0
-                              END
-                            + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
-                                   WHEN COALESCE(fs.roe, 0) >= 0.15 THEN 6
-                                   WHEN COALESCE(fs.roe, 0) >= 0.10 THEN 4 ELSE 0 END
-                            + CASE WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.20 THEN 6
-                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.10 THEN 4
-                                   WHEN COALESCE(fs.revenue_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                            + CASE WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.20 THEN 6
-                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
-                                   WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
-                        , 0) AS score,
-                        ec.presentation_url,
-                        ec.result_pdf_url
-                    FROM earnings_calendar ec
-                    JOIN stocks s ON ec.symbol = s.symbol
-                    LEFT JOIN snapshots_daily sd_ann
-                        ON ec.symbol = sd_ann.symbol AND sd_ann.date = ec.result_date
-                    LEFT JOIN LATERAL (
-                        SELECT cmp
-                        FROM snapshots_daily
-                        WHERE symbol = ec.symbol AND date < ec.result_date
-                        ORDER BY date DESC LIMIT 1
-                    ) prev_td ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT ret_1d, market_cap_cr, cmp
-                        FROM snapshots_daily
-                        WHERE symbol = ec.symbol AND date > ec.result_date
-                        ORDER BY date ASC LIMIT 1
-                    ) next_td ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT cmp, ret_1d FROM snapshots_daily
-                        WHERE symbol = ec.symbol
-                        ORDER BY date DESC LIMIT 1
-                    ) latest ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT criteria_count, rs_rank_12m
-                        FROM minervini_template_daily
-                        WHERE symbol = ec.symbol
-                        ORDER BY date DESC LIMIT 1
-                    ) mt ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT sma_200, sma_200_slope, volume_ratio
-                        FROM technicals_daily
-                        WHERE symbol = ec.symbol
-                        ORDER BY date DESC LIMIT 1
-                    ) td ON TRUE
-                    LEFT JOIN LATERAL (
-                        SELECT roe, revenue_growth_yoy, pat_growth_yoy
-                        FROM financials_snapshots
-                        WHERE symbol = ec.symbol
-                        ORDER BY fetched_at DESC LIMIT 1
-                    ) fs ON TRUE
-                    WHERE ec.result_date <= :today
-                    ORDER BY score DESC NULLS LAST, ec.result_date DESC
-                """),
-                {"today": snap_date},
-            ).fetchall()
-        except Exception as e:
-            st.error(f"Could not load season earnings data: {e}")
-            return
-        df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
-                                                 "announcement_day_return",
-                                                 "return_since_announcement", "today_return", "score",
-                                                 "presentation_url", "result_pdf_url"])
-        if df_season.empty:
-            st.info("No results announced yet this season.")
-        else:
-            n = len(df_season)
-            dates = df_season["result_date"].nunique()
-            st.markdown(
-                f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
-                f"{n} companies across {dates} result dates · "
-                f"sorted by Post-Result Strength Score ↓</div>",
-                unsafe_allow_html=True,
-            )
-            _render_earnings_table(df_season, mode="season")
+    with tab_prev:
+        _render_earnings_season(snap_date, _PREV_QUARTER)
 
 
 @st.fragment
@@ -4851,7 +4871,7 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_volspike, 
     "Sectors",
     "Sector Performance",
     "Themes",
-    "📅 Quaterly Results",
+    "📅 Quarterly Results",
     "Vol Spikes",
     "🔬 Technical Analysis",
     "📡 Scanner",
@@ -4913,8 +4933,9 @@ _TAB_DESCRIPTIONS = {
     },
     "quarterly_results": {
         "what": [
+            "**Quarter Tabs** — Q1FY27 tracks the live results season (auto-discovered daily from BSE filings); Q4FY26 is the completed season's archive",
             "**Today's Results** — companies announcing quarterly results today, sorted by their 1-day return on the announcement date",
-            "**Season to Date** — all companies that have announced results so far this season, showing announcement-day return and return-since-announcement",
+            "**Season to Date** — all companies that have announced results so far in the quarter, showing announcement-day return and return-since-announcement",
         ],
         "how": "Track how stocks react the moment quarterly results hit. The announcement-day return tells you whether the market liked the numbers — a big positive move signals a beat; a sharp fall signals disappointment. The return-since-announcement shows the subsequent drift: stocks that keep rising after results often reflect genuine fundamental improvement, while those that fade may have been a one-day knee-jerk. Sort by either column to quickly identify the strongest and weakest earnings reactions of the season.",
     },
@@ -5039,7 +5060,7 @@ with tab_themes:
 
 # ── Tab 5: Quarterly Results ─────────────────────────────────────────────────
 with tab_earnings:
-    _page_header("Quaterly Results", selected_date, desc_key="quarterly_results")
+    _page_header("Quarterly Results", selected_date, desc_key="quarterly_results")
     _frag_quarterly_results(selected_date)
 
 # ── Tab 6: Vol Spikes ────────────────────────────────────────────────────────
