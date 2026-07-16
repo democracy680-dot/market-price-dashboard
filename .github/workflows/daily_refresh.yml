@@ -36,6 +36,13 @@ jobs:
         working-directory: backend
         run: python daily_refresh.py
 
+      - name: Discover BSE result announcements
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        working-directory: backend
+        run: python discover_bse_results.py
+        continue-on-error: true
+
       - name: Fetch BSE investor presentations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
