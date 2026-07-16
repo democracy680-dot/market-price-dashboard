@@ -2868,6 +2868,23 @@ def _color_score(val):
         return ""
 
 
+def _reaction_badge(ann_ret, vol_ratio, drift):
+    """Classify the post-result reaction.
+
+    ann_ret: announcement-day return; vol_ratio: announcement-day volume vs
+    average; drift: return since the announcement-day close.
+    """
+    if pd.isna(ann_ret):
+        return "—"
+    if ann_ret <= -0.03:
+        return "🔴 Rejected"
+    if ann_ret >= 0.02 and pd.notna(drift) and drift < 0:
+        return "🟡 Faded"
+    if ann_ret >= 0.04 and pd.notna(vol_ratio) and vol_ratio >= 2:
+        return "🟢 Strong"
+    return "—"
+
+
 def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
     """Render an earnings results table.
 
@@ -2882,6 +2899,8 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
     disp["Score"] = pd.to_numeric(df["score"], errors="coerce").map(
         lambda x: int(x) if pd.notna(x) else "—"
     )
+    if mode == "season" and "reaction" in df.columns:
+        disp["Reaction"] = df["reaction"]
     disp["MCap (Cr)"] = df["market_cap_cr"].map(_fmt_mcap)
     if mode == "season":
         disp["Result Date"] = pd.to_datetime(df["result_date"]).dt.strftime("%d %b %Y")
@@ -2889,7 +2908,15 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
     disp["Ann. Day Return"] = pd.to_numeric(df["announcement_day_return"], errors="coerce") * 100
     if mode == "season":
         disp["Return Since Ann."] = pd.to_numeric(df["return_since_announcement"], errors="coerce") * 100
+        if "excess_return" in df.columns:
+            disp["Excess Ret"] = pd.to_numeric(df["excess_return"], errors="coerce") * 100
         disp["Today's Return"] = pd.to_numeric(df["today_return"], errors="coerce") * 100
+        if "pct_from_52w_high" in df.columns:
+            disp["% off 52wH"] = pd.to_numeric(df["pct_from_52w_high"], errors="coerce")
+        if "gap_held" in df.columns:
+            disp["Gap Held"] = df["gap_held"].map({True: "✓", False: "✗"}).fillna("—")
+        if "repeat_strong" in df.columns:
+            disp["Repeat"] = df["repeat_strong"].map(lambda v: "⭐" if v is True else "")
     if "presentation_url" in df.columns:
         disp["PPT"] = df["presentation_url"].fillna("")
     if "result_pdf_url" in df.columns:
@@ -2906,6 +2933,8 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
     if mode == "season" and "Return Since Ann." in disp.columns:
         styled = styled.map(_color_return, subset=["Return Since Ann."])
         styled = styled.map(_color_return, subset=["Today's Return"])
+    if "Excess Ret" in disp.columns:
+        styled = styled.map(_color_return, subset=["Excess Ret"])
 
     col_cfg = {
         "PPT": st.column_config.LinkColumn("PPT", display_text="📊"),
@@ -2914,7 +2943,17 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
         "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
         "Return Since Ann.": st.column_config.NumberColumn("Return Since Ann.", format="%.2f%%"),
+        "Excess Ret": st.column_config.NumberColumn(
+            "Excess Ret", format="%.2f%%",
+            help="Return since announcement minus Nifty 50 over the same span"),
         "Today's Return": st.column_config.NumberColumn("Today's Return", format="%.2f%%"),
+        "% off 52wH": st.column_config.NumberColumn(
+            "% off 52wH", format="%.1f%%",
+            help="Distance below 52-week high at announcement"),
+        "Gap Held": st.column_config.TextColumn(
+            "Gap Held", help="No later session undercut the announcement-day low"),
+        "Repeat": st.column_config.TextColumn(
+            "Repeat", help="Also reacted ≥2% to the previous quarter's result"),
     }
     st.dataframe(styled, use_container_width=True, hide_index=True, height=600,
                  column_config=col_cfg)
@@ -2931,10 +2970,17 @@ _CURRENT_QUARTER = "Q1FY27"
 _PREV_QUARTER = "Q4FY26"
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _q_earnings(sql: str, params: dict):
+    """Run an earnings query with a short cache so filter widgets rerun cheaply."""
+    with engine.connect() as conn:
+        return [tuple(r) for r in conn.execute(text(sql), params).fetchall()]
+
+
 def _render_earnings_today(snap_date, quarter):
     try:
-        rows = engine.connect().execute(
-            text("""
+        rows = _q_earnings(
+            """
                 SELECT
                     ec.symbol,
                     s.name,
@@ -2984,8 +3030,8 @@ def _render_earnings_today(snap_date, quarter):
                 LEFT JOIN LATERAL (
                     SELECT sma_200, sma_200_slope, volume_ratio
                     FROM technicals_daily
-                    WHERE symbol = ec.symbol
-                    ORDER BY date DESC LIMIT 1
+                    WHERE symbol = ec.symbol AND date >= ec.result_date
+                    ORDER BY date ASC LIMIT 1
                 ) td ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT roe, revenue_growth_yoy, pat_growth_yoy
@@ -2996,9 +3042,9 @@ def _render_earnings_today(snap_date, quarter):
                 WHERE ec.result_date = :today
                   AND ec.quarter = :quarter
                 ORDER BY score DESC NULLS LAST
-            """),
+            """,
             {"today": snap_date, "quarter": quarter},
-        ).fetchall()
+        )
     except Exception as e:
         st.error(f"Could not load today's earnings data: {e}")
         return
@@ -3022,13 +3068,28 @@ def _render_earnings_today(snap_date, quarter):
         _render_earnings_table(df_today, mode="today", key_suffix=f"_{quarter}")
 
 
-def _render_earnings_season(snap_date, quarter):
+def _render_earnings_season(snap_date, quarter, prev_quarter=None):
+    # Repeat-performer lateral only exists when a previous quarter is in the DB
+    prev_join = """
+                LEFT JOIN LATERAL (
+                    SELECT sd2.ret_1d AS prev_ann_ret
+                    FROM earnings_calendar ec2
+                    LEFT JOIN snapshots_daily sd2
+                        ON sd2.symbol = ec2.symbol AND sd2.date = ec2.result_date
+                    WHERE ec2.symbol = ec.symbol AND ec2.quarter = :prev_quarter
+                    ORDER BY ec2.result_date DESC LIMIT 1
+                ) prevq ON TRUE""" if prev_quarter else ""
+    prev_col = "prevq.prev_ann_ret" if prev_quarter else "NULL AS prev_ann_ret"
+    params = {"today": snap_date, "quarter": quarter}
+    if prev_quarter:
+        params["prev_quarter"] = prev_quarter
     try:
-        rows = engine.connect().execute(
-            text("""
+        rows = _q_earnings(
+            f"""
                 SELECT
                     ec.symbol,
                     s.name,
+                    s.sector,
                     ec.result_date,
                     COALESCE(sd_ann.market_cap_cr, next_td.market_cap_cr) AS market_cap_cr,
                     COALESCE(sd_ann.ret_1d, next_td.ret_1d) AS announcement_day_return,
@@ -3043,12 +3104,19 @@ def _render_earnings_season(snap_date, quarter):
                         )
                         ELSE NULL
                     END AS return_since_announcement,
+                    CASE
+                        WHEN nifty_ann.close > 0 AND nifty_latest.close > 0
+                        THEN ROUND(
+                            CAST((nifty_latest.close - nifty_ann.close) / nifty_ann.close AS NUMERIC), 6
+                        )
+                        ELSE NULL
+                    END AS nifty_return_since,
                     latest.ret_1d AS today_return,
                     ROUND(
                         COALESCE(mt.criteria_count, 0) / 8.0 * 25
                         + COALESCE(mt.rs_rank_12m, 0) / 99.0 * 15
-                        + CASE WHEN COALESCE(sd_ann.cmp, next_td.cmp) > COALESCE(td.sma_200, 0) AND td.sma_200 IS NOT NULL THEN 5 ELSE 0 END
-                        + CASE WHEN COALESCE(td.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
+                        + CASE WHEN COALESCE(sd_ann.cmp, next_td.cmp) > COALESCE(td_ann.sma_200, 0) AND td_ann.sma_200 IS NOT NULL THEN 5 ELSE 0 END
+                        + CASE WHEN COALESCE(td_ann.sma_200_slope, 0) > 0 THEN 5 ELSE 0 END
                         + CASE
                             WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.10 THEN 20
                             WHEN COALESCE(sd_ann.ret_1d, next_td.ret_1d, 0) >= 0.05 THEN 15
@@ -3057,9 +3125,9 @@ def _render_earnings_season(snap_date, quarter):
                             ELSE 0
                           END
                         + CASE
-                            WHEN COALESCE(td.volume_ratio, 0) >= 3.0 THEN 10
-                            WHEN COALESCE(td.volume_ratio, 0) >= 2.0 THEN 7
-                            WHEN COALESCE(td.volume_ratio, 0) >= 1.5 THEN 4
+                            WHEN COALESCE(td_ann.volume_ratio, 0) >= 3.0 THEN 10
+                            WHEN COALESCE(td_ann.volume_ratio, 0) >= 2.0 THEN 7
+                            WHEN COALESCE(td_ann.volume_ratio, 0) >= 1.5 THEN 4
                             ELSE 0
                           END
                         + CASE WHEN COALESCE(fs.roe, 0) >= 0.20 THEN 8
@@ -3072,6 +3140,14 @@ def _render_earnings_season(snap_date, quarter):
                                WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.10 THEN 4
                                WHEN COALESCE(fs.pat_growth_yoy, 0) >= 0.05 THEN 2 ELSE 0 END
                     , 0) AS score,
+                    td_ann.volume_ratio AS volume_ratio_ann,
+                    mt_ann.pct_from_52w_high,
+                    CASE
+                        WHEN ann_px.low IS NULL OR low_since.min_low IS NULL THEN NULL
+                        WHEN low_since.min_low >= ann_px.low THEN TRUE
+                        ELSE FALSE
+                    END AS gap_held,
+                    {prev_col},
                     ec.presentation_url,
                     ec.result_pdf_url
                 FROM earnings_calendar ec
@@ -3104,40 +3180,132 @@ def _render_earnings_season(snap_date, quarter):
                 LEFT JOIN LATERAL (
                     SELECT sma_200, sma_200_slope, volume_ratio
                     FROM technicals_daily
-                    WHERE symbol = ec.symbol
+                    WHERE symbol = ec.symbol AND date >= ec.result_date
+                    ORDER BY date ASC LIMIT 1
+                ) td_ann ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT pct_from_52w_high
+                    FROM minervini_template_daily
+                    WHERE symbol = ec.symbol AND date >= ec.result_date
+                    ORDER BY date ASC LIMIT 1
+                ) mt_ann ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT date, low
+                    FROM prices_daily
+                    WHERE symbol = ec.symbol AND date >= ec.result_date
+                    ORDER BY date ASC LIMIT 1
+                ) ann_px ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT MIN(low) AS min_low
+                    FROM prices_daily
+                    WHERE symbol = ec.symbol AND date > ann_px.date
+                ) low_since ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT close
+                    FROM prices_daily
+                    WHERE symbol = '^NSEI' AND date >= ec.result_date
+                    ORDER BY date ASC LIMIT 1
+                ) nifty_ann ON TRUE
+                LEFT JOIN LATERAL (
+                    SELECT close
+                    FROM prices_daily
+                    WHERE symbol = '^NSEI'
                     ORDER BY date DESC LIMIT 1
-                ) td ON TRUE
+                ) nifty_latest ON TRUE
                 LEFT JOIN LATERAL (
                     SELECT roe, revenue_growth_yoy, pat_growth_yoy
                     FROM financials_snapshots
                     WHERE symbol = ec.symbol
                     ORDER BY fetched_at DESC LIMIT 1
                 ) fs ON TRUE
+                {prev_join}
                 WHERE ec.result_date <= :today
                   AND ec.quarter = :quarter
                 ORDER BY score DESC NULLS LAST, ec.result_date DESC
-            """),
-            {"today": snap_date, "quarter": quarter},
-        ).fetchall()
+            """,
+            params,
+        )
     except Exception as e:
         st.error(f"Could not load season earnings data: {e}")
         return
-    df_season = pd.DataFrame(rows, columns=["symbol", "name", "result_date", "market_cap_cr",
-                                             "announcement_day_return",
-                                             "return_since_announcement", "today_return", "score",
+    df_season = pd.DataFrame(rows, columns=["symbol", "name", "sector", "result_date",
+                                             "market_cap_cr", "announcement_day_return",
+                                             "return_since_announcement", "nifty_return_since",
+                                             "today_return", "score", "volume_ratio_ann",
+                                             "pct_from_52w_high", "gap_held", "prev_ann_ret",
                                              "presentation_url", "result_pdf_url"])
     if df_season.empty:
         st.info("No results announced yet this season.")
-    else:
-        n = len(df_season)
-        dates = df_season["result_date"].nunique()
-        st.markdown(
-            f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
-            f"{n} companies across {dates} result dates · "
-            f"sorted by Post-Result Strength Score ↓</div>",
-            unsafe_allow_html=True,
+        return
+
+    ann = pd.to_numeric(df_season["announcement_day_return"], errors="coerce")
+    since = pd.to_numeric(df_season["return_since_announcement"], errors="coerce")
+    nifty = pd.to_numeric(df_season["nifty_return_since"], errors="coerce")
+    vol = pd.to_numeric(df_season["volume_ratio_ann"], errors="coerce")
+    df_season["excess_return"] = since - nifty
+    df_season["reaction"] = [
+        _reaction_badge(a, v, s) for a, v, s in zip(ann, vol, since)
+    ]
+    if prev_quarter:
+        df_season["repeat_strong"] = (
+            pd.to_numeric(df_season["prev_ann_ret"], errors="coerce") >= 0.02
         )
-        _render_earnings_table(df_season, mode="season", key_suffix=f"_{quarter}")
+
+    with st.expander("📊 Sector season summary", expanded=False):
+        g = pd.DataFrame({
+            "Sector": df_season["sector"].fillna("—"),
+            "ann": ann,
+            "since": since,
+        })
+        summ = g.groupby("Sector").agg(
+            Results=("ann", "size"),
+            Positive=("ann", lambda x: int((x > 0).sum())),
+            AvgAnn=("ann", "mean"),
+            AvgSince=("since", "mean"),
+        ).reset_index()
+        summ["% Positive"] = (100 * summ["Positive"] / summ["Results"]).round(0)
+        summ["Avg Ann Ret %"] = (summ["AvgAnn"] * 100).round(2)
+        summ["Avg Since Ann %"] = (summ["AvgSince"] * 100).round(2)
+        summ = summ.sort_values("Avg Ann Ret %", ascending=False)
+        st.dataframe(
+            summ[["Sector", "Results", "% Positive", "Avg Ann Ret %", "Avg Since Ann %"]],
+            hide_index=True, use_container_width=True,
+            height=min(38 * len(summ) + 40, 300),
+        )
+
+    fc1, fc2, fc3, fc4 = st.columns([1.1, 1.7, 1.3, 1.0])
+    min_mcap = fc1.number_input("Min MCap (Cr)", min_value=0, value=0, step=1000,
+                                key=f"f_mcap_{quarter}")
+    sector_opts = sorted(df_season["sector"].dropna().unique().tolist())
+    sel_sectors = fc2.multiselect("Sectors", sector_opts, key=f"f_sect_{quarter}",
+                                  placeholder="All sectors")
+    min_score = fc3.slider("Min Score", 0, 100, 0, key=f"f_score_{quarter}")
+    pos_only = fc4.checkbox("Positive only", key=f"f_pos_{quarter}",
+                            help="Only positive announcement-day reactions")
+
+    view = df_season
+    if min_mcap > 0:
+        view = view[pd.to_numeric(view["market_cap_cr"], errors="coerce").fillna(0) >= min_mcap]
+    if sel_sectors:
+        view = view[view["sector"].isin(sel_sectors)]
+    if min_score > 0:
+        view = view[pd.to_numeric(view["score"], errors="coerce").fillna(0) >= min_score]
+    if pos_only:
+        view = view[pd.to_numeric(view["announcement_day_return"], errors="coerce") > 0]
+
+    if view.empty:
+        st.info("No results match the current filters.")
+        return
+    n, total = len(view), len(df_season)
+    dates = view["result_date"].nunique()
+    shown = f"{n} of {total}" if n < total else f"{n}"
+    st.markdown(
+        f"<div style='font-size:11.5px;color:{_T['text_soft']};margin:4px 0 8px;'>"
+        f"{shown} companies across {dates} result dates · "
+        f"sorted by Post-Result Strength Score ↓</div>",
+        unsafe_allow_html=True,
+    )
+    _render_earnings_table(view, mode="season", key_suffix=f"_{quarter}")
 
 
 @st.fragment
@@ -3149,7 +3317,8 @@ def _frag_quarterly_results(snap_date):
         with sub_today:
             _render_earnings_today(snap_date, _CURRENT_QUARTER)
         with sub_season:
-            _render_earnings_season(snap_date, _CURRENT_QUARTER)
+            _render_earnings_season(snap_date, _CURRENT_QUARTER,
+                                    prev_quarter=_PREV_QUARTER)
 
     with tab_prev:
         _render_earnings_season(snap_date, _PREV_QUARTER)
@@ -4935,7 +5104,8 @@ _TAB_DESCRIPTIONS = {
         "what": [
             "**Quarter Tabs** — Q1FY27 tracks the live results season (auto-discovered daily from BSE filings); Q4FY26 is the completed season's archive",
             "**Today's Results** — companies announcing quarterly results today, sorted by their 1-day return on the announcement date",
-            "**Season to Date** — all companies that have announced results so far in the quarter, showing announcement-day return and return-since-announcement",
+            "**Season to Date** — all companies that have announced results so far in the quarter, with reaction badges (🟢 Strong / 🟡 Faded / 🔴 Rejected), excess return vs Nifty, distance from 52-week high, gap-held flag, and repeat-performer stars",
+            "**Filters** — narrow the season table by market cap, sector, minimum score, or positive reactions only; sector season summary shows which sectors the market is rewarding",
         ],
         "how": "Track how stocks react the moment quarterly results hit. The announcement-day return tells you whether the market liked the numbers — a big positive move signals a beat; a sharp fall signals disappointment. The return-since-announcement shows the subsequent drift: stocks that keep rising after results often reflect genuine fundamental improvement, while those that fade may have been a one-day knee-jerk. Sort by either column to quickly identify the strongest and weakest earnings reactions of the season.",
     },
