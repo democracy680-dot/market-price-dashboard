@@ -106,6 +106,8 @@ st.markdown(f"""<style>:root {{
     --bg-card-start:     {"#0f1729" if _dark else "#ffffff"};
     --bg-card-end:       {"#111827" if _dark else "#f0f4f8"};
     --bg-accent:         {"#1e3a5f" if _dark else "#dbeafe"};
+    --bg-track:          {"#0a1120" if _dark else "#eef2f8"};
+    --accent-glow:       {"rgba(59,130,246,0.35)" if _dark else "rgba(37,99,235,0.22)"};
     --border:            {"#1a2236" if _dark else "#cbd5e1"};
     --border-tab:        {"#1e2d45" if _dark else "#e2e8f0"};
     --border-accent:     {"#2d5a9e" if _dark else "#3b82f6"};
@@ -163,25 +165,32 @@ st.markdown("""
         font-size: 11px;
     }
 
-    /* ── Tabs ── */
+    /* ── Tabs — Segmented Track (T3) ── */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 4px;
-        background: transparent;
-        border-bottom: 1px solid var(--border-tab);
-        padding: 0 0 8px 0;
-        align-items: flex-end;
+        gap: 3px;
+        background: var(--bg-track);
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        padding: 4px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    /* Hide BaseWeb's sliding ink bar + bottom border — the raised card is the indicator now */
+    .stTabs [data-baseweb="tab-highlight"],
+    .stTabs [data-baseweb="tab-border"] {
+        display: none !important;
     }
     .stTabs [data-baseweb="tab"] {
-        padding: 7px 16px;
-        font-size: 11.5px;
+        padding: 7px 15px;
+        font-size: 11px;
         font-weight: 600;
         color: var(--text-tab);
-        border-radius: 4px;
+        border-radius: 8px;
         background: transparent;
-        border: none;
-        letter-spacing: 0.07em;
+        border: 1px solid transparent;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
-        transition: color 0.15s, background 0.15s;
+        transition: all 0.18s;
     }
     .stTabs [data-baseweb="tab"]:hover {
         color: var(--text-secondary);
@@ -189,9 +198,10 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] {
         color: var(--tab-active-text) !important;
-        background: var(--bg-accent) !important;
+        background: linear-gradient(160deg, var(--bg-card-start), var(--bg-card-end)) !important;
         border: 1px solid var(--border-accent) !important;
-        border-radius: 4px !important;
+        border-radius: 8px !important;
+        box-shadow: 0 4px 14px -6px var(--accent-glow);
     }
     .stTabs [data-baseweb="tab-panel"] {
         padding-top: 1.25rem;
@@ -323,26 +333,41 @@ st.markdown("""
         cursor: pointer !important;
     }
 
-    /* ── Radio toggle ── */
+    /* ── Radio → Segmented control (C1) ── */
     .stRadio > div {
-        gap: 6px;
+        gap: 0;
         flex-direction: row;
+        display: inline-flex;
+        flex-wrap: wrap;
+        background: var(--bg-track);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 4px;
+    }
+    /* Hide the BaseWeb radio circle so each option reads as a clean segment */
+    .stRadio label > div:first-of-type {
+        display: none !important;
     }
     .stRadio label {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        padding: 4px 12px;
-        font-size: 12px;
-        font-weight: 500;
+        background: transparent;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        padding: 5px 15px;
+        margin: 0 !important;
+        font-size: 11.5px;
+        font-weight: 600;
         color: var(--text-muted);
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all 0.18s;
+    }
+    .stRadio label:hover {
+        color: var(--text-secondary);
     }
     .stRadio label:has(input:checked) {
-        background: var(--radio-checked-bg);
-        border-color: var(--radio-checked-bd);
-        color: var(--radio-checked-txt);
+        background: linear-gradient(160deg, var(--btn-primary-bd), var(--btn-primary-bg));
+        border-color: var(--border-accent);
+        color: #ffffff;
+        box-shadow: 0 3px 10px -3px var(--accent-glow);
     }
 
     /* ── Theme toggle icon button ── */
@@ -357,12 +382,13 @@ st.markdown("""
         min-height: unset !important;
     }
 
-    /* ── Selected (primary) button — must win over all other rules ── */
+    /* ── Selected (primary) button — active segment in capsule selectors ── */
     .stButton button[kind="primary"] {
-        background: var(--btn-primary-bg) !important;
-        border: 1px solid var(--btn-primary-bd) !important;
-        color: var(--tab-active-text) !important;
+        background: linear-gradient(160deg, var(--btn-primary-bd), var(--btn-primary-bg)) !important;
+        border: 1px solid var(--border-accent) !important;
+        color: #ffffff !important;
         font-weight: 600 !important;
+        box-shadow: 0 3px 10px -3px var(--accent-glow) !important;
     }
 
     /* ── Divider ── */
@@ -1577,6 +1603,8 @@ def _render_chart_body(symbol: str, name: str):
     day_chg_pct = (last["close"] - _pc) / _pc * 100 if (pd.notna(_pc) and _pc != 0) else 0
     chg_color   = "#22c55e" if day_chg_pct >= 0 else "#ef4444"
     arrow       = "▲" if day_chg_pct >= 0 else "▼"
+    chg_chip_bg = "rgba(34,197,94,0.15)" if day_chg_pct >= 0 else "rgba(239,68,68,0.15)"
+    chg_chip_bd = "rgba(34,197,94,0.40)" if day_chg_pct >= 0 else "rgba(239,68,68,0.40)"
 
     _sym_info = load_all_symbols()
     _sym_row  = _sym_info[_sym_info["symbol"] == symbol]
@@ -1594,7 +1622,10 @@ def _render_chart_body(symbol: str, name: str):
         f"<span style='color:{_T['text_muted']};font-size:13px'>{name}</span>"
         f"{_sector_tag}"
         f"<span style='font-size:26px;font-weight:700;color:{_T['text_secondary']};margin-left:4px;'>₹{last['close']:,.2f}</span>"
-        f"<span style='font-size:14px;font-weight:600;color:{chg_color}'>"
+        f"<span style='display:inline-flex;align-items:center;gap:5px;"
+        f"font-size:12.5px;font-weight:700;color:{chg_color};"
+        f"background:{chg_chip_bg};border:1px solid {chg_chip_bd};"
+        f"border-radius:6px;padding:3px 10px;letter-spacing:0.02em;'>"
         f"{arrow} {abs(day_chg_pct):.2f}%</span>"
         f"</div>",
         unsafe_allow_html=True,
