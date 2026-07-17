@@ -1,0 +1,53 @@
+name: BSE Results Discovery
+
+# Companies keep announcing quarterly results into the late evening, well after
+# the 4:30 PM IST daily refresh has already run its discovery pass. These extra
+# passes keep the Quarterly Results "Today's Results" tab current on the same
+# day. discover_bse_results.py is idempotent (3-day lookback + ON CONFLICT DO
+# NOTHING), so overlapping runs are safe.
+
+on:
+  schedule:
+    # All times UTC; GitHub may delay scheduled runs by up to ~1 hour.
+    # Runs daily (including weekends — board meetings happen on Saturdays).
+    - cron: "0 13 * * *"   # ~6:30 PM IST — early evening announcements
+    - cron: "0 15 * * *"   # ~8:30 PM IST — post-board-meeting cluster
+    - cron: "0 17 * * *"   # ~10:30 PM IST — late evening filings
+    - cron: "30 18 * * *"  # ~midnight IST — very late filers
+    - cron: "0 3 * * *"    # ~8:30 AM IST — catch-up for overnight stragglers
+  workflow_dispatch:
+    # Manual trigger via GitHub UI for testing
+
+jobs:
+  discover:
+    name: Discover BSE result announcements
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install requests psycopg2-binary python-dotenv
+
+      - name: Discover BSE result announcements
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PYTHONUNBUFFERED: "1"
+        working-directory: backend
+        run: python discover_bse_results.py
+
+      - name: Fetch BSE result PDFs & presentations
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PYTHONUNBUFFERED: "1"
+        working-directory: backend
+        run: python fetch_bse_presentations.py
+        continue-on-error: true
