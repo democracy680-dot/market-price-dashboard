@@ -1837,7 +1837,6 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
         st.warning(
             f"Live index data unavailable for `{yf_sym}` — showing constituent median instead. "
             f"_{_yf_fetch_error}_",
-            icon="",
         )
 
 
@@ -5126,7 +5125,6 @@ if status:
                 st.warning(
                     f"Data may be stale — last refresh was **{int(_age_h)} hours ago**. "
                     "This typically happens over weekends or market holidays.",
-                    icon="",
                 )
         except Exception:
             pass
