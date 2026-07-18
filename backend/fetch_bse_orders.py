@@ -48,6 +48,9 @@ DAILY_LOOKBACK_DAYS = 3            # overlap survives skipped runs; dedup makes 
 RETENTION_DAYS = 180
 PAGE_SIZE = 50
 MAX_PAGES = 400
+# BSE's bulk-announcements API silently returns an empty Table for windows wider
+# than ~1 month, so we split any request into sub-windows of at most CHUNK_DAYS.
+CHUNK_DAYS = 25
 USD_INR = 83.0                     # documented fallback FX rate for rare USD headlines
 
 BSE_ANN_BULK_URL = (
@@ -243,8 +246,8 @@ def build_order_rows(announcements: list[dict], scrip_to_symbol: dict[str, str])
 
 # ── Network / DB ──────────────────────────────────────────────────────────────
 
-def fetch_company_updates(from_dt: date, to_dt: date) -> list[dict]:
-    """Fetch all 'Company Update' filings from BSE for the window, paginated."""
+def _fetch_window(from_dt: date, to_dt: date) -> list[dict]:
+    """Fetch all 'Company Update' filings for a single (<= ~1 month) window, paginated."""
     announcements: list[dict] = []
     page = 1
     total_pages = None
@@ -260,7 +263,7 @@ def fetch_company_updates(from_dt: date, to_dt: date) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            log.error(f"BSE bulk API error on page {page}: {e}")
+            log.error(f"BSE bulk API error on page {page} ({from_dt}->{to_dt}): {e}")
             return announcements
 
         rows = data.get("Table", []) if isinstance(data, dict) else []
@@ -272,15 +275,31 @@ def fetch_company_updates(from_dt: date, to_dt: date) -> list[dict]:
             try:
                 rowcnt = int(data["Table1"][0]["ROWCNT"])
                 total_pages = math.ceil(rowcnt / PAGE_SIZE)
-                log.info(f"BSE reports {rowcnt} company-update filings ({total_pages} pages)")
+                log.info(f"  {from_dt} -> {to_dt}: {rowcnt} filings ({total_pages} pages)")
             except (KeyError, IndexError, TypeError, ValueError):
-                log.warning("Could not read ROWCNT; paginating until an empty page")
+                log.warning("  Could not read ROWCNT; paginating until an empty page")
                 total_pages = MAX_PAGES
         if page >= total_pages:
             break
         page += 1
         time.sleep(0.4)
 
+    return announcements
+
+
+def fetch_company_updates(from_dt: date, to_dt: date) -> list[dict]:
+    """Fetch all 'Company Update' filings for the window.
+
+    BSE's bulk API silently returns an empty Table when the requested date range
+    exceeds ~1 month, so wide windows (e.g. --backfill) are split into sub-windows
+    of at most CHUNK_DAYS and concatenated. A narrow daily run is a single window.
+    """
+    announcements: list[dict] = []
+    chunk_start = from_dt
+    while chunk_start <= to_dt:
+        chunk_end = min(chunk_start + timedelta(days=CHUNK_DAYS - 1), to_dt)
+        announcements.extend(_fetch_window(chunk_start, chunk_end))
+        chunk_start = chunk_end + timedelta(days=1)
     return announcements
 
 
