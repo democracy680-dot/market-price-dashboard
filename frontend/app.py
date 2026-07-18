@@ -1902,7 +1902,7 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
             height=700,
             column_config={
                 "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
-                "Chart":    st.column_config.LinkColumn("Chart",    display_text=""),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
             },
         )
 
@@ -2233,7 +2233,7 @@ def render_themes_view():
             height=650,
             column_config={
                 "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
-                "Chart":    st.column_config.LinkColumn("Chart",    display_text=""),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
             },
         )
 
@@ -2856,7 +2856,7 @@ with st.sidebar:
 
     st.divider()
     st.markdown("<div class='sidebar-section-label'>Tips</div>", unsafe_allow_html=True)
-    st.caption("Use the column in any table to open a chart on TradingView.")
+    st.caption("Use the 📈 column in any table to open a chart on TradingView.")
 
     st.divider()
     _theme_label = "Light Mode" if _dark else "Dark Mode"
@@ -2971,10 +2971,10 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
         styled = styled.map(_color_return, subset=["Excess Ret"])
 
     col_cfg = {
-        "PPT": st.column_config.LinkColumn("PPT", display_text=""),
-        "PDF": st.column_config.LinkColumn("PDF", display_text=""),
-        "Chart": st.column_config.LinkColumn("Chart", display_text=""),
-        "Screener": st.column_config.LinkColumn("Screener", display_text=""),
+        "PPT": st.column_config.LinkColumn("PPT", display_text="📊"),
+        "PDF": st.column_config.LinkColumn("PDF", display_text="📄"),
+        "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
+        "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
         "Return Since Ann.": st.column_config.NumberColumn("Return Since Ann.", format="%.2f%%"),
         "Excess Ret": st.column_config.NumberColumn(
@@ -3719,7 +3719,7 @@ def _render_orders(atype: str):
             "Company": st.column_config.TextColumn("Company", width="medium"),
             "Value (₹ Cr)": st.column_config.NumberColumn("Value (₹ Cr)", format="%.0f", width="small"),
             "Headline": st.column_config.TextColumn("Headline", width="large"),
-            "Filing": st.column_config.LinkColumn("Filing", display_text="PDF", width="small"),
+            "Filing": st.column_config.LinkColumn("Filing", display_text="📄 PDF", width="small"),
         },
     )
 
@@ -4241,7 +4241,7 @@ def _render_technical_table(
             hide_index=True,
             height=700,
             column_config={
-                "Chart": st.column_config.LinkColumn("Chart", display_text="Chart"),
+                "Chart": st.column_config.LinkColumn("Chart", display_text="📈 Chart"),
             },
         )
 
@@ -5096,7 +5096,7 @@ def render_volspike_view(snap_date):
         hide_index=True,
         height=700,
         column_config={
-            "Chart": st.column_config.LinkColumn("Chart", display_text=""),
+            "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
         },
     )
 
