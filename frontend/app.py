@@ -183,7 +183,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab"] {
         padding: 7px 15px;
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 700;
         color: var(--text-tab);
         border-radius: 8px;
         background: transparent;
@@ -191,6 +191,11 @@ st.markdown("""
         letter-spacing: 0.05em;
         text-transform: uppercase;
         transition: all 0.18s;
+    }
+    /* Ensure the tab label text itself renders bold (override inner markdown weight) */
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] div {
+        font-weight: 700 !important;
     }
     .stTabs [data-baseweb="tab"]:hover {
         color: var(--text-secondary);
@@ -1448,7 +1453,7 @@ def _save_col_visibility(table_id: str, hidden_cols: set):
 def _render_col_visibility_ui(table_id: str, all_cols: list, ncols: int = 7) -> set:
     """Expander with checkboxes for every column. Returns current hidden-col set."""
     saved_hidden = _load_col_visibility(table_id)
-    with st.expander("⚙ Column Visibility", expanded=False):
+    with st.expander("Column Visibility", expanded=False):
         btn_col, _ = st.columns([1, 5])
         with btn_col:
             if st.button("Show All Columns", key=f"_colvis_showall_{table_id}"):
@@ -1832,7 +1837,7 @@ def render_summary_cards(df: pd.DataFrame, index_name: str | None = None, snap_d
         st.warning(
             f"Live index data unavailable for `{yf_sym}` — showing constituent median instead. "
             f"_{_yf_fetch_error}_",
-            icon="⚠️",
+            icon="",
         )
 
 
@@ -1898,7 +1903,7 @@ def render_table(df: pd.DataFrame, key: str = "default", page_size: int = 500):
             height=700,
             column_config={
                 "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
-                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text=""),
             },
         )
 
@@ -2198,7 +2203,7 @@ def render_themes_view():
         null_count = stocks_df["cmp"].isna().sum()
         if len(stocks_df) > 0 and null_count / len(stocks_df) > 0.1:
             st.warning(
-                "⚠️ Some stocks in this theme were recently added and will be "
+                "Some stocks in this theme were recently added and will be "
                 f"populated after the next daily refresh ({DAILY_REFRESH_TIME_IST})."
             )
 
@@ -2229,7 +2234,7 @@ def render_themes_view():
             height=650,
             column_config={
                 "Screener": st.column_config.LinkColumn("Screener", display_text="Screener ↗"),
-                "Chart":    st.column_config.LinkColumn("Chart",    display_text="📈"),
+                "Chart":    st.column_config.LinkColumn("Chart",    display_text=""),
             },
         )
 
@@ -2852,12 +2857,11 @@ with st.sidebar:
 
     st.divider()
     st.markdown("<div class='sidebar-section-label'>Tips</div>", unsafe_allow_html=True)
-    st.caption("Use the 📈 column in any table to open a chart on TradingView.")
+    st.caption("Use the column in any table to open a chart on TradingView.")
 
     st.divider()
-    _theme_icon = "☀️" if _dark else "🌙"
     _theme_label = "Light Mode" if _dark else "Dark Mode"
-    if st.button(f"{_theme_icon}  {_theme_label}", key="theme_toggle_btn", use_container_width=True):
+    if st.button(_theme_label, key="theme_toggle_btn", use_container_width=True):
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
@@ -2947,7 +2951,7 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
         if "gap_held" in df.columns:
             disp["Gap Held"] = df["gap_held"].map({True: "✓", False: "✗"}).fillna("—")
         if "repeat_strong" in df.columns:
-            disp["Repeat"] = df["repeat_strong"].map(lambda v: "⭐" if v is True else "")
+            disp["Repeat"] = df["repeat_strong"].map(lambda v: "" if v is True else "")
     if "presentation_url" in df.columns:
         disp["PPT"] = df["presentation_url"].fillna("")
     if "result_pdf_url" in df.columns:
@@ -2968,10 +2972,10 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
         styled = styled.map(_color_return, subset=["Excess Ret"])
 
     col_cfg = {
-        "PPT": st.column_config.LinkColumn("PPT", display_text="📊"),
-        "PDF": st.column_config.LinkColumn("PDF", display_text="📄"),
-        "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
-        "Screener": st.column_config.LinkColumn("Screener", display_text="🔍"),
+        "PPT": st.column_config.LinkColumn("PPT", display_text=""),
+        "PDF": st.column_config.LinkColumn("PDF", display_text=""),
+        "Chart": st.column_config.LinkColumn("Chart", display_text=""),
+        "Screener": st.column_config.LinkColumn("Screener", display_text=""),
         "Ann. Day Return": st.column_config.NumberColumn("Ann. Day Return", format="%.2f%%"),
         "Return Since Ann.": st.column_config.NumberColumn("Return Since Ann.", format="%.2f%%"),
         "Excess Ret": st.column_config.NumberColumn(
@@ -3282,7 +3286,7 @@ def _render_earnings_season(snap_date, quarter, prev_quarter=None):
             pd.to_numeric(df_season["prev_ann_ret"], errors="coerce") >= 0.02
         )
 
-    with st.expander("📊 Sector season summary", expanded=False):
+    with st.expander("Sector season summary", expanded=False):
         g = pd.DataFrame({
             "Sector": df_season["sector"].fillna("—"),
             "ann": ann,
@@ -3635,10 +3639,10 @@ def _frag_news():
 # ── Order Tracker ────────────────────────────────────────────────────────────
 
 _ORDER_TYPE_META = {
-    "order":       ("🧾 Orders",              "order / contract wins"),
-    "acquisition": ("🤝 Acquisitions",        "acquisitions & mergers"),
-    "jv":          ("🔗 JVs & Partnerships",  "joint ventures & partnerships"),
-    "expansion":   ("🏭 Expansion",           "expansion / capex updates"),
+    "order":       ("Orders",              "order / contract wins"),
+    "acquisition": ("Acquisitions",        "acquisitions & mergers"),
+    "jv":          ("JVs & Partnerships",  "joint ventures & partnerships"),
+    "expansion":   ("Expansion",           "expansion / capex updates"),
 }
 
 
@@ -3716,7 +3720,7 @@ def _render_orders(atype: str):
             "Company": st.column_config.TextColumn("Company", width="medium"),
             "Value (₹ Cr)": st.column_config.NumberColumn("Value (₹ Cr)", format="%.0f", width="small"),
             "Headline": st.column_config.TextColumn("Headline", width="large"),
-            "Filing": st.column_config.LinkColumn("Filing", display_text="📄 PDF", width="small"),
+            "Filing": st.column_config.LinkColumn("Filing", display_text="PDF", width="small"),
         },
     )
 
@@ -3854,7 +3858,7 @@ def _load_minervini_all() -> pd.DataFrame:
 
 
 def _render_minervini_screener():
-    st.markdown("### ⭐ Mark Minervini Trend Template")
+    st.markdown("### Mark Minervini Trend Template")
     st.caption(
         "Stocks meeting all 8 criteria of Mark Minervini's Trend Template — "
         "the framework he used to win the U.S. Investing Championship. "
@@ -3954,7 +3958,7 @@ def _render_minervini_screener():
         st.dataframe(styled, use_container_width=True, hide_index=True, height=580)
 
         st.download_button(
-            "📥 Download as CSV",
+            "Download as CSV",
             data=display_df.to_csv(index=False),
             file_name=f"minervini_screener_{pd.Timestamp.now().strftime('%Y-%m-%d')}.csv",
             mime="text/csv",
@@ -3963,7 +3967,7 @@ def _render_minervini_screener():
 
     st.divider()
 
-    with st.expander("📋 The 8 Criteria Explained"):
+    with st.expander("The 8 Criteria Explained"):
         st.markdown("""
 1. **Price > 150 DMA AND > 200 DMA** — confirms medium and long-term uptrend
 2. **150 DMA > 200 DMA** — proper moving average alignment
@@ -3979,7 +3983,7 @@ A stock passing all 8 is in a Stan Weinstein **Stage 2** advancing uptrend.
         """)
 
     st.info(
-        "ℹ️ This screen identifies stocks in confirmed uptrends. It does NOT predict future performance. "
+        "ℹ This screen identifies stocks in confirmed uptrends. It does NOT predict future performance. "
         "Always combine technical screening with fundamental analysis and risk management."
     )
 
@@ -4238,7 +4242,7 @@ def _render_technical_table(
             hide_index=True,
             height=700,
             column_config={
-                "Chart": st.column_config.LinkColumn("Chart", display_text="📈 Chart"),
+                "Chart": st.column_config.LinkColumn("Chart", display_text="Chart"),
             },
         )
 
@@ -4382,7 +4386,7 @@ def render_my_watchlist_tab(snap_date, refresh_ts=None):
                                 key="wl_new_name", label_visibility="collapsed",
                             )
                         with wl_btn_col:
-                            if st.button("➕ Add to Watchlist", use_container_width=True, type="primary"):
+                            if st.button("Add to Watchlist", use_container_width=True, type="primary"):
                                 if not wl_name.strip():
                                     st.error("Please enter a name for the watchlist.")
                                 else:
@@ -4431,7 +4435,7 @@ def render_my_watchlist_tab(snap_date, refresh_ts=None):
                     label_visibility="collapsed",
                 )
             with mgmt_c2:
-                if st.button("💾 Rename", key=f"wl_rename_btn_{wl_id}", use_container_width=True):
+                if st.button("Rename", key=f"wl_rename_btn_{wl_id}", use_container_width=True):
                     if new_name.strip() and new_name.strip() != wl_name:
                         try:
                             _wl_rename(wl_id, new_name.strip())
@@ -4443,14 +4447,14 @@ def render_my_watchlist_tab(snap_date, refresh_ts=None):
                 # Two-click delete: first click arms, second click confirms
                 arm_key = f"wl_delete_armed_{wl_id}"
                 if st.session_state.get(arm_key):
-                    if st.button("⚠️ Confirm Delete", key=f"wl_delete_confirm_{wl_id}",
+                    if st.button("Confirm Delete", key=f"wl_delete_confirm_{wl_id}",
                                  type="primary", use_container_width=True):
                         _wl_delete(wl_id)
                         st.session_state.pop(arm_key, None)
                         st.success("Deleted.")
                         st.rerun()
                 else:
-                    if st.button("🗑️ Delete", key=f"wl_delete_btn_{wl_id}",
+                    if st.button("Delete", key=f"wl_delete_btn_{wl_id}",
                                  use_container_width=True):
                         st.session_state[arm_key] = True
                         st.rerun()
@@ -4471,7 +4475,7 @@ def render_my_watchlist_tab(snap_date, refresh_ts=None):
     st.divider()
     st.markdown(
         f"<h3 style='font-size:15px;font-weight:700;color:{_T['card_title']};margin:0 0 8px;'>"
-        f"📊 Watchlist Analysis</h3>",
+        f"Watchlist Analysis</h3>",
         unsafe_allow_html=True,
     )
 
@@ -4727,11 +4731,11 @@ def render_technical_analysis_view(refresh_ts=None):
             "RS Filter",
             options=[
                 "All",
-                "🚀 Strong Outperformer",
-                "✅ Outperformer",
-                "⚖️ In-line",
-                "📉 Underperformer",
-                "🔻 Strong Underperformer",
+                "Strong Outperformer",
+                "Outperformer",
+                "In-line",
+                "Underperformer",
+                "Strong Underperformer",
             ],
             index=0,
             key="ta_rs_filter",
@@ -4809,7 +4813,7 @@ def render_technical_analysis_view(refresh_ts=None):
     hidden_cols = _render_col_visibility_ui("technical", _ALL_TECH_COLS)
 
     # ── Sub-tabs ──────────────────────────────────────────────────────────────
-    tab_all_stocks, tab_fno_stocks, tab_minervini = st.tabs(["All Stocks", "F&O Stocks", "⭐ Minervini Screener"])
+    tab_all_stocks, tab_fno_stocks, tab_minervini = st.tabs(["All Stocks", "F&O Stocks", "Minervini Screener"])
 
     # ── All Stocks sub-tab ────────────────────────────────────────────────────
     with tab_all_stocks:
@@ -4821,9 +4825,9 @@ def render_technical_analysis_view(refresh_ts=None):
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🟢 Strong Bullish",        n_strong_bull)
-        c2.metric("🔻 Sell / Avoid",           n_sell)
-        c3.metric("🔥 Oversold (RSI<30)",      n_oversold)
-        c4.metric("💪 Strong Trends (ADX>25)", n_strong_trn)
+        c2.metric("Sell / Avoid",           n_sell)
+        c3.metric("Oversold (RSI<30)",      n_oversold)
+        c4.metric("Strong Trends (ADX>25)", n_strong_trn)
 
         st.divider()
         _df_all_filtered = _apply_filters(df_all)
@@ -4843,9 +4847,9 @@ def render_technical_analysis_view(refresh_ts=None):
 
         c1f, c2f, c3f, c4f = st.columns(4)
         c1f.metric("🟢 Strong Bullish",        n_strong_bull_fno)
-        c2f.metric("🔻 Sell / Avoid",           n_sell_fno)
-        c3f.metric("🔥 Oversold (RSI<30)",      n_oversold_fno)
-        c4f.metric("💪 Strong Trends (ADX>25)", n_strong_trn_fno)
+        c2f.metric("Sell / Avoid",           n_sell_fno)
+        c3f.metric("Oversold (RSI<30)",      n_oversold_fno)
+        c4f.metric("Strong Trends (ADX>25)", n_strong_trn_fno)
 
         st.divider()
         if df_fno.empty:
@@ -4868,7 +4872,7 @@ def render_technical_analysis_view(refresh_ts=None):
             df_all["technical_status_v1"].notna() &
             (df_all["technical_status_v1"] != df_all["technical_status"])
         ].copy()
-        with st.expander(f"🔍 v1 vs v2 Signal Comparison ({len(changed)} stocks differ)", expanded=False):
+        with st.expander(f"v1 vs v2 Signal Comparison ({len(changed)} stocks differ)", expanded=False):
             if changed.empty:
                 st.info("No label differences between v1 and v2 signals.")
             else:
@@ -5093,7 +5097,7 @@ def render_volspike_view(snap_date):
         hide_index=True,
         height=700,
         column_config={
-            "Chart": st.column_config.LinkColumn("Chart", display_text="📈"),
+            "Chart": st.column_config.LinkColumn("Chart", display_text=""),
         },
     )
 
@@ -5122,7 +5126,7 @@ if status:
                 st.warning(
                     f"Data may be stale — last refresh was **{int(_age_h)} hours ago**. "
                     "This typically happens over weekends or market holidays.",
-                    icon="⚠️",
+                    icon="",
                 )
         except Exception:
             pass
@@ -5163,9 +5167,9 @@ _refresh_ts_key = str(_rs_now.get("finished_at")) if _rs_now else None
 # ---------------------------------------------------------------------------
 # Main — 5 top-level tabs
 # ---------------------------------------------------------------------------
-_tc_space, _tc_btn = st.columns([20, 1])
+_tc_space, _tc_btn = st.columns([18, 2])
 with _tc_btn:
-    if st.button("☀️" if _dark else "🌙", key="theme_toggle_main", help="Switch to light mode" if _dark else "Switch to dark mode"):
+    if st.button("Light" if _dark else "Dark", key="theme_toggle_main", help="Switch to light mode" if _dark else "Switch to dark mode"):
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
@@ -5175,13 +5179,13 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, ta
     "Sectors",
     "Sector Performance",
     "Themes",
-    "📅 Quarterly Results",
-    "📦 Order Tracker",
+    "Quarterly Results",
+    "Order Tracker",
     "Vol Spikes",
-    "🔬 Technical Analysis",
-    "📡 Scanner",
+    "Technical Analysis",
+    "Scanner",
     "My Watchlist",
-    "📰 News",
+    "News",
 ])
 
 _TAB_DESCRIPTIONS = {
@@ -5247,7 +5251,7 @@ _TAB_DESCRIPTIONS = {
     },
     "order_tracker": {
         "what": [
-            "**Four Type Sub-tabs** — 🧾 Orders (order/contract wins), 🤝 Acquisitions (M&A, mergers), 🔗 JVs & Partnerships (joint ventures), and 🏭 Expansion (new plants, capacity, capex)",
+            "**Four Type Sub-tabs** — Orders (order/contract wins), Acquisitions (M&A, mergers), JVs & Partnerships (joint ventures), and Expansion (new plants, capacity, capex)",
             "**Sourced from BSE** — corporate 'Company Update' filings, refreshed once daily after market close, restricted to the stocks listed on this dashboard",
             "**Parsed Order Value** — the ₹ crore value is auto-extracted from the filing headline where present, so you can sort the Orders sub-tab by deal size",
             "**Filing Links** — every row links straight to the original BSE PDF filing",

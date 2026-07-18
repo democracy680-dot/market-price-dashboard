@@ -48,7 +48,7 @@ SESSIONS = [
 
 REGIONS = [
     {
-        'id': 'india', 'code': 'IN', 'name': 'India', 'flag': '🇮🇳', 'is_home': True,
+        'id': 'india', 'code': 'IN', 'name': 'India', 'flag': '', 'is_home': True,
         'tz': 'Asia/Kolkata', 'open': dtime(9, 15), 'close': dtime(15, 30),
         'indices': [
             {'sym': '^NSEI',             'name': 'Nifty 50',          'short': 'NIFTY'},
@@ -61,7 +61,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'us', 'code': 'US', 'name': 'United States', 'flag': '🇺🇸', 'is_home': False,
+        'id': 'us', 'code': 'US', 'name': 'United States', 'flag': '', 'is_home': False,
         'tz': 'America/New_York', 'open': dtime(9, 30), 'close': dtime(16, 0),
         'pre': dtime(4, 0), 'after': dtime(20, 0),
         'indices': [
@@ -78,7 +78,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'europe', 'code': 'EU', 'name': 'Europe', 'flag': '🇪🇺', 'is_home': False,
+        'id': 'europe', 'code': 'EU', 'name': 'Europe', 'flag': '', 'is_home': False,
         'tz': 'Europe/London', 'open': dtime(8, 0), 'close': dtime(16, 30),
         'indices': [
             {'sym': '^STOXX50E', 'name': 'EURO STOXX 50', 'short': 'STOXX 50'},
@@ -92,7 +92,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'china_hk', 'code': 'CN', 'name': 'China & Hong Kong', 'flag': '🇨🇳', 'is_home': False,
+        'id': 'china_hk', 'code': 'CN', 'name': 'China & Hong Kong', 'flag': '', 'is_home': False,
         'tz': 'Asia/Shanghai', 'open': dtime(9, 30), 'close': dtime(15, 0),
         'indices': [
             {'sym': '000001.SS', 'name': 'Shanghai Composite', 'short': 'SHCOMP'},
@@ -102,7 +102,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'japan', 'code': 'JP', 'name': 'Japan', 'flag': '🇯🇵', 'is_home': False,
+        'id': 'japan', 'code': 'JP', 'name': 'Japan', 'flag': '', 'is_home': False,
         'tz': 'Asia/Tokyo', 'open': dtime(9, 0), 'close': dtime(15, 30),
         'indices': [
             {'sym': '^N225', 'name': 'Nikkei 225', 'short': 'NIKKEI'},
@@ -110,7 +110,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'korea', 'code': 'KR', 'name': 'South Korea', 'flag': '🇰🇷', 'is_home': False,
+        'id': 'korea', 'code': 'KR', 'name': 'South Korea', 'flag': '', 'is_home': False,
         'tz': 'Asia/Seoul', 'open': dtime(9, 0), 'close': dtime(15, 30),
         'indices': [
             {'sym': '^KS11', 'name': 'KOSPI',  'short': 'KOSPI'},
@@ -118,7 +118,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'apac', 'code': 'AP', 'name': 'Asia Pacific', 'flag': '🌏', 'is_home': False,
+        'id': 'apac', 'code': 'AP', 'name': 'Asia Pacific', 'flag': '', 'is_home': False,
         'tz': 'Australia/Sydney', 'open': dtime(10, 0), 'close': dtime(16, 0),
         'indices': [
             {'sym': '^TWII', 'name': 'TAIEX (Taiwan)',      'short': 'TAIEX'},
@@ -128,7 +128,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'em', 'code': 'EM', 'name': 'EM & Americas', 'flag': '🌍', 'is_home': False,
+        'id': 'em', 'code': 'EM', 'name': 'EM & Americas', 'flag': '', 'is_home': False,
         'tz': 'America/Sao_Paulo', 'open': dtime(10, 0), 'close': dtime(17, 0),
         'indices': [
             {'sym': '^BVSP',   'name': 'Bovespa (Brazil)', 'short': 'BOVESPA'},
@@ -137,7 +137,7 @@ REGIONS = [
         ],
     },
     {
-        'id': 'cross_asset', 'code': 'FX', 'name': 'Cross-Asset', 'flag': '🌐', 'is_home': False,
+        'id': 'cross_asset', 'code': 'FX', 'name': 'Cross-Asset', 'flag': '', 'is_home': False,
         'tz': None,
         'indices': [
             {'sym': 'DX-Y.NYB', 'name': 'US Dollar Index', 'short': 'DXY'},
@@ -327,7 +327,7 @@ def _palette(dark: bool) -> dict:
             "plot_bg":            "#0b0f1a",
             "plot_grid":          "#1a2236",
             "plot_tick":          "#475569",
-            "futures_icon":       "🌙",
+            "futures_icon":       "",
         }
     else:
         return {
@@ -351,7 +351,7 @@ def _palette(dark: bool) -> dict:
             "plot_bg":            "#ffffff",
             "plot_grid":          "#e2e8f0",
             "plot_tick":          "#94a3b8",
-            "futures_icon":       "🌙",
+            "futures_icon":       "",
         }
 
 
@@ -651,7 +651,7 @@ def _html_futures(quotes: dict, C: dict) -> str:
             padding:10px 20px;margin-top:10px;display:flex;align-items:center;
             flex-wrap:wrap;gap:6px;">
   <span style="color:{C['text_muted']};font-size:11px;font-weight:700;letter-spacing:0.08em;
-               text-transform:uppercase;margin-right:14px;">🌙 OVERNIGHT FUTURES</span>
+               text-transform:uppercase;margin-right:14px;">OVERNIGHT FUTURES</span>
   {''.join(parts)}
 </div>
 """
@@ -791,7 +791,7 @@ def _render_region(region: dict, intraday: dict, C: dict = None, dark: bool = Tr
     data            = region['data']
     is_home         = region.get('is_home', False)
 
-    expander_label = f"{flag}  {name}"
+    expander_label = f"{flag} {name}".strip()
 
     with st.expander(expander_label, expanded=is_home):
         per_row = 4
@@ -833,7 +833,7 @@ def _render_asset_section(
     """Renders a commodity / bond / crypto section as a collapsible card grid."""
     if C is None:
         C = _palette(dark)
-    label = f"{flag}  {title}"
+    label = f"{flag} {title}".strip()
     with st.expander(label, expanded=expanded):
         if note:
             st.caption(note)
@@ -1213,7 +1213,7 @@ def render_global_markets_tab():
         quotes   = cached['quotes']
         intraday = cached['intraday']
         ago = int((datetime.now() - cached['at']).total_seconds() // 60)
-        st.warning(f"⚠️ Live market data unavailable — showing cached values from {ago} minute(s) ago")
+        st.warning(f"Live market data unavailable — showing cached values from {ago} minute(s) ago")
 
     # Build structured list
     structured = [
@@ -1307,10 +1307,10 @@ def render_global_markets_tab():
     else:
         # Build symbol list for chart selector (regions + commodities + crypto)
         all_idx = (
-            [(i['sym'], f"{r['flag']} {i['short']} — {i['name']}")
+            [(i['sym'], f"{r['flag']} {i['short']} — {i['name']}".strip())
              for r in structured if r['id'] != 'cross_asset'
              for i in r['data']]
-            + [(c['sym'], f"🛢️ {c['short']} — {c['name']}") for c in COMMODITIES]
+            + [(c['sym'], f"{c['short']} — {c['name']}") for c in COMMODITIES]
             + [(c['sym'], f"₿  {c['short']} — {c['name']}") for c in CRYPTO]
         )
         syms, labels = zip(*all_idx) if all_idx else ([], [])
@@ -1325,7 +1325,7 @@ def render_global_markets_tab():
         # ── COMMODITIES ──
         _render_asset_section(
             title='Major Commodities',
-            flag='🛢️',
+            flag='',
             items=COMMODITIES,
             quotes=quotes,
             intraday=intraday,
@@ -1340,7 +1340,7 @@ def render_global_markets_tab():
         # ── GLOBAL BONDS ──
         _render_asset_section(
             title='Global Bonds',
-            flag='🏦',
+            flag='',
             items=BONDS,
             quotes=quotes,
             intraday=intraday,

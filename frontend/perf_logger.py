@@ -37,7 +37,7 @@ def show_perf_panel():
     """
     if os.getenv("DEBUG", "").lower() != "true":
         return
-    with st.expander("🔧 Performance Debug", expanded=False):
+    with st.expander("Performance Debug", expanded=False):
         if not _timings:
             st.write("No timing data collected this render.")
             return
