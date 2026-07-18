@@ -60,6 +60,7 @@ backend/
   compute_setup_candidates.py   # Breakout/reversal scanner → setup_candidates_daily
   compute_minervini_template.py # 8-criterion template → minervini_template_daily
   compute_earnings.py       # Quarterly results score → earnings_calendar
+  fetch_bse_orders.py       # BSE order wins & business updates → bse_orders (Order Tracker)
   financials_fetcher.py     # Weekly fundamentals → financials_snapshots
   news_fetcher.py           # RSS ingestion → news_articles
   daily_refresh.py          # Main cron entry point (prices → snapshots → technicals → RS)
@@ -103,6 +104,7 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | `setup_candidates_daily` | Breakout/reversal setup detections with pattern_code, strength, trigger_level |
 | `minervini_template_daily` | 8-criterion Minervini trend template with per-criterion flags and template_score |
 | `earnings_calendar` | Quarterly result announcement dates |
+| `bse_orders` | BSE order wins & business updates (order/acquisition/jv/expansion) for dashboard stocks, with parsed ₹ value + filing PDF link; `latest_orders` view enforces the 180-day window |
 | `news_sources` | RSS feed registry (ET, Moneycontrol, BS, Livemint, FE, NDTV Profit, BL) |
 | `news_articles` | Ingested articles with full-text search (ts_vector) |
 | `news_article_symbols` | NSE stocks mentioned in each article |
@@ -122,6 +124,7 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | **Sector Performance** | Cross-sector bar chart comparisons across timeframes |
 | **Themes** | Custom index/theme baskets (from `data/themes/`) |
 | **Quarterly Results** | Earnings calendar — Today's Results + Season to Date sub-tabs with Post-Result Strength Score |
+| **Order Tracker** | BSE order wins & business updates for listed stocks — Orders / Acquisitions / JVs / Expansion sub-tabs, parsed ₹ order value, filing PDF links; refreshed daily |
 | **Vol Spikes** | Stocks with unusual volume relative to average |
 | **Technical Analysis** | RSI, MACD, ADX, relative strength per stock; Minervini screener sub-tab |
 | **Scanner** | Breakout & reversal setup candidates with pattern codes and trigger levels |
@@ -138,6 +141,7 @@ daily_refresh.py
   └─ compute.py       → snapshots_daily + sector_performance_daily
   └─ compute_technicals.py  → technicals_daily (RSI, MACD, ADX, signal_score)
   └─ compute_relative_strength.py → relative_strength_daily
+  └─ fetch_bse_orders.py    → bse_orders (Order Tracker; non-fatal step, filtered to our universe)
   └─ refresh_log      (audit trail)
 ```
 

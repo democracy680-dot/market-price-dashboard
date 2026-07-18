@@ -431,6 +431,14 @@ def run():
     except Exception as minervini_err:
         logger.error(f"  Minervini refresh failed (non-fatal): {minervini_err}", exc_info=True)
 
+    # ── 5g. BSE Order Tracker (order wins & business updates) ──────────────────
+    logger.info("Fetching BSE order announcements...")
+    try:
+        from fetch_bse_orders import run as run_order_fetch
+        run_order_fetch()
+    except Exception as order_err:
+        logger.error(f"  BSE order fetch failed (non-fatal): {order_err}", exc_info=True)
+
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"
     with engine.begin() as conn:

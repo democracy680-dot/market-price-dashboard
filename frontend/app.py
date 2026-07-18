@@ -3632,6 +3632,110 @@ def _frag_news():
                 _render_news_card(row, col_a3 if i % 2 == 0 else col_b3)
 
 
+# ── Order Tracker ────────────────────────────────────────────────────────────
+
+_ORDER_TYPE_META = {
+    "order":       ("🧾 Orders",              "order / contract wins"),
+    "acquisition": ("🤝 Acquisitions",        "acquisitions & mergers"),
+    "jv":          ("🔗 JVs & Partnerships",  "joint ventures & partnerships"),
+    "expansion":   ("🏭 Expansion",           "expansion / capex updates"),
+}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _load_orders(atype: str, query: str, min_value_cr: float) -> pd.DataFrame:
+    try:
+        conditions = ["announcement_type = :atype"]
+        params: dict = {"atype": atype}
+        q = query.strip()
+        if q:
+            conditions.append("(company_name ILIKE :q OR symbol ILIKE :q OR headline ILIKE :q)")
+            params["q"] = f"%{q}%"
+        if min_value_cr and min_value_cr > 0:
+            conditions.append("order_value_cr >= :minval")
+            params["minval"] = float(min_value_cr)
+        where = " AND ".join(conditions)
+        sql = text(f"""
+            SELECT announced_at, symbol, company_name, order_value_cr, value_raw,
+                   headline, attachment_url
+            FROM latest_orders
+            WHERE {where}
+            ORDER BY announced_at DESC
+            LIMIT 500
+        """)
+        with engine.connect() as conn:
+            return pd.read_sql(sql, conn, params=params)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _render_orders(atype: str):
+    _, human = _ORDER_TYPE_META[atype]
+
+    col_q, col_v = st.columns([3, 2])
+    with col_q:
+        query = st.text_input(
+            "Search", placeholder="Company, symbol, or keyword…",
+            label_visibility="collapsed", key=f"order_search_{atype}",
+        )
+    min_value = 0.0
+    with col_v:
+        if atype == "order":
+            min_value = st.number_input(
+                "Min order value (₹ Cr)", min_value=0.0, value=0.0, step=50.0,
+                key="order_minval", help="Only show orders with a parsed value at or above this (₹ crore)",
+                label_visibility="collapsed",
+            )
+
+    df = _load_orders(atype, query, min_value)
+    if df.empty:
+        st.info(
+            f"No {human} in the last 180 days for our listed stocks. "
+            "The tracker refreshes once daily after market close."
+        )
+        return
+
+    st.caption(f"{len(df)} {human} · last 180 days")
+
+    disp = df.rename(columns={
+        "symbol":         "Symbol",
+        "company_name":   "Company",
+        "order_value_cr": "Value (₹ Cr)",
+        "headline":       "Headline",
+        "attachment_url": "Filing",
+    })
+    disp["Date"] = pd.to_datetime(disp["announced_at"])
+    cols = ["Date", "Symbol", "Company", "Value (₹ Cr)", "Headline", "Filing"]
+
+    st.dataframe(
+        disp[cols],
+        use_container_width=True, hide_index=True, height=560,
+        column_config={
+            "Date": st.column_config.DatetimeColumn("Date", format="DD MMM YYYY", width="small"),
+            "Symbol": st.column_config.TextColumn("Symbol", width="small"),
+            "Company": st.column_config.TextColumn("Company", width="medium"),
+            "Value (₹ Cr)": st.column_config.NumberColumn("Value (₹ Cr)", format="%.0f", width="small"),
+            "Headline": st.column_config.TextColumn("Headline", width="large"),
+            "Filing": st.column_config.LinkColumn("Filing", display_text="📄 PDF", width="small"),
+        },
+    )
+
+
+@st.fragment
+def _frag_order_tracker():
+    sub_orders, sub_acq, sub_jv, sub_exp = st.tabs(
+        [meta[0] for meta in _ORDER_TYPE_META.values()]
+    )
+    with sub_orders:
+        _render_orders("order")
+    with sub_acq:
+        _render_orders("acquisition")
+    with sub_jv:
+        _render_orders("jv")
+    with sub_exp:
+        _render_orders("expansion")
+
+
 @st.fragment
 def _frag_sector_performance(snap_date, refresh_ts=None):
     sector_df = load_sector_performance(snap_date, refresh_ts)
@@ -5065,13 +5169,14 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
     "Global Markets",
     "Indexes",
     "Sectors",
     "Sector Performance",
     "Themes",
     "📅 Quarterly Results",
+    "📦 Order Tracker",
     "Vol Spikes",
     "🔬 Technical Analysis",
     "📡 Scanner",
@@ -5139,6 +5244,17 @@ _TAB_DESCRIPTIONS = {
             "**Filters** — narrow the season table by market cap, sector, minimum score, or positive reactions only; sector season summary shows which sectors the market is rewarding",
         ],
         "how": "Track how stocks react the moment quarterly results hit. The announcement-day return tells you whether the market liked the numbers — a big positive move signals a beat; a sharp fall signals disappointment. The return-since-announcement shows the subsequent drift: stocks that keep rising after results often reflect genuine fundamental improvement, while those that fade may have been a one-day knee-jerk. Sort by either column to quickly identify the strongest and weakest earnings reactions of the season.",
+    },
+    "order_tracker": {
+        "what": [
+            "**Four Type Sub-tabs** — 🧾 Orders (order/contract wins), 🤝 Acquisitions (M&A, mergers), 🔗 JVs & Partnerships (joint ventures), and 🏭 Expansion (new plants, capacity, capex)",
+            "**Sourced from BSE** — corporate 'Company Update' filings, refreshed once daily after market close, restricted to the stocks listed on this dashboard",
+            "**Parsed Order Value** — the ₹ crore value is auto-extracted from the filing headline where present, so you can sort the Orders sub-tab by deal size",
+            "**Filing Links** — every row links straight to the original BSE PDF filing",
+            "**Search** — filter any sub-tab by company name, NSE symbol, or keyword; the Orders sub-tab adds a minimum order-value filter",
+            "**180-Day History** — a rolling six-month window of announcements per type",
+        ],
+        "how": "Order wins and expansion announcements are leading indicators of revenue that hasn't shown up in the numbers yet. A large order relative to a company's market cap can re-rate the stock well before the next quarterly result. Use the Orders sub-tab, sorted by value, to spot the biggest fresh wins across your universe each day; cross-check them against the Technical Analysis and Quarterly Results tabs to see whether the market is already pricing the news in. Acquisitions, JVs, and capex signal strategic direction and future capacity — useful context when deciding whether a move has legs.",
     },
     "vol_spikes": {
         "what": [
@@ -5263,6 +5379,11 @@ with tab_themes:
 with tab_earnings:
     _page_header("Quarterly Results", selected_date, desc_key="quarterly_results")
     _frag_quarterly_results(selected_date)
+
+# ── Tab: Order Tracker ───────────────────────────────────────────────────────
+with tab_orders:
+    _page_header("Order Tracker", desc_key="order_tracker")
+    _frag_order_tracker()
 
 # ── Tab 6: Vol Spikes ────────────────────────────────────────────────────────
 with tab_volspike:
