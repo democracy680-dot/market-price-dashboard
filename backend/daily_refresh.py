@@ -404,6 +404,15 @@ def run():
     except Exception as rs_err:
         logger.error(f"  RS refresh failed (non-fatal): {rs_err}", exc_info=True)
 
+    # ── 5c-2. Theme indices (equal-weight + market-cap) ───────────────────────
+    logger.info("Computing theme indices...")
+    try:
+        from compute_theme_index import run_theme_index_refresh
+        n_ti = run_theme_index_refresh()
+        logger.info(f"  Theme indices: {n_ti} rows")
+    except Exception as ti_err:
+        logger.error(f"  Theme index refresh failed (non-fatal): {ti_err}", exc_info=True)
+
     # ── 5d. Breakout & Reversal setup candidates ──────────────────────────────
     logger.info("Computing setup candidates (breakout/reversal scanner)...")
     try:

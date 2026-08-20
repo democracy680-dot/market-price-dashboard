@@ -8,6 +8,10 @@ Orchestrator (Task 4): run_theme_index_refresh()
 """
 import logging
 import pandas as pd
+from datetime import datetime, timezone
+from psycopg2.extras import execute_values
+from sqlalchemy import text
+from db import get_engine, get_psycopg2_conn
 
 logger = logging.getLogger(__name__)
 
@@ -58,3 +62,79 @@ def compute_theme_index_frame(closes_long: pd.DataFrame, shares: dict) -> pd.Dat
         "index_mcap": mcap.values,
         "n_members": n_members.values.astype(int),
     })
+
+
+LOOKBACK_DAYS = 400
+_UPSERT_SQL = """
+    INSERT INTO theme_index_daily (theme_slug, date, index_ew, index_mcap, n_members)
+    VALUES %s
+    ON CONFLICT (theme_slug, date) DO UPDATE SET
+        index_ew   = EXCLUDED.index_ew,
+        index_mcap = EXCLUDED.index_mcap,
+        n_members  = EXCLUDED.n_members
+"""
+
+
+def _load_inputs(engine):
+    """Returns (membership_df[theme_slug,symbol], closes_df[symbol,date,close], shares{symbol:float})."""
+    with engine.connect() as conn:
+        membership = pd.read_sql(text("SELECT theme_slug, symbol FROM theme_membership"), conn)
+        closes = pd.read_sql(text(f"""
+            SELECT p.symbol, p.date, p.close
+            FROM prices_daily p
+            WHERE p.date >= CURRENT_DATE - INTERVAL '{LOOKBACK_DAYS} days'
+              AND p.symbol IN (SELECT DISTINCT symbol FROM theme_membership)
+            ORDER BY p.symbol, p.date
+        """), conn)
+        snap = pd.read_sql(text("""
+            SELECT symbol, market_cap_cr, cmp
+            FROM snapshots_daily
+            WHERE date = (SELECT MAX(date) FROM snapshots_daily)
+        """), conn)
+    shares = {}
+    for _, r in snap.iterrows():
+        mc, cmp_ = r["market_cap_cr"], r["cmp"]
+        if pd.notna(mc) and pd.notna(cmp_) and cmp_:
+            shares[r["symbol"]] = float(mc) / float(cmp_)
+    return membership, closes, shares
+
+
+def run_theme_index_refresh() -> int:
+    engine = get_engine()
+    membership, closes, shares = _load_inputs(engine)
+    if closes.empty or membership.empty:
+        logger.warning("  theme index: no membership/price data — skipping")
+        return 0
+
+    rows = []
+    for slug, grp in membership.groupby("theme_slug"):
+        syms = set(grp["symbol"])
+        sub = closes[closes["symbol"].isin(syms)]
+        if sub.empty:
+            continue
+        frame = compute_theme_index_frame(sub, {s: shares.get(s, 0.0) for s in syms})
+        for _, fr in frame.iterrows():
+            d = fr["date"].date() if hasattr(fr["date"], "date") else fr["date"]
+            rows.append((slug, d,
+                         None if pd.isna(fr["index_ew"]) else float(fr["index_ew"]),
+                         None if pd.isna(fr["index_mcap"]) else float(fr["index_mcap"]),
+                         int(fr["n_members"])))
+
+    if not rows:
+        logger.warning("  theme index: nothing computed")
+        return 0
+
+    conn = get_psycopg2_conn()
+    try:
+        with conn.cursor() as cur:
+            execute_values(cur, _UPSERT_SQL, rows, page_size=500)
+        conn.commit()
+    finally:
+        conn.close()
+    logger.info("  theme_index_daily: %d rows upserted", len(rows))
+    return len(rows)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(message)s", datefmt="%H:%M:%S")
+    run_theme_index_refresh()
