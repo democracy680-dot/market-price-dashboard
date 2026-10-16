@@ -4,22 +4,31 @@ Unlike the Q4FY26 season (seeded from a user-provided CSV of result dates), from
 Q1FY27 onward result announcements are discovered automatically:
 
   1. Pull all "Financial Results" filings from BSE's bulk announcements API for a
-     date window (default: last 3 days; --backfill: from SEASON_START).
+     date window (default: last 3 days; --backfill: from the first day of the
+     current calendar quarter, i.e. the start of the season being reported).
   2. Map BSE scrip codes to NSE symbols via the scrip master, restricted to
      active stocks in our DB.
-  3. Insert (symbol, result_date, quarter) into earnings_calendar. The existing
-     fetch_bse_presentations.py run then enriches the new rows with PDF/PPT links.
+  3. Label each filing with the fiscal quarter it reports (derived from its own
+     announcement date, so a window spanning two seasons labels each correctly)
+     and insert (symbol, result_date, quarter) into earnings_calendar. The
+     existing fetch_bse_presentations.py run then enriches the new rows with
+     PDF/PPT links.
+
+Exits non-zero when BSE cannot be reached so the CI step turns red instead of
+quietly "succeeding" with zero inserts.
 
 Usage:
-  python discover_bse_results.py               # daily mode (last 3 days)
-  python discover_bse_results.py --backfill    # scan from SEASON_START to today
-  python discover_bse_results.py --quarter Q1FY27   # override derived quarter
+  python discover_bse_results.py                    # daily mode (last 3 days)
+  python discover_bse_results.py --backfill         # scan from season start
+  python discover_bse_results.py --from 2026-10-01  # scan from an explicit date
+  python discover_bse_results.py --quarter Q2FY27   # force one quarter label
 """
 
 import argparse
 import logging
 import math
 import os
+import sys
 import time
 from datetime import date, datetime, timedelta
 
@@ -43,7 +52,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-SEASON_START = date(2026, 7, 1)
 DAILY_LOOKBACK_DAYS = 3  # overlap survives skipped runs/holidays; dedup makes it free
 
 BSE_ANN_BULK_URL = (
@@ -69,6 +77,16 @@ def derive_quarter(announce_date: date) -> str:
         report_q = 3
         fy_end_year -= 1
     return f"Q{report_q + 1}FY{fy_end_year % 100:02d}"
+
+
+def season_start(today: date) -> date:
+    """First day of the calendar quarter containing `today`.
+
+    Results for a fiscal quarter start flowing in the first days of the next
+    calendar quarter (Q2FY27 results from 1 Oct 2026), so this is the natural
+    lower bound for a --backfill scan.
+    """
+    return date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
 
 
 def parse_news_date(news_dt) -> date | None:
@@ -97,7 +115,11 @@ def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
-            log.error(f"BSE bulk API error on page {page}: {e}")
+            if page == 1:
+                # Nothing fetched at all — almost always a block/outage. Fail
+                # loudly so the CI step is red rather than "0 inserted".
+                raise RuntimeError(f"BSE bulk API unreachable: {e}") from e
+            log.error(f"BSE bulk API error on page {page}: {e}; keeping {len(announcements)} rows")
             return announcements
 
         rows = data.get("Table", []) if isinstance(data, dict) else []
@@ -122,14 +144,21 @@ def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
 
 
 def match_announcements(
-    announcements: list[dict], scrip_to_symbol: dict[str, str]
-) -> dict[str, tuple[date, str]]:
-    """Filter filings to our universe -> {symbol: (earliest result_date, company name)}.
+    announcements: list[dict],
+    scrip_to_symbol: dict[str, str],
+    quarter: str | None = None,
+) -> dict[tuple[str, str], tuple[date, str]]:
+    """Filter filings to our universe.
+
+    Returns {(symbol, quarter): (earliest result_date, company name)}. The
+    quarter is derived from each filing's own announcement date unless an
+    explicit `quarter` override is given, so one scan can straddle two seasons
+    and a company that reported in both keeps one row per season.
 
     The bulk API is already filtered to Financial Results, but the
     subcat/keyword check is kept as a safety net against category drift.
     """
-    matches: dict[str, tuple[date, str]] = {}
+    matches: dict[tuple[str, str], tuple[date, str]] = {}
     for ann in announcements:
         subcat = (ann.get("SUBCATNAME") or "").lower()
         headline = (ann.get("NEWSSUB") or "").lower()
@@ -145,8 +174,9 @@ def match_announcements(
             continue
 
         name = (ann.get("SLONGNAME") or "").strip() or symbol
-        if symbol not in matches or result_date < matches[symbol][0]:
-            matches[symbol] = (result_date, name)
+        key = (symbol, quarter or derive_quarter(result_date))
+        if key not in matches or result_date < matches[key][0]:
+            matches[key] = (result_date, name)
     return matches
 
 
@@ -164,22 +194,28 @@ def load_active_symbols(db_url: str) -> set[str]:
         conn.close()
 
 
-def load_existing_for_quarter(db_url: str, quarter: str) -> set[str]:
+def load_existing(db_url: str, quarters: set[str]) -> set[tuple[str, str]]:
+    """(symbol, quarter) pairs already in earnings_calendar for the given quarters."""
+    if not quarters:
+        return set()
     conn = _get_conn(db_url)
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT symbol FROM earnings_calendar WHERE quarter = %s", (quarter,))
-            return {row[0] for row in cur.fetchall()}
+            cur.execute(
+                "SELECT symbol, quarter FROM earnings_calendar WHERE quarter = ANY(%s)",
+                (sorted(quarters),),
+            )
+            return {(row[0], row[1]) for row in cur.fetchall()}
     finally:
         conn.close()
 
 
-def insert_results(db_url: str, matches: dict[str, tuple[date, str]], quarter: str) -> int:
+def insert_results(db_url: str, matches: dict[tuple[str, str], tuple[date, str]]) -> int:
     conn = _get_conn(db_url)
     inserted = 0
     try:
         with conn.cursor() as cur:
-            for symbol, (result_date, name) in sorted(matches.items()):
+            for (symbol, quarter), (result_date, name) in sorted(matches.items()):
                 cur.execute(
                     """
                     INSERT INTO earnings_calendar (symbol, result_date, quarter)
@@ -190,7 +226,7 @@ def insert_results(db_url: str, matches: dict[str, tuple[date, str]], quarter: s
                 )
                 if cur.rowcount:
                     inserted += 1
-                    log.info(f"  + {symbol} — {name} ({result_date})")
+                    log.info(f"  + {symbol} — {name} ({result_date}, {quarter})")
         conn.commit()
     finally:
         conn.close()
@@ -202,22 +238,36 @@ def main():
     parser.add_argument(
         "--backfill",
         action="store_true",
-        help=f"scan from {SEASON_START} instead of the last {DAILY_LOOKBACK_DAYS} days",
+        help=f"scan from the start of the current season instead of the last "
+             f"{DAILY_LOOKBACK_DAYS} days",
     )
-    parser.add_argument("--quarter", help="override the derived quarter label (e.g. Q1FY27)")
+    parser.add_argument(
+        "--from", dest="from_date", type=date.fromisoformat, metavar="YYYY-MM-DD",
+        help="scan from this date (overrides --backfill)",
+    )
+    parser.add_argument(
+        "--quarter",
+        help="force this quarter label on every filing instead of deriving it "
+             "from each announcement date (e.g. Q2FY27)",
+    )
     args = parser.parse_args()
 
     db_url = os.environ["SUPABASE_DB_URL"].replace(":5432/", ":6543/")
     today = date.today()
-    from_dt = SEASON_START if args.backfill else today - timedelta(days=DAILY_LOOKBACK_DAYS)
-    quarter = args.quarter or derive_quarter(today)
-    log.info(f"Discovering results {from_dt} → {today} (quarter: {quarter})")
+    if args.from_date:
+        from_dt = args.from_date
+    elif args.backfill:
+        from_dt = season_start(today)
+    else:
+        from_dt = today - timedelta(days=DAILY_LOOKBACK_DAYS)
+    log.info(f"Discovering results {from_dt} → {today} "
+             f"(quarter: {args.quarter or 'derived per filing'})")
 
     try:
         symbol_to_scrip = fetch_scrip_master()
     except Exception as e:
         log.error(f"Could not fetch BSE scrip master: {e}. Aborting.")
-        return
+        sys.exit(1)
 
     active = load_active_symbols(db_url)
     scrip_to_symbol = {
@@ -225,12 +275,16 @@ def main():
     }
     log.info(f"Universe: {len(active)} active stocks, {len(scrip_to_symbol)} with BSE scrip codes")
 
-    announcements = fetch_result_announcements(from_dt, today)
-    matches = match_announcements(announcements, scrip_to_symbol)
+    try:
+        announcements = fetch_result_announcements(from_dt, today)
+    except RuntimeError as e:
+        log.error(f"{e}. Aborting.")
+        sys.exit(1)
+    matches = match_announcements(announcements, scrip_to_symbol, args.quarter)
 
-    existing = load_existing_for_quarter(db_url, quarter)
-    new_matches = {sym: v for sym, v in matches.items() if sym not in existing}
-    inserted = insert_results(db_url, new_matches, quarter)
+    existing = load_existing(db_url, {q for _, q in matches})
+    new_matches = {k: v for k, v in matches.items() if k not in existing}
+    inserted = insert_results(db_url, new_matches)
 
     log.info(
         f"Done — filings fetched: {len(announcements)} | in universe: {len(matches)} | "

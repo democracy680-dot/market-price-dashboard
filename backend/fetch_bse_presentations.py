@@ -46,6 +46,11 @@ HEADERS = {
     "Referer": "https://www.bseindia.com/",
     # BSE's scrip-master endpoint returns an HTML page unless JSON is requested
     "Accept": "application/json, text/plain, */*",
+    # Since Oct 2026 the Akamai edge in front of api.bseindia.com answers 403
+    # "Access Denied" unless the request also looks like a browser XHR. Either
+    # of these two headers alone is enough to pass; send both for margin.
+    "Origin": "https://www.bseindia.com",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 # Primary: exact subcategory match. Fallback: keyword in headline.
@@ -108,7 +113,9 @@ def fetch_scrip_master(retries: int = 4) -> dict[str, str]:
 def find_presentation_url(scrip_code: str, result_date: date) -> str | None:
     """Query BSE announcements API and return PDF URL if a presentation is found."""
     from_dt = result_date.strftime("%Y%m%d")
-    to_dt = (result_date + timedelta(days=10)).strftime("%Y%m%d")
+    # BSE rejects windows ending after today ("To Date cannot be greater than
+    # current Date"), so clamp — otherwise fresh filings never get links.
+    to_dt = min(result_date + timedelta(days=10), date.today()).strftime("%Y%m%d")
     url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)
@@ -143,7 +150,7 @@ def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
     """Return PDF URL of the quarterly Financial Results filing, if found."""
     # Start 2 days before result_date — some companies file just before the board meeting date
     from_dt = (result_date - timedelta(days=2)).strftime("%Y%m%d")
-    to_dt = (result_date + timedelta(days=7)).strftime("%Y%m%d")
+    to_dt = min(result_date + timedelta(days=7), date.today()).strftime("%Y%m%d")  # see above
     url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
         resp = requests.get(url, headers=HEADERS, timeout=20)

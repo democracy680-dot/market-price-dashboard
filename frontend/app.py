@@ -3000,8 +3000,39 @@ def _render_earnings_table(df: pd.DataFrame, mode: str, key_suffix: str = ""):
                            key=f"dl_earn_{mode}{key_suffix}", use_container_width=True)
 
 
-_CURRENT_QUARTER = "Q1FY27"
-_PREV_QUARTER = "Q4FY26"
+def _derive_quarter(d) -> str:
+    """Fiscal quarter whose results are being announced on date `d`.
+
+    Mirrors backend/discover_bse_results.derive_quarter: results land in the
+    calendar quarter after the one they cover (Indian FY Apr–Mar), so
+    Jul–Sep → Q1, Oct–Dec → Q2, Jan–Mar → Q3, Apr–Jun → Q4 of the previous FY.
+    """
+    ann_q = (d.month - 4) % 12 // 3
+    fy_end = d.year + 1 if d.month >= 4 else d.year
+    report_q = ann_q - 1
+    if report_q < 0:
+        report_q, fy_end = 3, fy_end - 1
+    return f"Q{report_q + 1}FY{fy_end % 100:02d}"
+
+
+def _quarter_sort_key(q: str) -> tuple:
+    """'Q2FY27' -> (27, 2) so quarter labels sort chronologically."""
+    return (int(q[4:]), int(q[1]))
+
+
+def _prev_quarter(q: str) -> str:
+    """'Q2FY27' -> 'Q1FY27'; 'Q1FY27' -> 'Q4FY26'."""
+    fy, qn = _quarter_sort_key(q)
+    return f"Q{qn - 1}FY{fy:02d}" if qn > 1 else f"Q4FY{fy - 1:02d}"
+
+
+def _quarter_tabs(live: str, db_quarters) -> list[str]:
+    """Tab labels: the live quarter first, then every other quarter present in
+    earnings_calendar, newest first. The live tab is shown even before its
+    first result lands so the empty-state hint is visible."""
+    archive = sorted({q for q in db_quarters if q and q != live},
+                     key=_quarter_sort_key, reverse=True)
+    return [live] + archive
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -3344,18 +3375,35 @@ def _render_earnings_season(snap_date, quarter, prev_quarter=None):
 
 @st.fragment
 def _frag_quarterly_results(snap_date):
-    tab_cur, tab_prev = st.tabs([_CURRENT_QUARTER, _PREV_QUARTER])
+    # Live quarter follows the selected date (same rule the BSE discovery job
+    # uses); archive tabs are whatever other seasons exist in the DB. No code
+    # change is needed when a new season starts.
+    live = _derive_quarter(pd.Timestamp(snap_date))
+    try:
+        db_quarters = [r[0] for r in _q_earnings(
+            "SELECT DISTINCT quarter FROM earnings_calendar WHERE quarter IS NOT NULL",
+            {},
+        )]
+    except Exception:
+        db_quarters = []
+    quarters = _quarter_tabs(live, db_quarters)
+    # Repeat-performer star compares against the immediately preceding season,
+    # only on the live tab and only when that season is actually in the DB.
+    prev_q = _prev_quarter(live)
+    if prev_q not in db_quarters:
+        prev_q = None
 
-    with tab_cur:
+    tabs = st.tabs(quarters)
+    with tabs[0]:
         sub_today, sub_season = st.tabs(["Today's Results", "Season to Date"])
         with sub_today:
-            _render_earnings_today(snap_date, _CURRENT_QUARTER)
+            _render_earnings_today(snap_date, live)
         with sub_season:
-            _render_earnings_season(snap_date, _CURRENT_QUARTER,
-                                    prev_quarter=_PREV_QUARTER)
+            _render_earnings_season(snap_date, live, prev_quarter=prev_q)
 
-    with tab_prev:
-        _render_earnings_season(snap_date, _PREV_QUARTER)
+    for tab, quarter in zip(tabs[1:], quarters[1:]):
+        with tab:
+            _render_earnings_season(snap_date, quarter)
 
 
 @st.fragment
@@ -5240,7 +5288,7 @@ _TAB_DESCRIPTIONS = {
     },
     "quarterly_results": {
         "what": [
-            "**Quarter Tabs** — Q1FY27 tracks the live results season (auto-discovered daily from BSE filings); Q4FY26 is the completed season's archive",
+            "**Quarter Tabs** — the first tab is the live results season for the selected date (e.g. Q2FY27 from October; auto-discovered daily from BSE filings); every completed season in the database gets its own archive tab, newest first",
             "**Today's Results** — companies announcing quarterly results today, sorted by their 1-day return on the announcement date",
             "**Season to Date** — all companies that have announced results so far in the quarter, with reaction badges (🟢 Strong / 🟡 Faded / 🔴 Rejected), excess return vs Nifty, distance from 52-week high, gap-held flag, and repeat-performer stars",
             "**Filters** — narrow the season table by market cap, sector, minimum score, or positive reactions only; sector season summary shows which sectors the market is rewarding",
