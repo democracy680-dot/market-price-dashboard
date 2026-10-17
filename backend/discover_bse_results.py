@@ -33,13 +33,12 @@ import time
 from datetime import date, datetime, timedelta
 
 import psycopg2
-import requests
 from dotenv import load_dotenv
 
 from fetch_bse_presentations import (
-    HEADERS,
     RESULTS_KEYWORDS,
     RESULTS_SUBCATS,
+    bse_get,
     fetch_scrip_master,
 )
 
@@ -111,7 +110,7 @@ def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
             to_dt=to_dt.strftime("%Y%m%d"),
         )
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=30)
+            resp = bse_get(url, timeout=30)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:

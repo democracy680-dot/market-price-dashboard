@@ -17,6 +17,15 @@ on:
     - cron: "0 3 * * *"    # ~8:30 AM IST — catch-up for overnight stragglers
   workflow_dispatch:
     # Manual trigger via GitHub UI for testing
+  push:
+    # Smoke-test the BSE fetchers from a GitHub runner whenever they change —
+    # BSE's edge blocks by TLS fingerprint / IP reputation, which only shows
+    # up from a datacenter IP, never from a local run.
+    branches: [main]
+    paths:
+      - backend/discover_bse_results.py
+      - backend/fetch_bse_presentations.py
+      - .github/workflows/bse_results_refresh.yml
 
 jobs:
   discover:
@@ -35,7 +44,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install requests psycopg2-binary python-dotenv
+        run: pip install requests curl_cffi psycopg2-binary python-dotenv
 
       - name: Discover BSE result announcements
         env:

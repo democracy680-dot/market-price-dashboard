@@ -37,6 +37,26 @@ BSE_ANN_URL = (
 )
 BSE_PDF_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachLive/"
 
+try:
+    from curl_cffi import requests as _cffi_requests
+except ImportError:  # pragma: no cover - fallback keeps local dev scripts runnable
+    _cffi_requests = None
+
+
+def bse_get(url: str, timeout: int = 30):
+    """GET a BSE endpoint the way a browser would.
+
+    Since late Sep 2026 the Akamai edge in front of api.bseindia.com blocks
+    requests by TLS fingerprint: python-requests and curl get 403 "Access
+    Denied" regardless of headers, while a Chrome TLS handshake passes.
+    curl_cffi's `impersonate="chrome"` reproduces that handshake. If the
+    package is missing we fall back to plain requests, which may be blocked.
+    """
+    if _cffi_requests is not None:
+        return _cffi_requests.get(url, headers=HEADERS, impersonate="chrome", timeout=timeout)
+    return requests.get(url, headers=HEADERS, timeout=timeout)
+
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -46,9 +66,7 @@ HEADERS = {
     "Referer": "https://www.bseindia.com/",
     # BSE's scrip-master endpoint returns an HTML page unless JSON is requested
     "Accept": "application/json, text/plain, */*",
-    # Since Oct 2026 the Akamai edge in front of api.bseindia.com answers 403
-    # "Access Denied" unless the request also looks like a browser XHR. Either
-    # of these two headers alone is enough to pass; send both for margin.
+    # Browser-XHR shape; the real gate is the TLS fingerprint (see bse_get).
     "Origin": "https://www.bseindia.com",
     "Accept-Language": "en-US,en;q=0.9",
 }
@@ -88,7 +106,7 @@ def fetch_scrip_master(retries: int = 4) -> dict[str, str]:
     data = None
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(BSE_SCRIP_MASTER_URL, headers=HEADERS, timeout=30)
+            resp = bse_get(BSE_SCRIP_MASTER_URL, timeout=30)
             resp.raise_for_status()
             data = resp.json()
             break
@@ -118,7 +136,7 @@ def find_presentation_url(scrip_code: str, result_date: date) -> str | None:
     to_dt = min(result_date + timedelta(days=10), date.today()).strftime("%Y%m%d")
     url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = bse_get(url, timeout=20)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
@@ -153,7 +171,7 @@ def find_result_pdf_url(scrip_code: str, result_date: date) -> str | None:
     to_dt = min(result_date + timedelta(days=7), date.today()).strftime("%Y%m%d")  # see above
     url = BSE_ANN_URL.format(scrip=scrip_code, from_dt=from_dt, to_dt=to_dt)
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = bse_get(url, timeout=20)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:

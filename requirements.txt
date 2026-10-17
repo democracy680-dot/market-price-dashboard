@@ -13,6 +13,7 @@ pytz>=2024.1
 streamlit-autorefresh>=1.0.1
 feedparser>=6.0.10
 requests>=2.31.0
+curl_cffi>=0.7.0        # Chrome TLS impersonation — BSE's Akamai edge blocks python-requests
 reportlab>=4.0.0
 google-api-python-client>=2.100.0
 google-auth>=2.20.0

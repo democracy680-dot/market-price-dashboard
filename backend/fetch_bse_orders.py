@@ -31,7 +31,7 @@ import requests
 from dotenv import load_dotenv
 from psycopg2.extras import execute_values
 
-from fetch_bse_presentations import HEADERS, BSE_PDF_BASE, fetch_scrip_master
+from fetch_bse_presentations import HEADERS, BSE_PDF_BASE, bse_get, fetch_scrip_master
 
 load_dotenv()
 
@@ -259,7 +259,7 @@ def _fetch_window(from_dt: date, to_dt: date) -> list[dict]:
             to_dt=to_dt.strftime("%Y%m%d"),
         )
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=30)
+            resp = bse_get(url, timeout=30)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
