@@ -108,6 +108,10 @@ BSE_PDF_ARCHIVE_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/"
 RESULTS_DEADLINE_DAYS = {1: 45, 2: 45, 3: 45, 4: 60}
 PAGE_SIZE = 50
 MAX_PAGES = 200
+# BSE's bulk API silently returns an empty table for windows longer than
+# roughly a month (Jul 1 → Oct 17 gives 0 rows; Jul 1 → Jul 31 gives 1001),
+# so every scan is split into chunks of at most this many days.
+CHUNK_DAYS = 30
 
 
 def derive_quarter(announce_date: date) -> str:
@@ -194,11 +198,24 @@ def parse_news_date(news_dt) -> date | None:
         return None
 
 
+def date_chunks(from_dt: date, to_dt: date, days: int = CHUNK_DAYS) -> list[tuple[date, date]]:
+    """Split [from_dt, to_dt] into consecutive inclusive windows of ≤ `days` days."""
+    chunks: list[tuple[date, date]] = []
+    start = from_dt
+    while start <= to_dt:
+        end = min(start + timedelta(days=days - 1), to_dt)
+        chunks.append((start, end))
+        start = end + timedelta(days=1)
+    return chunks
+
+
 def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
-    """Fetch every filing in RESULT_CATEGORIES for the window, paginated."""
+    """Fetch every filing in RESULT_CATEGORIES for the window, paginated and
+    chunked so BSE's silent month-long window limit is never hit."""
     announcements: list[dict] = []
     for cat, subcat in RESULT_CATEGORIES:
-        announcements.extend(_fetch_category(cat, subcat, from_dt, to_dt))
+        for chunk_from, chunk_to in date_chunks(from_dt, to_dt):
+            announcements.extend(_fetch_category(cat, subcat, chunk_from, chunk_to))
     return announcements
 
 
@@ -236,7 +253,7 @@ def _fetch_category(cat: str, subcat: str, from_dt: date, to_dt: date) -> list[d
                 rowcnt = int(data["Table1"][0]["ROWCNT"])
                 total_pages = math.ceil(rowcnt / PAGE_SIZE)
                 log.info(f"BSE reports {rowcnt} '{subcat.replace('+', ' ')}' filings "
-                         f"in window ({total_pages} pages)")
+                         f"{from_dt} → {to_dt} ({total_pages} pages)")
             except (KeyError, IndexError, TypeError, ValueError):
                 log.warning("Could not read ROWCNT; paginating until an empty page")
                 total_pages = MAX_PAGES

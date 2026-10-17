@@ -2,13 +2,14 @@
 
 import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from discover_bse_results import (
+    date_chunks,
     derive_quarter,
     match_announcements,
     parse_news_date,
@@ -78,6 +79,26 @@ class TestWithinResultsDeadline:
     )
     def test_window(self, d, expected):
         assert within_results_deadline(d) is expected
+
+
+class TestDateChunks:
+    def test_short_window_is_one_chunk(self):
+        assert date_chunks(date(2026, 10, 14), date(2026, 10, 17)) == [
+            (date(2026, 10, 14), date(2026, 10, 17))
+        ]
+
+    def test_season_backfill_is_split_and_contiguous(self):
+        chunks = date_chunks(date(2026, 7, 1), date(2026, 10, 17), days=30)
+        assert chunks[0] == (date(2026, 7, 1), date(2026, 7, 30))
+        assert chunks[-1][1] == date(2026, 10, 17)
+        for (_, end), (nxt, _) in zip(chunks, chunks[1:]):
+            assert nxt == end + timedelta(days=1)
+        assert all((end - start).days < 30 for start, end in chunks)
+
+    def test_single_day(self):
+        assert date_chunks(date(2026, 10, 16), date(2026, 10, 16)) == [
+            (date(2026, 10, 16), date(2026, 10, 16))
+        ]
 
 
 class TestParseNewsDate:
