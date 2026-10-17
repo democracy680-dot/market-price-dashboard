@@ -6,6 +6,12 @@ Q1FY27 onward result announcements are discovered automatically:
   1. Pull all "Financial Results" filings from BSE's bulk announcements API for a
      date window (default: last 3 days; --backfill: from the first day of the
      current calendar quarter, i.e. the start of the season being reported).
+     Many companies (E2E Networks, PNB, ...) file results only as an "Outcome
+     of Board Meeting". That category is pulled too, but a board meeting can be
+     about a QIP, an ESOP allotment or an AGM, so an outcome only counts when
+     (a) the SEBI results deadline for the season is still open and (b) its
+     headline, or failing that the first pages of its PDF, talk about
+     financial results.
   2. Map BSE scrip codes to NSE symbols via the scrip master, restricted to
      active stocks in our DB.
   3. Label each filing with the fiscal quarter it reports (derived from its own
@@ -25,22 +31,31 @@ Usage:
 """
 
 import argparse
+import io
 import logging
 import math
 import os
+import re
 import sys
 import time
 from datetime import date, datetime, timedelta
+from typing import Callable
 
 import psycopg2
 from dotenv import load_dotenv
 
 from fetch_bse_presentations import (
+    BSE_PDF_BASE,
     RESULTS_KEYWORDS,
     RESULTS_SUBCATS,
     bse_get,
     fetch_scrip_master,
 )
+
+try:
+    from pypdf import PdfReader
+except ImportError:  # pragma: no cover
+    PdfReader = None
 
 load_dotenv()
 
@@ -55,9 +70,42 @@ DAILY_LOOKBACK_DAYS = 3  # overlap survives skipped runs/holidays; dedup makes i
 
 BSE_ANN_BULK_URL = (
     "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
-    "?pageno={page}&strCat=Result&strPrevDate={from_dt}&strScrip=&strSearch=P"
-    "&strToDate={to_dt}&strType=C&subcategory=Financial+Results"
+    "?pageno={page}&strCat={cat}&strPrevDate={from_dt}&strScrip=&strSearch=P"
+    "&strToDate={to_dt}&strType=C&subcategory={subcat}"
 )
+# (category, subcategory) pairs that carry quarterly results. The second is
+# noisy outside results season, so match_announcements() gates it on the
+# SEBI deadline window — see within_results_deadline().
+RESULT_CATEGORIES = [
+    ("Result", "Financial+Results"),
+    ("Board+Meeting", "Outcome+of+Board+Meeting"),
+]
+OUTCOME_SUBCAT = "outcome of board meeting"
+# Phrases that only appear when a filing actually carries quarterly numbers.
+# (RESULTS_KEYWORDS is looser — it includes "outcome of board meeting" itself.)
+STRICT_RESULT_PHRASES = [
+    "financial results",
+    "financial result",
+    "results for the quarter",
+    "result for the quarter",
+    "quarter ended",
+    "quarter and half year",
+    "half year ended",
+    "half-year ended",
+    "nine months ended",
+    "year ended",
+    "unaudited",
+    "audited results",
+    "statement of profit",
+    "total income",
+    "revenue from operations",
+]
+STRICT_MIN_HITS = 2          # for PDF text; a single phrase is too easy to hit by accident
+PDF_PAGES_TO_SCAN = 3        # the cover letter is always up front
+BSE_PDF_ARCHIVE_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/"
+# SEBI LODR Reg. 33: quarterly results within 45 days of quarter end; the
+# March quarter (audited annual) gets 60 days.
+RESULTS_DEADLINE_DAYS = {1: 45, 2: 45, 3: 45, 4: 60}
 PAGE_SIZE = 50
 MAX_PAGES = 200
 
@@ -88,6 +136,54 @@ def season_start(today: date) -> date:
     return date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
 
 
+def within_results_deadline(announce_date: date) -> bool:
+    """True while the SEBI deadline for the quarter being reported is open.
+
+    An "Outcome of Board Meeting" filed in this window is almost always the
+    quarterly result; outside it, board meetings are about fundraises,
+    dividends and the like, so those are not treated as results.
+    """
+    q_num = int(derive_quarter(announce_date)[1])
+    deadline = season_start(announce_date) + timedelta(days=RESULTS_DEADLINE_DAYS[q_num])
+    return announce_date <= deadline
+
+
+def results_phrase_hits(text: str) -> int:
+    """Number of distinct STRICT_RESULT_PHRASES found in `text` (case-insensitive)."""
+    norm = re.sub(r"\s+", " ", (text or "").lower())
+    return sum(1 for ph in STRICT_RESULT_PHRASES if ph in norm)
+
+
+def outcome_pdf_is_results(attachment: str) -> bool:
+    """Download a board-meeting outcome PDF and decide whether it carries results.
+
+    Reads only the first PDF_PAGES_TO_SCAN pages (the cover letter). Returns
+    False when the PDF is missing, unreadable or image-only — i.e. unverified
+    outcomes are left out rather than guessed in.
+    """
+    if not attachment or PdfReader is None:
+        return False
+    for base in (BSE_PDF_BASE, BSE_PDF_ARCHIVE_BASE):
+        try:
+            resp = bse_get(base + attachment, timeout=60)
+        except Exception as e:
+            log.warning(f"  PDF fetch failed for {attachment}: {e}")
+            continue
+        if resp.status_code != 200 or not resp.content.startswith(b"%PDF"):
+            continue
+        try:
+            reader = PdfReader(io.BytesIO(resp.content))
+            text = " ".join(
+                (reader.pages[i].extract_text() or "")
+                for i in range(min(PDF_PAGES_TO_SCAN, len(reader.pages)))
+            )
+        except Exception as e:
+            log.warning(f"  PDF parse failed for {attachment}: {e}")
+            return False
+        return results_phrase_hits(text) >= STRICT_MIN_HITS
+    return False
+
+
 def parse_news_date(news_dt) -> date | None:
     """Parse BSE's NEWS_DT timestamp (e.g. '2026-07-16T16:22:05.53') to a date."""
     if not news_dt:
@@ -99,13 +195,22 @@ def parse_news_date(news_dt) -> date | None:
 
 
 def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
-    """Fetch all Financial Results filings from BSE for the window, paginated."""
+    """Fetch every filing in RESULT_CATEGORIES for the window, paginated."""
+    announcements: list[dict] = []
+    for cat, subcat in RESULT_CATEGORIES:
+        announcements.extend(_fetch_category(cat, subcat, from_dt, to_dt))
+    return announcements
+
+
+def _fetch_category(cat: str, subcat: str, from_dt: date, to_dt: date) -> list[dict]:
     announcements: list[dict] = []
     page = 1
     total_pages = None
     while page <= MAX_PAGES:
         url = BSE_ANN_BULK_URL.format(
             page=page,
+            cat=cat,
+            subcat=subcat,
             from_dt=from_dt.strftime("%Y%m%d"),
             to_dt=to_dt.strftime("%Y%m%d"),
         )
@@ -130,7 +235,8 @@ def fetch_result_announcements(from_dt: date, to_dt: date) -> list[dict]:
             try:
                 rowcnt = int(data["Table1"][0]["ROWCNT"])
                 total_pages = math.ceil(rowcnt / PAGE_SIZE)
-                log.info(f"BSE reports {rowcnt} result filings in window ({total_pages} pages)")
+                log.info(f"BSE reports {rowcnt} '{subcat.replace('+', ' ')}' filings "
+                         f"in window ({total_pages} pages)")
             except (KeyError, IndexError, TypeError, ValueError):
                 log.warning("Could not read ROWCNT; paginating until an empty page")
                 total_pages = MAX_PAGES
@@ -146,6 +252,9 @@ def match_announcements(
     announcements: list[dict],
     scrip_to_symbol: dict[str, str],
     quarter: str | None = None,
+    *,
+    verify_outcome: Callable[[str], bool] | None = None,
+    skip_keys: set[tuple[str, str]] | frozenset = frozenset(),
 ) -> dict[tuple[str, str], tuple[date, str]]:
     """Filter filings to our universe.
 
@@ -154,11 +263,20 @@ def match_announcements(
     explicit `quarter` override is given, so one scan can straddle two seasons
     and a company that reported in both keeps one row per season.
 
-    The bulk API is already filtered to Financial Results, but the
-    subcat/keyword check is kept as a safety net against category drift.
+    "Financial Results" filings are taken as-is (the subcat/keyword check is a
+    safety net against category drift). "Outcome of Board Meeting" filings
+    are processed after them and must pass, in order:
+      1. the SEBI deadline window for the season (within_results_deadline);
+      2. not already matched for that (symbol, quarter), and not in skip_keys
+         (rows already in the DB) — so no PDF is fetched needlessly;
+      3. a results phrase in the headline, or else `verify_outcome(attachment)`
+         returning True. With no verifier, keyword-less outcomes are dropped.
     """
     matches: dict[tuple[str, str], tuple[date, str]] = {}
-    for ann in announcements:
+    ordered = sorted(
+        announcements, key=lambda a: (a.get("SUBCATNAME") or "").lower() == OUTCOME_SUBCAT
+    )
+    for ann in ordered:
         subcat = (ann.get("SUBCATNAME") or "").lower()
         headline = (ann.get("NEWSSUB") or "").lower()
         if subcat not in RESULTS_SUBCATS and not any(kw in headline for kw in RESULTS_KEYWORDS):
@@ -174,6 +292,17 @@ def match_announcements(
 
         name = (ann.get("SLONGNAME") or "").strip() or symbol
         key = (symbol, quarter or derive_quarter(result_date))
+
+        if subcat == OUTCOME_SUBCAT:
+            if not within_results_deadline(result_date):
+                continue
+            if key in matches or key in skip_keys:
+                continue
+            title = f"{ann.get('NEWSSUB') or ''} {ann.get('HEADLINE') or ''}"
+            if results_phrase_hits(title) == 0:
+                if verify_outcome is None or not verify_outcome(ann.get("ATTACHMENTNAME") or ""):
+                    continue
+
         if key not in matches or result_date < matches[key][0]:
             matches[key] = (result_date, name)
     return matches
@@ -279,9 +408,15 @@ def main():
     except RuntimeError as e:
         log.error(f"{e}. Aborting.")
         sys.exit(1)
-    matches = match_announcements(announcements, scrip_to_symbol, args.quarter)
+    quarters_in_window = {args.quarter} if args.quarter else {
+        derive_quarter(from_dt), derive_quarter(today)
+    }
+    existing = load_existing(db_url, quarters_in_window)
+    matches = match_announcements(
+        announcements, scrip_to_symbol, args.quarter,
+        verify_outcome=outcome_pdf_is_results, skip_keys=existing,
+    )
 
-    existing = load_existing(db_url, {q for _, q in matches})
     new_matches = {k: v for k, v in matches.items() if k not in existing}
     inserted = insert_results(db_url, new_matches)
 

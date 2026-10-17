@@ -44,7 +44,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install requests curl_cffi psycopg2-binary python-dotenv
+        run: pip install requests curl_cffi pypdf psycopg2-binary python-dotenv
 
       - name: Discover BSE result announcements
         env:
