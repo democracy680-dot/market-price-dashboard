@@ -61,6 +61,14 @@ except Exception as _gm_err:  # noqa: BLE001
     _GM_AVAILABLE = False
     _GM_ERROR = str(_gm_err)
 
+# Market Mood tab (pre-computed breadth from market_breadth_daily)
+try:
+    from market_mood_tab import render_market_mood_tab as _render_market_mood
+    _MOOD_AVAILABLE = True
+except Exception as _mood_err:  # noqa: BLE001
+    _MOOD_AVAILABLE = False
+    _MOOD_ERROR = str(_mood_err)
+
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
@@ -3421,6 +3429,14 @@ def _frag_global_markets():
 
 
 @st.fragment
+def _frag_market_mood():
+    if _MOOD_AVAILABLE:
+        _render_market_mood(engine)
+    else:
+        st.error(f"Market Mood module failed to load: {_MOOD_ERROR}")
+
+
+@st.fragment
 def _frag_technical_analysis(refresh_ts=None):
     render_technical_analysis_view(refresh_ts)
 
@@ -5219,8 +5235,9 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+tab_gm, tab_mood, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
     "Global Markets",
+    "Market Mood",
     "Indexes",
     "Sectors",
     "Sector Performance",
@@ -5235,6 +5252,18 @@ tab_gm, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, ta
 ])
 
 _TAB_DESCRIPTIONS = {
+    "market_mood": {
+        "what": [
+            "**The Broader Market gauge** — composite 0–100 score across all dashboard stocks: average of % above 200 DMA, % above 50 DMA, 20-day advance ratio, and % of stocks with RSI above 50. Below 35 = Bear, 35–65 = Dull, above 65 = Bull",
+            "**Market Momentum gauge** — % of stocks trading above their 50 DMA, the fastest-moving breadth input",
+            "**Stat tiles** — each breadth input with its day-over-day change, plus overbought / oversold counts, advances vs declines, and total traded value",
+            "**Market Breadth table** — how many stocks moved ±3%, ±5%, ±10%, ±20% on each of the last 15 sessions",
+            "**% Below 200 DMA / % Below 50 DMA** — daily history with a 50% line; red zone above it means most stocks are in downtrends",
+            "**Overbought vs Oversold** — daily count of stocks with RSI-14 above 70 vs below 30",
+            "**Monthly Traded Value** — total turnover across the universe per month with a 12-month average",
+        ],
+        "how": "Breadth tells you whether an index move is supported by the average stock. A rising Nifty with the Broader Market gauge in Bear territory is a narrow rally driven by a few heavyweights; a Bull reading with a flat index means money is rotating under the surface. Spikes in the oversold count have historically marked capitulation lows, while a high % below 200 DMA that starts to fall is often the first sign of a new uptrend. The breadth table shows the character of each session: many ±5% movers on both sides means a volatile, news-driven tape.",
+    },
     "global_markets": {
         "what": [
             "**Session Timeline** — live view of which markets are open across 7 global cities, with a real-time cursor",
@@ -5458,6 +5487,11 @@ with tab_scanner:
 with tab_gm:
     _page_header("Global Markets", desc_key="global_markets")
     _frag_global_markets()
+
+# ── Tab 9b: Market Mood ───────────────────────────────────────────────────────
+with tab_mood:
+    _page_header("Market Mood", desc_key="market_mood")
+    _frag_market_mood()
 
 # ── Tab 10: News ──────────────────────────────────────────────────────────────
 with tab_news:

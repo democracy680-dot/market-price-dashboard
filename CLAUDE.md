@@ -46,6 +46,7 @@ Don't create or overwrite docs without asking. These are durable instructions.
 frontend/
   app.py                    # Main Streamlit app — all 11 tabs
   global_markets_tab.py     # Global Markets tab (live yfinance)
+  market_mood_tab.py        # Market Mood tab (gauges, breadth table, DMA/RSI/turnover charts)
   ticker_bar.py             # Top ticker bar component
   news_ticker.py            # News ticker component
   perf_logger.py            # DEBUG=true performance instrumentation
@@ -60,6 +61,8 @@ backend/
   compute_setup_candidates.py   # Breakout/reversal scanner → setup_candidates_daily
   compute_minervini_template.py # 8-criterion template → minervini_template_daily
   compute_earnings.py       # Quarterly results score → earnings_calendar
+  compute_market_breadth.py # Market Mood: ±3/5/10/20% movers, DMA %, RSI OB/OS, mood score → market_breadth_daily
+  market_breadth.py         # Pure vectorised breadth math (tested)
   fetch_bse_orders.py       # BSE order wins & business updates → bse_orders (Order Tracker)
   financials_fetcher.py     # Weekly fundamentals → financials_snapshots
   news_fetcher.py           # RSS ingestion → news_articles
@@ -104,6 +107,8 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | `setup_candidates_daily` | Breakout/reversal setup detections with pattern_code, strength, trigger_level |
 | `minervini_template_daily` | 8-criterion Minervini trend template with per-criterion flags and template_score |
 | `earnings_calendar` | Quarterly result announcement dates |
+| `market_breadth_daily` | One row per session across ALL stocks: ±3/5/10/20% movers, % above/below 50 & 200 DMA, RSI overbought/oversold counts, 20-day advance ratio, composite `mood_score` (Bear/Dull/Bull), daily turnover |
+| `market_turnover_monthly` | Monthly sum of turnover (₹ cr) with `is_partial` for the running month |
 | `bse_orders` | BSE order wins & business updates (order/acquisition/jv/expansion) for dashboard stocks, with parsed ₹ value + filing PDF link; `latest_orders` view enforces the 180-day window |
 | `news_sources` | RSS feed registry (ET, Moneycontrol, BS, Livemint, FE, NDTV Profit, BL) |
 | `news_articles` | Ingested articles with full-text search (ts_vector) |
@@ -119,6 +124,7 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | Tab | What it shows |
 |---|---|
 | **Global Markets** | Session timeline, overnight futures, regional index cards, commodities, bonds, crypto, world heatmap — all live via yfinance |
+| **Market Mood** | Broader Market gauge (composite breadth score) + Momentum gauge (% above 50 DMA), ±3/5/10/20% movers table, % below 50/200 DMA history, overbought vs oversold, monthly traded value |
 | **Indexes** | Nifty 50 / Nifty 500 / Nifty Bank / F&O stock tables with returns, DMA status, analysis + breadth sub-tabs |
 | **Sectors** | Sector-level performance with advance/decline + stock drilldown |
 | **Sector Performance** | Cross-sector bar chart comparisons across timeframes |
@@ -141,6 +147,7 @@ daily_refresh.py
   └─ compute.py       → snapshots_daily + sector_performance_daily
   └─ compute_technicals.py  → technicals_daily (RSI, MACD, ADX, signal_score)
   └─ compute_relative_strength.py → relative_strength_daily
+  └─ compute_market_breadth.py → market_breadth_daily + market_turnover_monthly (Market Mood; incremental, --full rebuilds)
   └─ fetch_bse_orders.py    → bse_orders (Order Tracker; non-fatal step, filtered to our universe)
   └─ refresh_log      (audit trail)
 ```

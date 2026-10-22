@@ -404,6 +404,15 @@ def run():
     except Exception as rs_err:
         logger.error(f"  RS refresh failed (non-fatal): {rs_err}", exc_info=True)
 
+    # ── 5c-1. Market Mood breadth (all stocks) ────────────────────────────────
+    logger.info("Computing market breadth (Market Mood)...")
+    try:
+        from compute_market_breadth import run_market_breadth_refresh
+        n_mb = run_market_breadth_refresh()
+        logger.info(f"  Market breadth: {n_mb} rows")
+    except Exception as mb_err:
+        logger.error(f"  Market breadth refresh failed (non-fatal): {mb_err}", exc_info=True)
+
     # ── 5d. Breakout & Reversal setup candidates ──────────────────────────────
     logger.info("Computing setup candidates (breakout/reversal scanner)...")
     try:
