@@ -76,3 +76,19 @@ def test_symmetric_ticks_small_peak():
     vals, text = symmetric_ticks(11)
     assert vals == [-10, -5, 0, 5, 10]
     assert "-" not in "".join(text)
+
+
+# ── finalize_chart ───────────────────────────────────────────────────────────
+import plotly.graph_objects as go
+from market_mood_tab import finalize_chart, CHART_CONFIG, _palette
+
+
+def test_finalize_chart_disables_zoom_and_darkens_light_axes():
+    C = _palette(False)
+    fig = go.Figure(go.Scatter(x=[1, 2], y=[3, 4]))
+    fig.update_layout(yaxis2=dict(overlaying="y", side="right"))
+    finalize_chart(fig, C)
+    assert fig.layout.dragmode is False
+    assert fig.layout.xaxis.fixedrange and fig.layout.yaxis.fixedrange and fig.layout.yaxis2.fixedrange
+    assert fig.layout.xaxis.tickfont.color == C["tick"] == "#0b0f19"
+    assert CHART_CONFIG["scrollZoom"] is False and CHART_CONFIG["doubleClick"] is False

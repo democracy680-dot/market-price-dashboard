@@ -39,7 +39,7 @@ def _palette(dark: bool) -> dict:
         "section":   "#475569" if dark else "#64748b",
         "grid":      "#1f2937" if dark else "#cbd5e1",
         "plot_bg":   "#080c14" if dark else "#ffffff",
-        "tick":      "#94a3b8" if dark else "#475569",
+        "tick":      "#94a3b8" if dark else "#0b0f19",   # axis numbers / labels
         # chart inks — saturated enough to read on both backgrounds
         "line":      "#60a5fa" if dark else "#1d4ed8",
         "line_fill": "rgba(96,165,250,0.32)" if dark else "rgba(29,78,216,0.26)",
@@ -325,6 +325,23 @@ def _base_layout(C: dict, height=300, **kw) -> dict:
     return layout
 
 
+def finalize_chart(fig: go.Figure, C: dict) -> go.Figure:
+    """
+    Make a chart static to the mouse (no zoom, pan or box-select on click/drag;
+    hover tooltips still work) and pin every axis label to the palette's tick
+    colour so Streamlit's plotly theme cannot lighten it.
+    """
+    fig.update_layout(dragmode=False, legend_font_color=C["tick"])
+    fig.update_xaxes(fixedrange=True, tickfont_color=C["tick"], title_font_color=C["tick"])
+    fig.update_yaxes(fixedrange=True, tickfont_color=C["tick"], title_font_color=C["tick"])
+    return fig
+
+
+# Plotly config shared by every chart on this tab: no toolbar, no scroll/double-click zoom
+CHART_CONFIG = {"displayModeBar": False, "scrollZoom": False, "doubleClick": False,
+                "showAxisDragHandles": False}
+
+
 def split_at_midline(dates, values, mid: float = 50.0):
     """
     Insert interpolated crossing points wherever the series crosses `mid`, so
@@ -561,18 +578,18 @@ def render_market_mood_tab(engine):
     days = LOOKBACKS[lb]
     view = df if days is None else df[df["date"] >= df["date"].max() - pd.Timedelta(days=days)]
 
-    cfg = {"displayModeBar": False}
+    cfg = CHART_CONFIG
     nifty = load_nifty(engine)
-    st.plotly_chart(_mood_history_chart(view, C, full=df), width="stretch", config=cfg)
+    st.plotly_chart(finalize_chart(_mood_history_chart(view, C, full=df), C), width="stretch", config=cfg)
     st.markdown(f"<div style='font-size:11px;color:{C['muted']};margin:-6px 0 6px 0;'>"
                 "Dotted line = Nifty 50 on the right axis. Watch for divergence: Nifty rising while "
                 "% below DMA also rises means the rally is narrow.</div>", unsafe_allow_html=True)
-    st.plotly_chart(_pct_below_chart(view, "pct_below_200dma", "% Below 200 DMA", C, nifty), width="stretch", config=cfg)
-    st.plotly_chart(_pct_below_chart(view, "pct_below_50dma", "% Below 50 DMA", C, nifty), width="stretch", config=cfg)
+    st.plotly_chart(finalize_chart(_pct_below_chart(view, "pct_below_200dma", "% Below 200 DMA", C, nifty), C), width="stretch", config=cfg)
+    st.plotly_chart(finalize_chart(_pct_below_chart(view, "pct_below_50dma", "% Below 50 DMA", C, nifty), C), width="stretch", config=cfg)
     if view["hl_count"].fillna(0).gt(0).any():
-        st.plotly_chart(_highs_lows_chart(view, C), width="stretch", config=cfg)
-    st.plotly_chart(_ob_os_chart(view, C), width="stretch", config=cfg)
+        st.plotly_chart(finalize_chart(_highs_lows_chart(view, C), C), width="stretch", config=cfg)
+    st.plotly_chart(finalize_chart(_ob_os_chart(view, C), C), width="stretch", config=cfg)
 
     monthly = load_turnover_monthly(engine)
     if not monthly.empty:
-        st.plotly_chart(_turnover_chart(monthly, C), width="stretch", config=cfg)
+        st.plotly_chart(finalize_chart(_turnover_chart(monthly, C), C), width="stretch", config=cfg)
