@@ -158,7 +158,7 @@ st.markdown("""
     [data-testid="block-container"],
     [data-testid="stMainBlockContainer"] {
         padding-top: 0 !important;
-        padding-bottom: 1rem;
+        padding-bottom: 6rem !important;   /* room below the last element + future footer */
         max-width: 100%;
     }
 
@@ -526,229 +526,238 @@ def _check_password():
         return
 
     # ── Login page ───────────────────────────────────────────────────────────
-    st.markdown("""
-    <style>
-        [data-testid="stSidebar"] { display: none !important; }
-        [data-testid="stAppViewContainer"] {
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%) !important;
-            background-attachment: fixed !important;
-        }
-        [data-testid="stAppViewContainer"]::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/G%3E%3C/svg%3E");
-            pointer-events: none;
-            z-index: 0;
-        }
+    # The whole login page lives in ONE placeholder slot. Rendered as many
+    # top-level elements, its leftovers stayed stale below the dashboard after
+    # sign-in (the dashboard has fewer top-level elements to overwrite them).
+    login_slot = st.empty()
+    signed_in = False
+    with login_slot.container():
+        st.markdown("""
+        <style>
+            [data-testid="stSidebar"] { display: none !important; }
+            [data-testid="stAppViewContainer"] {
+                background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%) !important;
+                background-attachment: fixed !important;
+            }
+            [data-testid="stAppViewContainer"]::before {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%233b82f6' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/G%3E%3C/svg%3E");
+                pointer-events: none;
+                z-index: 0;
+            }
 
-        /* hide "Press Enter to apply" hint on password field */
-        .stTextInput div[data-baseweb="input"] ~ div small,
-        .stTextInput [class*="InputInstructions"],
-        .stTextInput ~ div > small,
-        .stTextInput small,
-        [data-testid="InputInstructions"],
-        .stTextInput [data-testid="InputInstructions"],
-        .stTextInput div[role="status"],
-        .stTextInput + div small { display: none !important; }
+            /* hide "Press Enter to apply" hint on password field */
+            .stTextInput div[data-baseweb="input"] ~ div small,
+            .stTextInput [class*="InputInstructions"],
+            .stTextInput ~ div > small,
+            .stTextInput small,
+            [data-testid="InputInstructions"],
+            .stTextInput [data-testid="InputInstructions"],
+            .stTextInput div[role="status"],
+            .stTextInput + div small { display: none !important; }
 
-        /* Frosted glass card */
-        [data-testid="stVerticalBlockBorderWrapper"] {
-            background: rgba(12, 18, 32, 0.82) !important;
-            backdrop-filter: blur(24px) !important;
-            -webkit-backdrop-filter: blur(24px) !important;
-            border: 1px solid rgba(59, 130, 246, 0.22) !important;
-            border-radius: 24px !important;
-            box-shadow: 0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.06) !important;
-        }
-        [data-testid="stVerticalBlockBorderWrapper"] > div {
-            padding: 12px 32px 24px !important;
-        }
+            /* Frosted glass card */
+            [data-testid="stVerticalBlockBorderWrapper"] {
+                background: rgba(12, 18, 32, 0.82) !important;
+                backdrop-filter: blur(24px) !important;
+                -webkit-backdrop-filter: blur(24px) !important;
+                border: 1px solid rgba(59, 130, 246, 0.22) !important;
+                border-radius: 24px !important;
+                box-shadow: 0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(59,130,246,0.06) !important;
+            }
+            [data-testid="stVerticalBlockBorderWrapper"] > div {
+                padding: 12px 32px 24px !important;
+            }
 
-        /* Input field styling */
-        .stTextInput input {
-            background: rgba(255,255,255,0.05) !important;
-            border: 1px solid rgba(59,130,246,0.2) !important;
-            border-radius: 10px !important;
-            color: #94a3b8 !important;
-        }
-        .stTextInput input:focus {
-            border-color: rgba(59,130,246,0.5) !important;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
-        }
+            /* Input field styling */
+            .stTextInput input {
+                background: rgba(255,255,255,0.05) !important;
+                border: 1px solid rgba(59,130,246,0.2) !important;
+                border-radius: 10px !important;
+                color: #94a3b8 !important;
+            }
+            .stTextInput input:focus {
+                border-color: rgba(59,130,246,0.5) !important;
+                box-shadow: 0 0 0 3px rgba(59,130,246,0.12) !important;
+            }
 
-        /* Sign In button */
-        .stButton > button[kind="primary"] {
-            background: linear-gradient(90deg, #1d4ed8, #3b82f6) !important;
-            border: none !important;
-            border-radius: 10px !important;
-            font-weight: 700 !important;
-            letter-spacing: 0.04em !important;
-            color: white !important;
-            box-shadow: 0 4px 20px rgba(37,99,235,0.35) !important;
-            transition: box-shadow 0.2s !important;
-        }
-        .stButton > button[kind="primary"]:hover {
-            box-shadow: 0 6px 28px rgba(37,99,235,0.55) !important;
-        }
-        .lp-sebi-disclaimer {
-            text-align: center;
-            font-size: 10px;
-            color: #94a3b8;
-            margin-top: 14px;
-            line-height: 1.5;
-            letter-spacing: 0.01em;
-        }
+            /* Sign In button */
+            .stButton > button[kind="primary"] {
+                background: linear-gradient(90deg, #1d4ed8, #3b82f6) !important;
+                border: none !important;
+                border-radius: 10px !important;
+                font-weight: 700 !important;
+                letter-spacing: 0.04em !important;
+                color: white !important;
+                box-shadow: 0 4px 20px rgba(37,99,235,0.35) !important;
+                transition: box-shadow 0.2s !important;
+            }
+            .stButton > button[kind="primary"]:hover {
+                box-shadow: 0 6px 28px rgba(37,99,235,0.55) !important;
+            }
+            .lp-sebi-disclaimer {
+                text-align: center;
+                font-size: 10px;
+                color: #94a3b8;
+                margin-top: 14px;
+                line-height: 1.5;
+                letter-spacing: 0.01em;
+            }
 
-        .lp-logo-icon {
-            width: 60px; height: 60px; border-radius: 16px;
-            background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
-            display: inline-flex; align-items: center; justify-content: center;
-            margin: 8px auto 18px;
-            box-shadow: 0 8px 32px rgba(37,99,235,0.4);
-        }
-        .lp-name {
-            font-size: 32px; font-weight: 800; color: #f1f5f9;
-            letter-spacing: -0.05em; margin: 0 0 6px;
-        }
-        .lp-name span { color: #60a5fa; }
-        .lp-tagline {
-            font-size: 12px; color: #f1f5f9; letter-spacing: 0.1em;
-            text-transform: uppercase; font-weight: 500; margin-bottom: 24px;
-        }
-        .lp-divider { border: none; border-top: 1px solid rgba(59,130,246,0.12); margin: 0 0 20px; }
-        .lp-footer {
-            text-align: center; font-size: 11px; color: #f1f5f9;
-            margin-top: 12px; letter-spacing: 0.02em;
-        }
-        /* ── Creator card — fixed bottom-left ── */
-        .creator-card {
-            position: fixed;
-            bottom: 24px;
-            left: 24px;
-            width: 260px;
-            background: rgba(10, 16, 28, 0.88);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(59,130,246,0.18);
-            border-radius: 16px;
-            padding: 16px 16px 16px 16px;
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-            z-index: 9999;
-        }
-        .creator-info { flex: 1; min-width: 0; }
-        .creator-heading {
-            font-size: 9px; font-weight: 700; color: #3b82f6;
-            text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 5px;
-        }
-        .creator-name {
-            font-size: 14px; font-weight: 800; color: #f1f5f9;
-            letter-spacing: -0.02em; margin-bottom: 5px; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis;
-        }
-        .creator-link {
-            display: flex; align-items: center; gap: 5px;
-            font-size: 11px; color: #60a5fa; text-decoration: none;
-            font-weight: 500; margin-bottom: 3px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .creator-link:hover { color: #93c5fd; text-decoration: underline; }
-        .creator-email {
-            display: flex; align-items: center; gap: 5px;
-            font-size: 11px; color: #64748b;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        }
-        .creator-avatar {
-            width: 64px; height: 64px; border-radius: 12px; flex-shrink: 0;
-            background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 22px; font-weight: 800; color: #fff;
-            letter-spacing: -0.03em;
-            box-shadow: 0 4px 16px rgba(37,99,235,0.35);
-            border: 2px solid rgba(59,130,246,0.3);
-        }
-        .creator-avatar-img {
-            width: 72px; height: 72px; border-radius: 12px; flex-shrink: 0;
-            object-fit: cover; object-position: center top;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-            border: 2px solid rgba(59,130,246,0.35);
-        }
-        .lp-footer {
-            text-align: center; font-size: 11px; color: #f1f5f9;
-            margin-top: 12px; letter-spacing: 0.02em;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+            .lp-logo-icon {
+                width: 60px; height: 60px; border-radius: 16px;
+                background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+                display: inline-flex; align-items: center; justify-content: center;
+                margin: 8px auto 18px;
+                box-shadow: 0 8px 32px rgba(37,99,235,0.4);
+            }
+            .lp-name {
+                font-size: 32px; font-weight: 800; color: #f1f5f9;
+                letter-spacing: -0.05em; margin: 0 0 6px;
+            }
+            .lp-name span { color: #60a5fa; }
+            .lp-tagline {
+                font-size: 12px; color: #f1f5f9; letter-spacing: 0.1em;
+                text-transform: uppercase; font-weight: 500; margin-bottom: 24px;
+            }
+            .lp-divider { border: none; border-top: 1px solid rgba(59,130,246,0.12); margin: 0 0 20px; }
+            .lp-footer {
+                text-align: center; font-size: 11px; color: #f1f5f9;
+                margin-top: 12px; letter-spacing: 0.02em;
+            }
+            /* ── Creator card — fixed bottom-left ── */
+            .creator-card {
+                position: fixed;
+                bottom: 24px;
+                left: 24px;
+                width: 260px;
+                background: rgba(10, 16, 28, 0.88);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(59,130,246,0.18);
+                border-radius: 16px;
+                padding: 16px 16px 16px 16px;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+                z-index: 9999;
+            }
+            .creator-info { flex: 1; min-width: 0; }
+            .creator-heading {
+                font-size: 9px; font-weight: 700; color: #3b82f6;
+                text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 5px;
+            }
+            .creator-name {
+                font-size: 14px; font-weight: 800; color: #f1f5f9;
+                letter-spacing: -0.02em; margin-bottom: 5px; white-space: nowrap;
+                overflow: hidden; text-overflow: ellipsis;
+            }
+            .creator-link {
+                display: flex; align-items: center; gap: 5px;
+                font-size: 11px; color: #60a5fa; text-decoration: none;
+                font-weight: 500; margin-bottom: 3px;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            }
+            .creator-link:hover { color: #93c5fd; text-decoration: underline; }
+            .creator-email {
+                display: flex; align-items: center; gap: 5px;
+                font-size: 11px; color: #64748b;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            }
+            .creator-avatar {
+                width: 64px; height: 64px; border-radius: 12px; flex-shrink: 0;
+                background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+                display: flex; align-items: center; justify-content: center;
+                font-size: 22px; font-weight: 800; color: #fff;
+                letter-spacing: -0.03em;
+                box-shadow: 0 4px 16px rgba(37,99,235,0.35);
+                border: 2px solid rgba(59,130,246,0.3);
+            }
+            .creator-avatar-img {
+                width: 72px; height: 72px; border-radius: 12px; flex-shrink: 0;
+                object-fit: cover; object-position: center top;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+                border: 2px solid rgba(59,130,246,0.35);
+            }
+            .lp-footer {
+                text-align: center; font-size: 11px; color: #f1f5f9;
+                margin-top: 12px; letter-spacing: 0.02em;
+            }
+        </style>
+        """, unsafe_allow_html=True)
 
-    # Creator card — fixed bottom-left, outside the centre column
-    _photo_path = pathlib.Path(__file__).parent / "assets" / "sumit_meena.jpg"
-    if _photo_path.exists():
-        _photo_b64 = base64.b64encode(_photo_path.read_bytes()).decode()
-        _avatar_html = f'<img src="data:image/jpeg;base64,{_photo_b64}" class="creator-avatar-img">'
-    else:
-        _avatar_html = '<div class="creator-avatar">SM</div>'
+        # Creator card — fixed bottom-left, outside the centre column
+        _photo_path = pathlib.Path(__file__).parent / "assets" / "sumit_meena.jpg"
+        if _photo_path.exists():
+            _photo_b64 = base64.b64encode(_photo_path.read_bytes()).decode()
+            _avatar_html = f'<img src="data:image/jpeg;base64,{_photo_b64}" class="creator-avatar-img">'
+        else:
+            _avatar_html = '<div class="creator-avatar">SM</div>'
 
-    st.markdown(f"""
-    <div class="creator-card">
-        <div class="creator-info">
-            <div class="creator-heading">Created By</div>
-            <div class="creator-name">Sumit Meena</div>
-            <a class="creator-link" href="https://linkedin.com/in/sumit-meena-9559422a8" target="_blank">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                linkedin.com/in/sumit-meena-9559422a8
-            </a>
-            <div class="creator-email">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                sumitmeena680@gmail.com
+        st.markdown(f"""
+        <div class="creator-card">
+            <div class="creator-info">
+                <div class="creator-heading">Created By</div>
+                <div class="creator-name">Sumit Meena</div>
+                <a class="creator-link" href="https://linkedin.com/in/sumit-meena-9559422a8" target="_blank">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="#0a66c2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                    linkedin.com/in/sumit-meena-9559422a8
+                </a>
+                <div class="creator-email">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    sumitmeena680@gmail.com
+                </div>
             </div>
+            {_avatar_html}
         </div>
-        {_avatar_html}
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-    st.markdown("<div style='min-height:10vh'></div>", unsafe_allow_html=True)
-    _, col, _ = st.columns([1, 1.4, 1])
-    with col:
-        with st.container(border=True):
-            st.markdown("""
-            <div style="text-align:center; padding-top:12px;">
-                <div class="lp-logo-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"
-                         fill="none" stroke="white" stroke-width="2.5"
-                         stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
-                        <polyline points="16 7 22 7 22 13"/>
-                    </svg>
+        st.markdown("<div style='min-height:10vh'></div>", unsafe_allow_html=True)
+        _, col, _ = st.columns([1, 1.4, 1])
+        with col:
+            with st.container(border=True):
+                st.markdown("""
+                <div style="text-align:center; padding-top:12px;">
+                    <div class="lp-logo-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24"
+                             fill="none" stroke="white" stroke-width="2.5"
+                             stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+                            <polyline points="16 7 22 7 22 13"/>
+                        </svg>
+                    </div>
+                    <div class="lp-name">Stock<span>Stack</span></div>
+                    <div class="lp-tagline">Indian Equity Intelligence</div>
+                    <hr class="lp-divider">
                 </div>
-                <div class="lp-name">Stock<span>Stack</span></div>
-                <div class="lp-tagline">Indian Equity Intelligence</div>
-                <hr class="lp-divider">
-            </div>
-            """, unsafe_allow_html=True)
-            pw = st.text_input("Password", type="password", placeholder="Enter password…",
-                               label_visibility="collapsed")
-            if st.button("Sign In →", use_container_width=True, type="primary"):
-                if pw == correct:
-                    st.session_state["authenticated"] = True
-                    st.rerun()
-                else:
-                    st.error("Incorrect password.")
-            st.markdown("""
-                <div class='lp-sebi-disclaimer'>
-                    <strong>Disclaimer:</strong> This platform is for informational and educational purposes only.
-                    It does not constitute investment advice, research, or a recommendation to buy or sell any
-                    securities. Users must conduct their own due diligence. Investments in securities markets are
-                    subject to market risks. Please read all related documents carefully before investing.
-                    <em>Not SEBI registered.</em>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown(
-                "<div class='lp-footer'>Restricted access · Authorised users only</div>",
-                unsafe_allow_html=True,
-            )
+                """, unsafe_allow_html=True)
+                pw = st.text_input("Password", type="password", placeholder="Enter password…",
+                                   label_visibility="collapsed")
+                if st.button("Sign In →", use_container_width=True, type="primary"):
+                    if pw == correct:
+                        st.session_state["authenticated"] = True
+                        signed_in = True
+                    else:
+                        st.error("Incorrect password.")
+                st.markdown("""
+                    <div class='lp-sebi-disclaimer'>
+                        <strong>Disclaimer:</strong> This platform is for informational and educational purposes only.
+                        It does not constitute investment advice, research, or a recommendation to buy or sell any
+                        securities. Users must conduct their own due diligence. Investments in securities markets are
+                        subject to market risks. Please read all related documents carefully before investing.
+                        <em>Not SEBI registered.</em>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.markdown(
+                    "<div class='lp-footer'>Restricted access · Authorised users only</div>",
+                    unsafe_allow_html=True,
+                )
+    if signed_in:
+        login_slot.empty()     # wipe the login page before the dashboard run starts
+        st.rerun()
     st.stop()
 
 
@@ -5502,3 +5511,11 @@ with tab_news:
 
 # PERF: Show timing panel at the bottom — only visible when DEBUG=true
 show_perf_panel()
+
+# ── Footer ───────────────────────────────────────────────────────────────────
+# Reserved space at the very end of every page. Put footer text/links inside
+# this div later; min-height keeps a blank band even while it is empty.
+st.markdown(
+    "<div id='stockstack-footer' style='min-height:96px;margin-top:24px;'></div>",
+    unsafe_allow_html=True,
+)
