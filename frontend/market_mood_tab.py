@@ -183,7 +183,7 @@ def gauge_svg(score, segments, C: dict, width=420, labels=True, value_text=None)
     r_out = w * 0.42
     r_in = r_out * 0.72
 
-    parts = [f"<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px;display:block;margin:0 auto;'>"]
+    parts = [f"<svg viewBox='0 0 {w} {h}' width='100%' style='max-width:{w}px;display:block;margin:0 auto;overflow:visible;'>"]
     for s, e, color, label in segments:
         a0 = 180 - s * 1.8
         a1 = 180 - e * 1.8
@@ -215,13 +215,18 @@ def gauge_svg(score, segments, C: dict, width=420, labels=True, value_text=None)
     return "".join(parts)
 
 
-def _card(inner_html: str, C: dict, title: str = "", subtitle: str = "", pad=18) -> str:
+GAUGE_WIDTH = 420          # both mood gauges render at this SVG width
+GAUGE_CARD_HEIGHT = 400    # both gauge cards get this min height so they line up
+
+
+def _card(inner_html: str, C: dict, title: str = "", subtitle: str = "", pad=18, min_height=None) -> str:
     t = (f"<div style='font-size:15px;font-weight:700;color:{C['text']};text-align:center;margin-top:6px;'>{title}</div>"
          if title else "")
     s = (f"<div style='font-size:11px;color:{C['muted']};text-align:center;margin-top:2px;'>{subtitle}</div>"
          if subtitle else "")
+    mh = f"min-height:{min_height}px;box-sizing:border-box;" if min_height else ""
     return (f"<div style='background:{C['card_bg']};border:1px solid {C['card_bd']};border-radius:12px;"
-            f"padding:{pad}px;height:100%;'>{inner_html}{t}{s}</div>")
+            f"padding:{pad}px;height:100%;{mh}'>{inner_html}{t}{s}</div>")
 
 
 # ── Section 1: gauges ────────────────────────────────────────────────────────
@@ -231,23 +236,32 @@ def _render_gauges(last: pd.Series, prev: pd.Series | None, C: dict):
     label = last.get("mood_label") or "—"
     mom = last.get("momentum_pct")
 
-    big = gauge_svg(score, [(0, 35, RED, "Bear"), (35, 65, AMBER, "Dull"), (65, 100, GREEN, "Bull")], C, width=460)
-    score_line = (f"<div style='text-align:center;margin-top:4px;'>"
-                  f"<span style='font-size:26px;font-weight:800;color:{C['text']};'>{_fmt(score, '', 0)}</span>"
-                  f"<span style='font-size:13px;color:{C['muted']};margin-left:6px;'>/ 100 · {label}</span>"
-                  f"{_delta_chip(score, prev.get('mood_score') if prev is not None else None)}</div>")
-    small = gauge_svg(mom, [(0, 35, RED, ""), (35, 65, AMBER, ""), (65, 100, GREEN, "")], C, width=260,
-                      labels=False, value_text=_fmt(mom, "%", 0))
-    mom_line = (f"<div style='text-align:center;'>{_delta_chip(mom, prev.get('momentum_pct') if prev is not None else None, '%')}</div>")
+    mom_label = None if mom is None or pd.isna(mom) else ("Weak" if mom < 35 else "Neutral" if mom < 65 else "Strong")
 
-    col_a, col_b = st.columns([2.2, 1])
+    def value_line(value_txt, suffix_txt, chip):
+        return (f"<div style='text-align:center;margin-top:4px;'>"
+                f"<span style='font-size:26px;font-weight:800;color:{C['text']};'>{value_txt}</span>"
+                f"<span style='font-size:13px;color:{C['muted']};margin-left:6px;'>{suffix_txt}</span>{chip}</div>")
+
+    # Both gauges share the same width, labels, value line and card height
+    big = gauge_svg(score, [(0, 35, RED, "Bear"), (35, 65, AMBER, "Dull"), (65, 100, GREEN, "Bull")],
+                    C, width=GAUGE_WIDTH)
+    score_line = value_line(_fmt(score, "", 0), f"/ 100 · {label}",
+                            _delta_chip(score, prev.get("mood_score") if prev is not None else None))
+    small = gauge_svg(mom, [(0, 35, RED, "Weak"), (35, 65, AMBER, "Neutral"), (65, 100, GREEN, "Strong")],
+                      C, width=GAUGE_WIDTH)
+    mom_line = value_line(_fmt(mom, "%", 0), f"above 50 DMA · {mom_label or '—'}",
+                          _delta_chip(mom, prev.get("momentum_pct") if prev is not None else None, "%"))
+
+    col_a, col_b = st.columns(2)
     with col_a:
         st.markdown(_card(big + score_line, C, "The Broader Market",
-                          "Composite of % above 200 DMA · % above 50 DMA · 20-day advance ratio · % RSI > 50"),
-                    unsafe_allow_html=True)
+                          "Composite of % above 200 DMA · % above 50 DMA · 20-day advance ratio · % RSI > 50",
+                          min_height=GAUGE_CARD_HEIGHT), unsafe_allow_html=True)
     with col_b:
-        st.markdown(_card(small + mom_line, C, "The Market Momentum", "% of stocks above 50 DMA"),
-                    unsafe_allow_html=True)
+        st.markdown(_card(small + mom_line, C, "The Market Momentum",
+                          "% of stocks trading above their 50-day moving average",
+                          min_height=GAUGE_CARD_HEIGHT), unsafe_allow_html=True)
 
 
 # ── Section 2: stat tiles ────────────────────────────────────────────────────
