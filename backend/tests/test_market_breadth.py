@@ -188,3 +188,42 @@ def test_compute_breadth_frame_min_stocks_and_empty():
     out = compute_breadth_frame(df, min_stocks=2)
     # Only 02-Jan and 03-Jan have both stocks
     assert len(out) == 2
+
+
+# ── 52-week new highs / lows ──────────────────────────────────────────────────
+
+def _ohlc(symbol, closes, highs=None, lows=None, start="2024-01-01"):
+    df = _prices(symbol, closes, start=start)
+    if highs is not None:
+        df["high"] = highs
+    if lows is not None:
+        df["low"] = lows
+    return df
+
+
+def test_new_highs_and_lows_need_full_window():
+    n = 260
+    up = np.linspace(100, 200, n)      # every bar from 252 onward is a new high
+    down = np.linspace(200, 100, n)    # every bar from 252 onward is a new low
+    flat = np.full(n, 100.0)
+    df = pd.concat([_ohlc("UP", up), _ohlc("DN", down), _ohlc("FL", np.r_[flat[:-1], 99.0])])
+    out = aggregate_daily(add_per_stock_indicators(df))
+    # Before a full 252-session window nobody is eligible
+    assert out.iloc[250]["hl_count"] == 0 and out.iloc[250]["new_highs_52w"] == 0
+    last = out.iloc[-1]
+    assert last["hl_count"] == 3
+    assert last["new_highs_52w"] == 1          # UP
+    assert last["new_lows_52w"] == 2           # DN, and FL closing at a fresh low of 99
+
+
+def test_new_high_uses_intraday_high_not_close():
+    n = 253
+    closes = np.full(n, 100.0)
+    highs = np.full(n, 101.0)
+    highs[-1] = 105.0                  # intraday breakout, close unchanged
+    lows = np.full(n, 99.0)
+    lows[5] = 95.0                     # an older low inside the window, so A is not at a low today
+    df = pd.concat([_ohlc("A", closes, highs, lows), _ohlc("B", np.linspace(100, 90, n))])
+    last = aggregate_daily(add_per_stock_indicators(df)).iloc[-1]
+    assert last["new_highs_52w"] == 1          # A via intraday high
+    assert last["new_lows_52w"] == 1           # B falling (high/low fall back to close)

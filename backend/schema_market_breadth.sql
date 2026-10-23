@@ -52,6 +52,11 @@ CREATE TABLE IF NOT EXISTS market_breadth_daily (
     -- Daily traded value across the universe, in INR crores (close × volume / 1e7)
     turnover_cr         NUMERIC,
 
+    -- 52-week (252-session) new highs / lows, based on daily high / low
+    hl_count            INT,                    -- stocks with a full 252-session window
+    new_highs_52w       INT,
+    new_lows_52w        INT,
+
     computed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

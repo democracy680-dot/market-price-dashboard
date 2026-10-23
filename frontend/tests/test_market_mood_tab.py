@@ -37,3 +37,42 @@ def test_touching_midline_is_not_a_crossing():
 
 def test_empty_series():
     assert split_at_midline([], []) == ([], [])
+
+
+# ── mood_regime_stats ────────────────────────────────────────────────────────
+import pandas as pd
+from market_mood_tab import mood_regime_stats
+
+
+def test_regime_streak_and_last_seen():
+    df = pd.DataFrame({
+        "date": pd.to_datetime(["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06"]),
+        "mood_label": ["Bull", "Dull", None, "Bear", "Bear", "Bear"],
+    })
+    s = mood_regime_stats(df)
+    assert s["label"] == "Bear" and s["streak"] == 3
+    assert s["since"] == pd.Timestamp("2026-01-04")
+    assert s["last_seen"] == {"Dull": pd.Timestamp("2026-01-02"), "Bull": pd.Timestamp("2026-01-01")}
+
+
+def test_regime_never_seen_and_empty():
+    df = pd.DataFrame({"date": pd.to_datetime(["2026-01-01", "2026-01-02"]), "mood_label": ["Dull", "Dull"]})
+    s = mood_regime_stats(df)
+    assert s["streak"] == 2 and s["last_seen"] == {"Bear": None, "Bull": None}
+    assert mood_regime_stats(df.iloc[0:0])["label"] is None
+
+
+# ── symmetric_ticks ──────────────────────────────────────────────────────────
+from market_mood_tab import symmetric_ticks
+
+
+def test_symmetric_ticks_mirror_and_absolute_labels():
+    vals, text = symmetric_ticks(577)
+    assert vals == [-400, -200, 0, 200, 400]
+    assert text == ["400", "200", "0", "200", "400"]
+
+
+def test_symmetric_ticks_small_peak():
+    vals, text = symmetric_ticks(11)
+    assert vals == [-10, -5, 0, 5, 10]
+    assert "-" not in "".join(text)

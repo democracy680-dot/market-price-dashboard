@@ -53,6 +53,9 @@ def _palette(dark: bool) -> dict:
         "amber":     "#f59e0b" if dark else "#d97706",
         "red_fill":  "rgba(239,68,68,0.24)" if dark else "rgba(220,38,38,0.20)",
         "grn_fill":  "rgba(34,197,94,0.24)" if dark else "rgba(22,163,74,0.20)",
+        "amb_fill":  "rgba(245,158,11,0.16)" if dark else "rgba(217,119,6,0.12)",
+        "nifty":     "#e2e8f0" if dark else "#334155",
+        "mood_line": "#60a5fa" if dark else "#1d4ed8",
         "needle":    "#60a5fa" if dark else "#1d4ed8",
         "hub":       "#0f1729" if dark else "#ffffff",
         "table_hdr": "#0b1a33" if dark else "#eef2f8",
@@ -71,7 +74,8 @@ def load_breadth_history(_engine) -> pd.DataFrame:
                up_3, down_3, up_5, down_5, up_10, down_10, up_20, down_20,
                pct_above_50dma, pct_below_50dma, pct_above_200dma, pct_below_200dma,
                overbought, oversold, pct_rsi_above_50, adv_ratio_20d,
-               mood_score, mood_label, momentum_pct, turnover_cr
+               mood_score, mood_label, momentum_pct, turnover_cr,
+               hl_count, new_highs_52w, new_lows_52w
         FROM market_breadth_daily
         ORDER BY date
     """)
@@ -82,6 +86,18 @@ def load_breadth_history(_engine) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"])
     num_cols = [c for c in df.columns if c not in ("date", "mood_label")]
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
+    return df
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nifty(_engine) -> pd.DataFrame:
+    """Nifty 50 daily close (^NSEI lives in prices_daily as a benchmark row)."""
+    sql = text("SELECT date, close FROM prices_daily WHERE symbol = '^NSEI' ORDER BY date")
+    with _engine.connect() as conn:
+        df = pd.read_sql(sql, conn)
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"])
+        df["close"] = pd.to_numeric(df["close"], errors="coerce")
     return df
 
 
@@ -113,6 +129,29 @@ def _delta_chip(cur, prev, suffix="", invert=False) -> str:
     arrow = "▲" if d >= 0 else "▼"
     return (f"<span style='font-size:11px;font-weight:600;color:{color};margin-left:6px;'>"
             f"{arrow} {abs(d):.1f}{suffix}</span>")
+
+
+def mood_regime_stats(df: pd.DataFrame) -> dict:
+    """
+    Current mood streak and the last date each other regime was seen.
+    Returns {"label", "streak", "since", "last_seen": {label: date|None}}.
+    """
+    d = df.dropna(subset=["mood_label"]).sort_values("date")
+    if d.empty:
+        return {"label": None, "streak": 0, "since": None, "last_seen": {}}
+    labels = d["mood_label"].tolist()
+    dates = d["date"].tolist()
+    cur = labels[-1]
+    i = len(labels) - 1
+    while i > 0 and labels[i - 1] == cur:
+        i -= 1
+    last_seen = {}
+    for lab in ("Bear", "Dull", "Bull"):
+        if lab == cur:
+            continue
+        hits = [dt for dt, lb in zip(dates, labels) if lb == lab]
+        last_seen[lab] = hits[-1] if hits else None
+    return {"label": cur, "streak": len(labels) - i, "since": dates[i], "last_seen": last_seen}
 
 
 def _polar(cx, cy, r, deg):
@@ -305,7 +344,8 @@ def split_at_midline(dates, values, mid: float = 50.0):
     return xs, ys
 
 
-def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict) -> go.Figure:
+def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict,
+                     nifty: pd.DataFrame | None = None) -> go.Figure:
     d = df.dropna(subset=[col])
     fig = go.Figure()
     lo, hi = float(d[col].min()), float(d[col].max())
@@ -336,16 +376,108 @@ def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict) -> go.Figu
     fig.add_trace(go.Scatter(x=xs, y=below, mode="lines", name="Below 50%",
                              line=dict(color=C["green"], width=2.2), connectgaps=False,
                              hovertemplate="%{y:.1f}%<extra></extra>"))
-    fig.add_hline(y=50, line=dict(color=C["amber"], dash="dash", width=1.5),
-                  annotation_text="50%", annotation_position="right",
-                  annotation_font=dict(color=C["amber"], size=11))
+    for tr in fig.data:
+        tr.showlegend = False
+    # 50% is labelled on the axis itself (tick0=50), so no floating annotation is needed
+    fig.add_hline(y=50, line=dict(color=C["amber"], dash="dash", width=1.5))
+
+    extra = {}
+    if nifty is not None and not nifty.empty:
+        n = nifty[(nifty["date"] >= d["date"].min()) & (nifty["date"] <= d["date"].max())]
+        if not n.empty:
+            fig.add_trace(go.Scatter(
+                x=n["date"], y=n["close"], mode="lines", name="Nifty 50 (right axis)", yaxis="y2",
+                line=dict(color=C["nifty"], width=1.6, dash="dot"),
+                hovertemplate="Nifty %{y:,.0f}<extra></extra>", showlegend=True,
+            ))
+            extra["yaxis2"] = dict(overlaying="y", side="right", showgrid=False,
+                                   tickfont=dict(size=10, color=C["tick"]), tickformat=",.0f")
     last = d.iloc[-1]
     fig.update_layout(**_base_layout(
         C, title=dict(text=f"{title}  <span style='color:{C['muted']};font-size:12px'>latest {last[col]:.1f}%</span>",
                       x=0, font=dict(size=14, color=C["text"])),
-        showlegend=False, yaxis=dict(range=[y0, y1], ticksuffix="%", gridcolor=C["grid"], tickfont=dict(size=10)),
+        showlegend=bool(extra), margin=dict(l=48, r=64, t=36, b=36),
+        yaxis=dict(range=[y0, y1], tick0=50, dtick=10, ticksuffix="%", gridcolor=C["grid"],
+                   tickfont=dict(size=10), zeroline=False),
+        **extra,
     ))
     return fig
+
+
+def _mood_history_chart(df: pd.DataFrame, C: dict, full: pd.DataFrame | None = None) -> go.Figure:
+    """Plot `df` (the lookback view); streak / last-seen stats come from `full` history."""
+    d = df.dropna(subset=["mood_score"])
+    fig = go.Figure()
+    for y0, y1, fill, label, color in ((0, 35, C["red_fill"], "Bear", C["red"]),
+                                       (35, 65, C["amb_fill"], "Dull", C["amber"]),
+                                       (65, 100, C["grn_fill"], "Bull", C["green"])):
+        fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=y0, y1=y1, fillcolor=fill,
+                      line_width=0, layer="below")
+        fig.add_annotation(xref="paper", x=1.0, xanchor="left", y=(y0 + y1) / 2, text=f" {label}",
+                           showarrow=False, font=dict(color=color, size=11))
+    fig.add_trace(go.Scatter(x=d["date"], y=d["mood_score"], mode="lines", name="Mood score",
+                             line=dict(color=C["mood_line"], width=2.2),
+                             customdata=d["mood_label"],
+                             hovertemplate="%{y:.1f} · %{customdata}<extra></extra>"))
+    st_ = mood_regime_stats(full if full is not None else df)
+    sub = ""
+    if st_["label"]:
+        sub = f"{st_['streak']} sessions in {st_['label']} (since {st_['since'].strftime('%d %b %Y')})"
+        seen = [f"last {k} {v.strftime('%d %b %Y')}" for k, v in st_["last_seen"].items() if v is not None]
+        if seen:
+            sub += " · " + " · ".join(seen)
+    last = d.iloc[-1]
+    fig.update_layout(**_base_layout(
+        C, title=dict(text=f"Mood Score History  <span style='color:{C['muted']};font-size:12px'>"
+                           f"latest {last['mood_score']:.1f} · {sub}</span>",
+                      x=0, font=dict(size=14, color=C["text"])),
+        showlegend=False, margin=dict(l=48, r=56, t=36, b=36),
+        yaxis=dict(range=[0, 100], dtick=10, gridcolor=C["grid"], tickfont=dict(size=10), zeroline=False),
+    ))
+    return fig
+
+
+def _highs_lows_chart(df: pd.DataFrame, C: dict) -> go.Figure:
+    d = df[df["hl_count"].fillna(0) > 0].copy()
+    d["net"] = d["new_highs_52w"] - d["new_lows_52w"]
+    d["net_ma"] = d["net"].rolling(10, min_periods=1).mean()
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=d["date"], y=d["new_highs_52w"], name="New 52W highs",
+                         marker=dict(color=C["green"], opacity=0.9),
+                         hovertemplate="%{y:.0f} new highs<extra></extra>"))
+    fig.add_trace(go.Bar(x=d["date"], y=-d["new_lows_52w"], name="New 52W lows",
+                         marker=dict(color=C["red"], opacity=0.9),
+                         customdata=d["new_lows_52w"],
+                         hovertemplate="%{customdata:.0f} new lows<extra></extra>"))
+    fig.add_trace(go.Scatter(x=d["date"], y=d["net_ma"], mode="lines", name="Net (10-day avg)",
+                             line=dict(color=C["mood_line"], width=2),
+                             hovertemplate="net %{y:+.0f}<extra>10d avg</extra>"))
+    last = d.iloc[-1]
+    peak = float(max(d["new_highs_52w"].max(), d["new_lows_52w"].max(), 10)) * 1.1
+    tick_vals, tick_text = symmetric_ticks(peak)
+    fig.update_layout(**_base_layout(
+        C, title=dict(text=f"52-Week New Highs vs New Lows  <span style='color:{C['muted']};font-size:12px'>"
+                           f"latest {int(last['new_highs_52w'])} highs / {int(last['new_lows_52w'])} lows</span>",
+                      x=0, font=dict(size=14, color=C["text"])),
+        barmode="relative", bargap=0.15,
+        yaxis=dict(range=[-peak, peak], tickvals=tick_vals, ticktext=tick_text,
+                   gridcolor=C["grid"], tickfont=dict(size=10),
+                   zeroline=True, zerolinecolor=C["tick"], zerolinewidth=1,
+                   title="lows ↓   stocks   highs ↑"),
+    ))
+    return fig
+
+
+def symmetric_ticks(peak: float, max_per_side: int = 4) -> tuple[list, list]:
+    """
+    Tick positions mirrored around zero for an up/down bar chart, labelled
+    with absolute values so the lows side reads "200", not "-200".
+    """
+    steps = (5, 10, 20, 25, 50, 100, 200, 250, 500, 1000)
+    step = next((s for s in steps if peak / s <= max_per_side), steps[-1])
+    k = max(1, int(peak // step))
+    vals = [i * step for i in range(-k, k + 1)]
+    return vals, [f"{abs(v):,}" for v in vals]
 
 
 def _ob_os_chart(df: pd.DataFrame, C: dict) -> go.Figure:
@@ -430,8 +562,15 @@ def render_market_mood_tab(engine):
     view = df if days is None else df[df["date"] >= df["date"].max() - pd.Timedelta(days=days)]
 
     cfg = {"displayModeBar": False}
-    st.plotly_chart(_pct_below_chart(view, "pct_below_200dma", "% Below 200 DMA", C), width="stretch", config=cfg)
-    st.plotly_chart(_pct_below_chart(view, "pct_below_50dma", "% Below 50 DMA", C), width="stretch", config=cfg)
+    nifty = load_nifty(engine)
+    st.plotly_chart(_mood_history_chart(view, C, full=df), width="stretch", config=cfg)
+    st.markdown(f"<div style='font-size:11px;color:{C['muted']};margin:-6px 0 6px 0;'>"
+                "Dotted line = Nifty 50 on the right axis. Watch for divergence: Nifty rising while "
+                "% below DMA also rises means the rally is narrow.</div>", unsafe_allow_html=True)
+    st.plotly_chart(_pct_below_chart(view, "pct_below_200dma", "% Below 200 DMA", C, nifty), width="stretch", config=cfg)
+    st.plotly_chart(_pct_below_chart(view, "pct_below_50dma", "% Below 50 DMA", C, nifty), width="stretch", config=cfg)
+    if view["hl_count"].fillna(0).gt(0).any():
+        st.plotly_chart(_highs_lows_chart(view, C), width="stretch", config=cfg)
     st.plotly_chart(_ob_os_chart(view, C), width="stretch", config=cfg)
 
     monthly = load_turnover_monthly(engine)

@@ -2,9 +2,10 @@
 compute_market_breadth.py — Market Mood orchestrator.
 
 What it does:
-  1. Loads prices_daily (close, volume) for ALL active stocks.
+  1. Loads prices_daily (high, low, close, volume) for ALL active stocks.
   2. Computes per-date breadth (±3/5/10/20% movers, 50/200 DMA %, RSI
-     overbought/oversold, 20-day advance ratio, composite mood score, turnover).
+     overbought/oversold, 20-day advance ratio, composite mood score, turnover,
+     52-week new highs / new lows).
   3. Upserts into market_breadth_daily.
   4. Re-aggregates market_turnover_monthly from the daily table.
 
@@ -50,6 +51,7 @@ DAILY_COLS = [
     "dma200_count", "above_200dma", "below_200dma", "pct_above_200dma", "pct_below_200dma",
     "rsi_count", "overbought", "oversold", "rsi_above_50", "pct_rsi_above_50",
     "adv_ratio_20d", "mood_score", "mood_label", "momentum_pct", "turnover_cr",
+    "hl_count", "new_highs_52w", "new_lows_52w",
 ]
 
 _UPSERT_DAILY = f"""
@@ -84,7 +86,7 @@ def _clean(v):
 
 
 def _load_prices(engine, since: date | None) -> pd.DataFrame:
-    """Load close/volume for all active symbols, in symbol batches."""
+    """Load high/low/close/volume for all active symbols, in symbol batches."""
     # Exclude index benchmarks (^NSEI, ^CRSLDX) that live in `stocks` for RS / theme math.
     with engine.connect() as conn:
         symbols = [r[0] for r in conn.execute(
@@ -95,7 +97,7 @@ def _load_prices(engine, since: date | None) -> pd.DataFrame:
     frames = []
     date_clause = "AND date >= :since" if since is not None else ""
     sql = text(f"""
-        SELECT symbol, date, close, volume
+        SELECT symbol, date, high, low, close, volume
         FROM prices_daily
         WHERE symbol = ANY(:syms) {date_clause}
         ORDER BY symbol, date

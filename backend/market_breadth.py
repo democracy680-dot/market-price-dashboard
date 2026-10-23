@@ -25,6 +25,7 @@ MOOD_BEAR_MAX = 35.0   # score <  35 → Bear
 MOOD_DULL_MAX = 65.0   # score <  65 → Dull, else Bull
 
 MOVE_BUCKETS = (3, 5, 10, 20)   # ±3%, ±5%, ±10%, ±20%
+HL_WINDOW = 252                 # sessions in a 52-week high/low lookback
 
 # A date where more than this share of stocks closed exactly flat is not a real
 # session (yfinance repeats the previous bar on exchange holidays).
@@ -85,14 +86,20 @@ def drop_ghost_sessions(prices: pd.DataFrame, flat_share: float = GHOST_FLAT_SHA
 
 def add_per_stock_indicators(prices: pd.DataFrame) -> pd.DataFrame:
     """
-    Add ret_1d, sma_50, sma_200, rsi_14, turnover_cr columns per symbol.
-    Expects columns: symbol, date, close, volume. Returns a sorted copy
-    with holiday ghost sessions removed.
+    Add ret_1d, sma_50, sma_200, rsi_14, turnover_cr, new_high_52w,
+    new_low_52w columns per symbol.
+    Expects columns: symbol, date, close, volume; optional high, low (fall
+    back to close when missing). Returns a sorted copy with holiday ghost
+    sessions removed.
     """
     df = prices.copy()
     df["date"] = pd.to_datetime(df["date"])
     df["close"] = pd.to_numeric(df["close"], errors="coerce").astype(float)
     df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
+    for col in ("high", "low"):
+        if col not in df.columns:
+            df[col] = np.nan
+        df[col] = pd.to_numeric(df[col], errors="coerce").astype(float).fillna(df["close"])
     df = df.dropna(subset=["close"]).sort_values(["symbol", "date"]).reset_index(drop=True)
     df = drop_ghost_sessions(df)
 
@@ -102,6 +109,16 @@ def add_per_stock_indicators(prices: pd.DataFrame) -> pd.DataFrame:
     df["sma_200"] = g.transform(lambda s: s.rolling(SMA_LONG, min_periods=SMA_LONG).mean())
     df["rsi_14"] = g.transform(lambda s: pd.Series(wilder_rsi_series(s.to_numpy()), index=s.index))
     df["turnover_cr"] = (df["close"] * df["volume"].fillna(0)) / 1e7
+
+    # 52-week high / low: today's high (low) equals the max (min) of the last
+    # HL_WINDOW sessions, today included. Needs a full window of history.
+    gh = df.groupby("symbol", sort=False)["high"]
+    gl = df.groupby("symbol", sort=False)["low"]
+    roll_hi = gh.transform(lambda s: s.rolling(HL_WINDOW, min_periods=HL_WINDOW).max())
+    roll_lo = gl.transform(lambda s: s.rolling(HL_WINDOW, min_periods=HL_WINDOW).min())
+    df["hl_eligible"] = roll_hi.notna()
+    df["new_high_52w"] = df["hl_eligible"] & (df["high"] >= roll_hi)
+    df["new_low_52w"] = df["hl_eligible"] & (df["low"] <= roll_lo)
     return df
 
 
@@ -132,6 +149,9 @@ def aggregate_daily(ind: pd.DataFrame) -> pd.DataFrame:
         "overbought": (d["rsi_14"] > OVERBOUGHT).astype(int),
         "oversold": (d["rsi_14"] < OVERSOLD).astype(int),
         "rsi_above_50": (d["rsi_14"] > 50).astype(int),
+        "hl_count": d["hl_eligible"].astype(int),
+        "new_highs_52w": d["new_high_52w"].astype(int),
+        "new_lows_52w": d["new_low_52w"].astype(int),
         "turnover_cr": d["turnover_cr"].fillna(0.0),
     })
     for b in MOVE_BUCKETS:

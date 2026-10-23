@@ -107,7 +107,7 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | `setup_candidates_daily` | Breakout/reversal setup detections with pattern_code, strength, trigger_level |
 | `minervini_template_daily` | 8-criterion Minervini trend template with per-criterion flags and template_score |
 | `earnings_calendar` | Quarterly result announcement dates |
-| `market_breadth_daily` | One row per session across ALL stocks: ±3/5/10/20% movers, % above/below 50 & 200 DMA, RSI overbought/oversold counts, 20-day advance ratio, composite `mood_score` (Bear/Dull/Bull), daily turnover |
+| `market_breadth_daily` | One row per session across ALL stocks: ±3/5/10/20% movers, % above/below 50 & 200 DMA, RSI overbought/oversold counts, 20-day advance ratio, composite `mood_score` (Bear/Dull/Bull), daily turnover, 52-week new highs / lows (`new_highs_52w`, `new_lows_52w`) |
 | `market_turnover_monthly` | Monthly sum of turnover (₹ cr) with `is_partial` for the running month |
 | `bse_orders` | BSE order wins & business updates (order/acquisition/jv/expansion) for dashboard stocks, with parsed ₹ value + filing PDF link; `latest_orders` view enforces the 180-day window |
 | `news_sources` | RSS feed registry (ET, Moneycontrol, BS, Livemint, FE, NDTV Profit, BL) |
@@ -124,7 +124,7 @@ All tables live in Supabase. The frontend reads via SQLAlchemy + NullPool. The b
 | Tab | What it shows |
 |---|---|
 | **Global Markets** | Session timeline, overnight futures, regional index cards, commodities, bonds, crypto, world heatmap — all live via yfinance |
-| **Market Mood** | Broader Market gauge (composite breadth score) + Momentum gauge (% above 50 DMA), ±3/5/10/20% movers table, % below 50/200 DMA history, overbought vs oversold, monthly traded value |
+| **Market Mood** | Broader Market gauge (composite breadth score) + Momentum gauge (% above 50 DMA), ±3/5/10/20% movers table, mood score history, % below 50/200 DMA history with Nifty 50 overlay, 52-week new highs vs lows, overbought vs oversold, monthly traded value |
 | **Indexes** | Nifty 50 / Nifty 500 / Nifty Bank / F&O stock tables with returns, DMA status, analysis + breadth sub-tabs |
 | **Sectors** | Sector-level performance with advance/decline + stock drilldown |
 | **Sector Performance** | Cross-sector bar chart comparisons across timeframes |
