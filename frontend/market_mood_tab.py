@@ -36,9 +36,19 @@ def _palette(dark: bool) -> dict:
         "text":      "#f1f5f9" if dark else "#0f172a",
         "muted":     "#8b97a8" if dark else "#64748b",
         "section":   "#475569" if dark else "#64748b",
-        "grid":      "#111827" if dark else "#e2e8f0",
-        "plot_bg":   "#080c14" if dark else "rgba(0,0,0,0)",
-        "tick":      "#94a3b8" if dark else "#64748b",
+        "grid":      "#1f2937" if dark else "#cbd5e1",
+        "plot_bg":   "#080c14" if dark else "#ffffff",
+        "tick":      "#94a3b8" if dark else "#475569",
+        # chart inks — saturated enough to read on both backgrounds
+        "line":      "#60a5fa" if dark else "#1d4ed8",
+        "line_fill": "rgba(96,165,250,0.32)" if dark else "rgba(29,78,216,0.26)",
+        "zone_red":  "rgba(239,68,68,0.30)" if dark else "rgba(220,38,38,0.20)",
+        "zone_grn":  "rgba(34,197,94,0.30)" if dark else "rgba(22,163,74,0.20)",
+        "red":       "#ef4444" if dark else "#dc2626",
+        "green":     "#22c55e" if dark else "#16a34a",
+        "amber":     "#f59e0b" if dark else "#d97706",
+        "red_fill":  "rgba(239,68,68,0.24)" if dark else "rgba(220,38,38,0.20)",
+        "grn_fill":  "rgba(34,197,94,0.24)" if dark else "rgba(22,163,74,0.20)",
         "needle":    "#60a5fa" if dark else "#1d4ed8",
         "hub":       "#0f1729" if dark else "#ffffff",
         "table_hdr": "#0b1a33" if dark else "#eef2f8",
@@ -266,7 +276,7 @@ def _base_layout(C: dict, height=300, **kw) -> dict:
         xaxis=dict(gridcolor=C["grid"], showgrid=False, tickfont=dict(size=10)),
         yaxis=dict(gridcolor=C["grid"], gridwidth=1, tickfont=dict(size=10), zeroline=False),
         legend=dict(orientation="h", y=1.02, yanchor="bottom", x=1, xanchor="right",
-                    font=dict(size=11), bgcolor="rgba(0,0,0,0)"),
+                    font=dict(size=11, color=C["tick"]), bgcolor="rgba(0,0,0,0)"),
     )
     layout.update(kw)
     return layout
@@ -276,22 +286,24 @@ def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict) -> go.Figu
     d = df.dropna(subset=[col])
     fig = go.Figure()
     lo, hi = float(d[col].min()), float(d[col].max())
-    pad = max(2.0, (hi - lo) * 0.08)
-    y0, y1 = max(0.0, lo - pad), min(100.0, hi + pad)
+    # Symmetric range around 50 so the 50% line always sits in the vertical centre
+    half = min(50.0, max(hi - 50.0, 50.0 - lo, 10.0) * 1.08)
+    y0, y1 = 50.0 - half, 50.0 + half
     # shaded zones: above 50% = weak (red), below 50% = healthy (green)
-    if y1 > 50:
-        fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=50, y1=y1, fillcolor=RED, opacity=0.14, line_width=0, layer="below")
-    if y0 < 50:
-        fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=y0, y1=50, fillcolor=GREEN, opacity=0.14, line_width=0, layer="below")
+    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=50, y1=y1, fillcolor=C["zone_red"], line_width=0, layer="below")
+    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=y0, y1=50, fillcolor=C["zone_grn"], line_width=0, layer="below")
+    # invisible 50% baseline so the area fills between the series and the midline
+    fig.add_trace(go.Scatter(x=d["date"], y=[50.0] * len(d), mode="lines", showlegend=False,
+                             line=dict(width=0), hoverinfo="skip"))
     fig.add_trace(go.Scatter(
         x=d["date"], y=d[col], mode="lines", name=title,
-        line=dict(color="#93c5fd", width=1.8),
-        fill="tozeroy", fillcolor="rgba(147,197,253,0.18)",
+        line=dict(color=C["line"], width=2.2),
+        fill="tonexty", fillcolor=C["line_fill"],
         hovertemplate="%{y:.1f}%<extra></extra>",
     ))
-    fig.add_hline(y=50, line=dict(color=AMBER, dash="dash", width=1),
+    fig.add_hline(y=50, line=dict(color=C["amber"], dash="dash", width=1.5),
                   annotation_text="50%", annotation_position="right",
-                  annotation_font=dict(color=AMBER, size=11))
+                  annotation_font=dict(color=C["amber"], size=11))
     last = d.iloc[-1]
     fig.update_layout(**_base_layout(
         C, title=dict(text=f"{title}  <span style='color:{C['muted']};font-size:12px'>latest {last[col]:.1f}%</span>",
@@ -305,10 +317,10 @@ def _ob_os_chart(df: pd.DataFrame, C: dict) -> go.Figure:
     d = df.dropna(subset=["overbought", "oversold"])
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=d["date"], y=d["oversold"], mode="lines", name="Oversold (RSI < 30)",
-                             line=dict(color=GREEN, width=1.8), fill="tozeroy", fillcolor="rgba(34,197,94,0.10)",
+                             line=dict(color=C["green"], width=2.2), fill="tozeroy", fillcolor=C["grn_fill"],
                              hovertemplate="%{y:.0f}<extra>Oversold</extra>"))
     fig.add_trace(go.Scatter(x=d["date"], y=d["overbought"], mode="lines", name="Overbought (RSI > 70)",
-                             line=dict(color=RED, width=1.8), fill="tozeroy", fillcolor="rgba(239,68,68,0.10)",
+                             line=dict(color=C["red"], width=2.2), fill="tozeroy", fillcolor=C["red_fill"],
                              hovertemplate="%{y:.0f}<extra>Overbought</extra>"))
     last = d.iloc[-1]
     fig.update_layout(**_base_layout(
@@ -324,14 +336,14 @@ def _turnover_chart(m: pd.DataFrame, C: dict) -> go.Figure:
     d = m.copy()
     d["k_cr"] = d["turnover_cr"] / 1e5   # rupees lakh crore
     d["ma"] = d["k_cr"].rolling(TURNOVER_MA_MONTHS, min_periods=3).mean()
-    colors = [AMBER if p else GREEN for p in d["is_partial"]]
+    colors = [C["amber"] if p else C["green"] for p in d["is_partial"]]
     fig = go.Figure()
     fig.add_trace(go.Bar(x=d["month"], y=d["k_cr"], name="Monthly traded value (₹ lakh cr)",
-                         marker=dict(color=colors, opacity=0.75),
+                         marker=dict(color=colors, opacity=0.9),
                          customdata=d["trading_days"],
                          hovertemplate="₹%{y:.2f} lakh cr · %{customdata} sessions<extra></extra>"))
     fig.add_trace(go.Scatter(x=d["month"], y=d["ma"], mode="lines", name=f"{TURNOVER_MA_MONTHS}-month avg",
-                             line=dict(color=RED, width=2), hovertemplate="₹%{y:.2f} lakh cr<extra>avg</extra>"))
+                             line=dict(color=C["red"], width=2.4), hovertemplate="₹%{y:.2f} lakh cr<extra>avg</extra>"))
     fig.update_layout(**_base_layout(
         C, title=dict(text="Total Monthly Traded Value — all dashboard stocks (₹ lakh crore)"
                            f"  <span style='color:{C['muted']};font-size:12px'>amber = month in progress</span>",
