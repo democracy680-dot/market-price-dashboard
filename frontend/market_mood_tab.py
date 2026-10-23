@@ -22,7 +22,8 @@ import streamlit as st
 from sqlalchemy import text
 
 LOOKBACKS = {"6M": 182, "1Y": 365, "2Y": 730, "All": None}
-TABLE_ROWS = 15
+TABLE_ROWS = 60            # sessions loaded into the breadth table (it scrolls)
+TABLE_HEIGHT_PX = 300     # visible height of the scrollable breadth table
 TURNOVER_MA_MONTHS = 12
 
 RED, AMBER, GREEN, BLUE = "#ef4444", "#f59e0b", "#22c55e", "#3b82f6"
@@ -285,24 +286,28 @@ def _render_breadth_table(df: pd.DataFrame, C: dict):
             ("up_5", "Up 5%+", GREEN), ("down_5", "Down 5%+", RED),
             ("up_10", "Up 10%+", GREEN), ("down_10", "Down 10%+", RED),
             ("up_20", "Up 20%+", GREEN), ("down_20", "Down 20%+", RED)]
-    th = "".join(f"<th style='text-align:left;padding:10px 12px;font-size:11px;font-weight:700;color:{C['muted']};'>{h}</th>"
-                 for _, h, _ in cols)
+    # sticky header cells stay visible while the body scrolls
+    th_style = (f"position:sticky;top:0;z-index:1;background:{C['table_hdr']};text-align:left;"
+                f"padding:7px 10px;font-size:11px;font-weight:700;color:{C['muted']};")
+    th = "".join(f"<th style='{th_style}'>{h}</th>" for _, h, _ in cols)
     body = []
     for _, r in rows.iterrows():
         tds = "".join(
-            f"<td style='padding:9px 12px;font-size:13px;font-weight:600;color:{c};'>{int(r[k]) if pd.notna(r[k]) else '—'}</td>"
+            f"<td style='padding:5px 10px;font-size:12.5px;font-weight:600;color:{c};'>{int(r[k]) if pd.notna(r[k]) else '—'}</td>"
             for k, _, c in cols)
         body.append(f"<tr style='border-bottom:1px solid {C['row_bd']};'>"
-                    f"<td style='padding:9px 12px;font-size:13px;color:{C['text']};white-space:nowrap;'>"
+                    f"<td style='padding:5px 10px;font-size:12.5px;color:{C['text']};white-space:nowrap;'>"
                     f"{r['date'].strftime('%d %b %Y')}</td>{tds}</tr>")
     html = (f"<div style='font-size:15px;font-weight:700;color:{C['text']};'>Market Breadth</div>"
-            f"<div style='font-size:11px;color:{C['muted']};margin-bottom:10px;'>"
-            f"Stock count distribution across daily price movements · universe {int(rows.iloc[0]['total_stocks'])} stocks</div>"
-            f"<div style='overflow-x:auto;'><table style='width:100%;border-collapse:collapse;'>"
-            f"<thead><tr style='background:{C['table_hdr']};'>"
-            f"<th style='text-align:left;padding:10px 12px;font-size:11px;font-weight:700;color:{C['muted']};'>Date</th>{th}</tr></thead>"
+            f"<div style='font-size:11px;color:{C['muted']};margin-bottom:8px;'>"
+            f"Stock count distribution across daily price movements · universe {int(rows.iloc[0]['total_stocks'])} stocks"
+            f" · last {len(rows)} sessions, scroll for more</div>"
+            f"<div style='max-height:{TABLE_HEIGHT_PX}px;overflow-y:auto;overflow-x:auto;"
+            f"border:1px solid {C['card_bd']};border-radius:8px;'>"
+            f"<table style='width:100%;border-collapse:separate;border-spacing:0;'>"
+            f"<thead><tr><th style='{th_style}'>Date</th>{th}</tr></thead>"
             f"<tbody>{''.join(body)}</tbody></table></div>")
-    st.markdown(_card(html, C), unsafe_allow_html=True)
+    st.markdown(_card(html, C, pad=14), unsafe_allow_html=True)
 
 
 # ── Section 4: charts ────────────────────────────────────────────────────────
