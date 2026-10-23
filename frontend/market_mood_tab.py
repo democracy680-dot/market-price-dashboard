@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 from datetime import date
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -44,6 +45,9 @@ def _palette(dark: bool) -> dict:
         "line_fill": "rgba(96,165,250,0.32)" if dark else "rgba(29,78,216,0.26)",
         "zone_red":  "rgba(239,68,68,0.30)" if dark else "rgba(220,38,38,0.20)",
         "zone_grn":  "rgba(34,197,94,0.30)" if dark else "rgba(22,163,74,0.20)",
+        # softer zones for the DMA charts, where the series itself carries the colour
+        "zone_red_soft": "rgba(239,68,68,0.12)" if dark else "rgba(220,38,38,0.08)",
+        "zone_grn_soft": "rgba(34,197,94,0.12)" if dark else "rgba(22,163,74,0.08)",
         "red":       "#ef4444" if dark else "#dc2626",
         "green":     "#22c55e" if dark else "#16a34a",
         "amber":     "#f59e0b" if dark else "#d97706",
@@ -282,6 +286,25 @@ def _base_layout(C: dict, height=300, **kw) -> dict:
     return layout
 
 
+def split_at_midline(dates, values, mid: float = 50.0):
+    """
+    Insert interpolated crossing points wherever the series crosses `mid`, so
+    the red (above) and green (below) segments meet exactly on the midline.
+    Returns (dates, values) as lists.
+    """
+    xs, ys = [], []
+    for i in range(len(values)):
+        if i > 0:
+            a, b = values[i - 1], values[i]
+            if (a - mid) * (b - mid) < 0:            # strict crossing
+                frac = (mid - a) / (b - a)
+                xs.append(dates[i - 1] + (dates[i] - dates[i - 1]) * frac)
+                ys.append(mid)
+        xs.append(dates[i])
+        ys.append(values[i])
+    return xs, ys
+
+
 def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict) -> go.Figure:
     d = df.dropna(subset=[col])
     fig = go.Figure()
@@ -289,18 +312,30 @@ def _pct_below_chart(df: pd.DataFrame, col: str, title: str, C: dict) -> go.Figu
     # Symmetric range around 50 so the 50% line always sits in the vertical centre
     half = min(50.0, max(hi - 50.0, 50.0 - lo, 10.0) * 1.08)
     y0, y1 = 50.0 - half, 50.0 + half
-    # shaded zones: above 50% = weak (red), below 50% = healthy (green)
-    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=50, y1=y1, fillcolor=C["zone_red"], line_width=0, layer="below")
-    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=y0, y1=50, fillcolor=C["zone_grn"], line_width=0, layer="below")
-    # invisible 50% baseline so the area fills between the series and the midline
-    fig.add_trace(go.Scatter(x=d["date"], y=[50.0] * len(d), mode="lines", showlegend=False,
-                             line=dict(width=0), hoverinfo="skip"))
-    fig.add_trace(go.Scatter(
-        x=d["date"], y=d[col], mode="lines", name=title,
-        line=dict(color=C["line"], width=2.2),
-        fill="tonexty", fillcolor=C["line_fill"],
-        hovertemplate="%{y:.1f}%<extra></extra>",
-    ))
+    # faint background zones: above 50% = weak (red), below 50% = healthy (green)
+    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=50, y1=y1, fillcolor=C["zone_red_soft"], line_width=0, layer="below")
+    fig.add_shape(type="rect", xref="paper", x0=0, x1=1, y0=y0, y1=50, fillcolor=C["zone_grn_soft"], line_width=0, layer="below")
+
+    xs, ys = split_at_midline(list(d["date"]), [float(v) for v in d[col]])
+    ys_arr = np.array(ys)
+    base = [50.0] * len(xs)
+    above = np.where(ys_arr >= 50.0, ys_arr, np.nan)
+    below = np.where(ys_arr <= 50.0, ys_arr, np.nan)
+
+    # Areas between the series and the 50% midline (clipped to each side)
+    fig.add_trace(go.Scatter(x=xs, y=base, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=xs, y=np.maximum(ys_arr, 50.0), mode="lines", line=dict(width=0),
+                             fill="tonexty", fillcolor=C["red_fill"], showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=xs, y=base, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=xs, y=np.minimum(ys_arr, 50.0), mode="lines", line=dict(width=0),
+                             fill="tonexty", fillcolor=C["grn_fill"], showlegend=False, hoverinfo="skip"))
+    # Lines: red while above 50%, green while below
+    fig.add_trace(go.Scatter(x=xs, y=above, mode="lines", name="Above 50%",
+                             line=dict(color=C["red"], width=2.2), connectgaps=False,
+                             hovertemplate="%{y:.1f}%<extra></extra>"))
+    fig.add_trace(go.Scatter(x=xs, y=below, mode="lines", name="Below 50%",
+                             line=dict(color=C["green"], width=2.2), connectgaps=False,
+                             hovertemplate="%{y:.1f}%<extra></extra>"))
     fig.add_hline(y=50, line=dict(color=C["amber"], dash="dash", width=1.5),
                   annotation_text="50%", annotation_position="right",
                   annotation_font=dict(color=C["amber"], size=11))
