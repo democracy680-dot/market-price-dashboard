@@ -61,6 +61,14 @@ except Exception as _gm_err:  # noqa: BLE001
     _GM_AVAILABLE = False
     _GM_ERROR = str(_gm_err)
 
+# Market Summary tab (live today's move across indexes / commodities / FX)
+try:
+    from market_summary_tab import render_market_summary_tab as _render_market_summary
+    _MS_AVAILABLE = True
+except Exception as _ms_err:  # noqa: BLE001
+    _MS_AVAILABLE = False
+    _MS_ERROR = str(_ms_err)
+
 # Market Mood tab (pre-computed breadth from market_breadth_daily)
 try:
     from market_mood_tab import render_market_mood_tab as _render_market_mood
@@ -877,7 +885,8 @@ if st.query_params.get("health") == "true":
 # Universe definitions
 # ---------------------------------------------------------------------------
 INDEX_TABS   = [("NIFTY_50", "Nifty 50"), ("NIFTY_500", "Nifty 500"),
-                ("NIFTY_BANK", "Nifty Bank"), ("FNO", "F&O")]
+                ("NIFTY_BANK", "Nifty Bank"), ("NIFTY_SMALLCAP_100", "Nifty Smallcap 100"),
+                ("FNO", "F&O")]
 SECTOR_TABS  = [
     ("BANKS",                   "Banks"),
     ("NBFCS",                   "NBFCs"),
@@ -899,6 +908,7 @@ INDEX_YF_SYMBOL = {
     "NIFTY_50":                 "^NSEI",
     "NIFTY_500":                "^CRSLDX",
     "NIFTY_BANK":               "^NSEBANK",
+    "NIFTY_SMALLCAP_100":       "^CNXSC",
     "FNO":                      None,
     "BANKS":                    "^NSEBANK",
     "NBFCS":                    "^CNXFIN",       # Nifty Financial Services
@@ -2272,6 +2282,7 @@ ANALYSIS_TOP_N = {
     "NIFTY_50":                 5,
     "NIFTY_500":                20,
     "NIFTY_BANK":               5,
+    "NIFTY_SMALLCAP_100":       10,
     "FNO":                      10,
     "BANKS":                    5,
     "NBFCS":                    5,
@@ -3435,6 +3446,14 @@ def _frag_global_markets():
     else:
         st.error(f"Global Markets module failed to load: {_GM_ERROR}")
         st.info("Make sure `frontend/global_markets_tab.py` exists and all dependencies are installed.")
+
+
+@st.fragment
+def _frag_market_summary():
+    if _MS_AVAILABLE:
+        _render_market_summary()
+    else:
+        st.error(f"Market Summary module failed to load: {_MS_ERROR}")
 
 
 @st.fragment
@@ -5244,7 +5263,8 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_gm, tab_mood, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+tab_summary, tab_gm, tab_mood, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+    "Market Summary",
     "Global Markets",
     "Market Mood",
     "Indexes",
@@ -5261,6 +5281,16 @@ tab_gm, tab_mood, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_
 ])
 
 _TAB_DESCRIPTIONS = {
+    "market_summary": {
+        "what": [
+            "**India — Broad Market** — Nifty 50, Sensex, Next 50, Nifty 100 / 500, Midcap 100 / 150, Smallcap 100 / 250 and India VIX",
+            "**India — Sectoral** — 20 NSE sectoral indexes from Bank and IT to Defence, Chemicals and Capital Markets",
+            "**Global indexes** — US, Europe and Asia-Pacific benchmarks plus S&P 500 futures",
+            "**Commodities, Currency, Bonds & Crypto** — Gold, Silver, Crude, Gas, base metals, INR crosses, Dollar Index, US / India 10Y yields, Bitcoin and Ethereum",
+            "**Each row** — last price, point change, % change and an intraday sparkline; each group header shows how many are up vs down",
+        ],
+        "how": "A one-screen answer to \"what did markets do today?\". Scan the India groups to see whether the move was broad (small and midcaps with the Nifty) or narrow, and which sectors led. Then check the global and cross-asset groups for the reason — a weak Nasdaq, rising crude, a firm dollar or rising yields often explain the day's Indian tape. Markets that are closed show their last session's move.",
+    },
     "market_mood": {
         "what": [
             "**The Broader Market gauge** — composite 0–100 score across all dashboard stocks: average of % above 200 DMA, % above 50 DMA, 20-day advance ratio, and % of stocks with RSI above 50. Below 35 = Bear, 35–65 = Dull, above 65 = Bull",
@@ -5291,7 +5321,7 @@ _TAB_DESCRIPTIONS = {
     },
     "indexes": {
         "what": [
-            "**Universe Tabs** — Nifty 50, Nifty 500, Nifty Bank, and F&O, each as a separate sub-tab",
+            "**Universe Tabs** — Nifty 50, Nifty 500, Nifty Bank, Nifty Smallcap 100, and F&O, each as a separate sub-tab",
             "**Summary Cards** — index-level 1D / 1M / 1Y return, advance/decline count, and the number of stocks above the 200 DMA",
             "**Stock Table** — full sortable list with CMP, returns across 1D to 365D, Market Cap, P/E, 50/200 DMA status, 52W High %, and Volume Spike",
             "**Screener & Chart links** — direct links to Screener.in and TradingView for every stock",
@@ -5493,6 +5523,11 @@ with tab_technical:
 # ── Tab 8: Breakout & Reversal Scanner ───────────────────────────────────────
 with tab_scanner:
     render_scanner_tab()
+
+# ── Tab 0: Market Summary ─────────────────────────────────────────────────────
+with tab_summary:
+    _page_header("Market Summary", desc_key="market_summary")
+    _frag_market_summary()
 
 # ── Tab 9: Global Markets ─────────────────────────────────────────────────────
 with tab_gm:

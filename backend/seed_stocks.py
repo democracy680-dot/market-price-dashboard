@@ -29,6 +29,7 @@ INDEX_MAP = {
     "nifty_50.csv":                 "NIFTY_50",
     "nifty_500.csv":                "NIFTY_500",
     "nifty_bank.csv":               "NIFTY_BANK",
+    "nifty_smallcap_100.csv":       "NIFTY_SMALLCAP_100",
     "banks.csv":                    "BANKS",
     "nbfcs.csv":                    "NBFCS",
     "pharma.csv":                   "PHARMA",

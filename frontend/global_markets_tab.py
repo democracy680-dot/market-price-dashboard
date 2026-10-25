@@ -357,21 +357,29 @@ def _palette(dark: bool) -> dict:
 
 # ─── DATA FETCHING ────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300, show_spinner=False)
+def _all_syms() -> tuple:
+    return tuple(dict.fromkeys(
+        [i['sym'] for r in REGIONS for i in r['indices']]
+        + [c['sym'] for c in COMMODITIES]
+        + [b['sym'] for b in BONDS]
+        + [c['sym'] for c in CRYPTO]
+    ))
+
+
 def _fetch_quotes() -> tuple:
-    """Parallel Ticker.info quotes for all symbols. Returns (dict, fetched_at).
+    return fetch_quotes_for(_all_syms())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_quotes_for(all_syms: tuple) -> tuple:
+    """Parallel Ticker.info quotes for the given symbols. Returns (dict, fetched_at).
 
     Uses Ticker.info (regularMarketPrice / regularMarketPreviousClose) instead of
     batch yf.download() because the batch API omits today's live bar for many
     regional index symbols (^NSEI, ^NSEBANK, 000001.SS, etc.), causing the change
     to appear as 0.0% even when the market is open and prices have moved.
     """
-    all_syms = list(dict.fromkeys(
-        [i['sym'] for r in REGIONS for i in r['indices']]
-        + [c['sym'] for c in COMMODITIES]
-        + [b['sym'] for b in BONDS]
-        + [c['sym'] for c in CRYPTO]
-    ))
+    all_syms = list(all_syms)
     results = {s: None for s in all_syms}
 
     def _one(sym):
@@ -433,21 +441,20 @@ def _fetch_quotes() -> tuple:
     return results, datetime.now()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
 def _fetch_intraday_all() -> dict:
-    """Fetch sparkline data for all symbols. Returns {sym: [close_prices]}.
+    return fetch_intraday_for(_all_syms())
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_intraday_for(all_syms: tuple) -> dict:
+    """Fetch sparkline data for the given symbols. Returns {sym: [close_prices]}.
 
     Strategy:
       1. Batch 5-min download (fast; works for most US/global symbols + crypto).
       2. Individual 1h fallback for symbols that returned no 5m data
          (many regional index symbols like ^NSEI don't expose 5m intraday via Yahoo).
     """
-    all_syms = list(dict.fromkeys(
-        [i['sym'] for r in REGIONS for i in r['indices']]
-        + [c['sym'] for c in COMMODITIES]
-        + [b['sym'] for b in BONDS]
-        + [c['sym'] for c in CRYPTO]
-    ))
+    all_syms = list(all_syms)
     result = {s: [] for s in all_syms}
 
     # ── Step 1: batch 5m ────────────────────────────────────────────────────
@@ -1263,8 +1270,8 @@ def render_global_markets_tab():
         with ctrl_mid:
             if st.button("↺", key="gm_refresh", help="Refresh data now",
                          use_container_width=True):
-                _fetch_quotes.clear()
-                _fetch_intraday_all.clear()
+                fetch_quotes_for.clear()
+                fetch_intraday_for.clear()
                 st.session_state['gm_last_fetch'] = datetime.now()
                 st.rerun()
 
