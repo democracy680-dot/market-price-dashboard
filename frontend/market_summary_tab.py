@@ -6,12 +6,21 @@ Compact grouped tables (Price · Change · % Change · intraday sparkline), live
 via yfinance. Quote + sparkline fetching is shared with the Global Markets tab.
 """
 
+import importlib
 from datetime import datetime
 
 import pytz
 import streamlit as st
 
-from global_markets_tab import (
+import global_markets_tab
+
+# Streamlit Cloud can pull new code without restarting the Python process,
+# leaving the pre-update global_markets_tab cached in sys.modules. Reload it
+# once so the shared fetchers below exist.
+if not hasattr(global_markets_tab, "fetch_intraday_for"):
+    importlib.reload(global_markets_tab)
+
+from global_markets_tab import (  # noqa: E402
     _fmt_price,
     _palette,
     _svg_spark,
