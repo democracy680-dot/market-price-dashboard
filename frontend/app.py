@@ -29,6 +29,73 @@ from PIL import Image, ImageDraw
 
 load_dotenv()
 
+
+def _reload_stale_siblings():
+    """Reload frontend/ modules whose source changed since they were imported.
+
+    Streamlit Cloud pulls new commits and reruns app.py without restarting
+    Python, so sibling modules stay cached in sys.modules at the old version
+    (a new tab then fails with "cannot import name ..." or runs old logic).
+    Mtimes are tracked on `sys` so they survive reruns. The first run of this
+    code inside an already-running process reloads everything once, since
+    those modules may predate the deploy.
+    """
+    import importlib
+    import re
+
+    me = os.path.abspath(__file__)
+    here = os.path.dirname(me)
+    seen = getattr(sys, "_stockstack_mtimes", None)
+    first = seen is None
+    if first:
+        seen = sys._stockstack_mtimes = {}
+    # Skip app.py itself (also aliased as __mp_main__) — reloading it would rerun the app
+    mods = {
+        name: mod for name, mod in list(sys.modules.items())
+        if getattr(mod, "__file__", None)
+        and os.path.abspath(mod.__file__) != me
+        and os.path.dirname(os.path.abspath(mod.__file__)) == here
+    }
+    stale = False
+    for name, mod in mods.items():
+        try:
+            mtime = os.path.getmtime(mod.__file__)
+        except OSError:
+            continue
+        if first or mtime > seen.get(name, mtime):
+            stale = True
+        seen[name] = mtime
+    if not stale:
+        return
+    # Reload every sibling, dependencies first, so `from x import y` rebinds
+    # to the fresh objects.
+    deps = {}
+    for name, mod in mods.items():
+        try:
+            src = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
+        except OSError:
+            src = ""
+        deps[name] = {o for o in mods if o != name
+                      and re.search(rf"^\s*(from|import)\s+{re.escape(o)}\b", src, re.M)}
+    done = set()
+
+    def _visit(name):
+        if name in done:
+            return
+        done.add(name)
+        for dep in deps[name]:
+            _visit(dep)
+        try:
+            importlib.reload(mods[name])
+        except Exception:  # noqa: BLE001 — a broken module surfaces at its own import below
+            pass
+
+    for name in mods:
+        _visit(name)
+
+
+_reload_stale_siblings()
+
 # PERF: Timing instrumentation — gated behind DEBUG=true env var
 from perf_logger import measure, show_perf_panel, reset_timings
 
