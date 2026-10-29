@@ -54,7 +54,7 @@ REGIONS = [
             {'sym': '^NSEI',             'name': 'Nifty 50',          'short': 'NIFTY'},
             {'sym': '^BSESN',            'name': 'BSE Sensex',        'short': 'SENSEX'},
             {'sym': '^NSEBANK',          'name': 'Nifty Bank',        'short': 'BANK NIFTY'},
-            {'sym': 'NIFTYIT.NS',        'name': 'Nifty IT',          'short': 'NIFTY IT'},
+            {'sym': '^CNXIT',            'name': 'Nifty IT',          'short': 'NIFTY IT'},
             {'sym': 'NIFTYMIDCAP150.NS', 'name': 'Nifty Midcap 150', 'short': 'MIDCAP'},
             {'sym': 'NIFTYSMLCAP250.NS', 'name': 'Nifty Smlcap 250', 'short': 'SMALLCAP'},
             {'sym': '^INDIAVIX',         'name': 'India VIX',         'short': 'INDIA VIX'},
