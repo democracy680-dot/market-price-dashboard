@@ -374,19 +374,33 @@ def _fetch_quotes() -> tuple:
 def fetch_quotes_for(all_syms: tuple) -> tuple:
     """Parallel Ticker.info quotes for the given symbols. Returns (dict, fetched_at).
 
-    Uses Ticker.info (regularMarketPrice / regularMarketPreviousClose) instead of
-    batch yf.download() because the batch API omits today's live bar for many
-    regional index symbols (^NSEI, ^NSEBANK, 000001.SS, etc.), causing the change
-    to appear as 0.0% even when the market is open and prices have moved.
+    Uses per-symbol Ticker quotes instead of batch yf.download() because the
+    batch API omits today's live bar for many regional index symbols (^NSEI,
+    ^NSEBANK, 000001.SS, etc.), causing the change to appear as 0.0% even when
+    the market is open and prices have moved.
+
+    Primary source is Ticker.fast_info (Yahoo chart API). Ticker.info (the
+    quoteSummary API) is only a fallback: Yahoo rate-limits it from shared
+    cloud IPs (Streamlit Cloud showed '—' for every price), and its
+    regularMarketPreviousClose can lag a session for NSE indexes.
     """
     all_syms = list(all_syms)
     results = {s: None for s in all_syms}
 
     def _one(sym):
         try:
-            info  = yf.Ticker(sym).info
-            price = info.get('regularMarketPrice')
-            prev  = info.get('regularMarketPreviousClose') or info.get('previousClose')
+            t = yf.Ticker(sym)
+            price = prev = None
+            try:
+                fi    = t.fast_info
+                price = fi.last_price
+                prev  = fi.regular_market_previous_close or fi.previous_close
+            except Exception:
+                pass
+            if price is None or prev is None:
+                info  = t.info
+                price = info.get('regularMarketPrice')
+                prev  = info.get('regularMarketPreviousClose') or info.get('previousClose')
             if price is None or prev is None:
                 return sym, None
             chg = price - prev
