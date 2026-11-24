@@ -155,6 +155,14 @@ except Exception as _tix_err:  # noqa: BLE001
     _TIX_AVAILABLE = False
     _TIX_ERROR = str(_tix_err)
 
+# Sectors ▸ Valuation: historical P/E, P/B, div yield of NSE indices
+try:
+    from index_valuation_tab import render_valuation_tab as _render_valuation_tab
+    _VAL_AVAILABLE = True
+except Exception as _val_err:  # noqa: BLE001
+    _VAL_AVAILABLE = False
+    _VAL_ERROR = str(_val_err)
+
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
@@ -2851,6 +2859,15 @@ def _frag_themes():
     render_themes_view()
 
 
+@st.fragment
+def _frag_valuation():
+    if _VAL_AVAILABLE:
+        with measure("index_valuation_tab"):
+            _render_valuation_tab(engine, _dark)
+    else:
+        st.error(f"Valuation view unavailable: {_VAL_ERROR}")
+
+
 def _color_score(val):
     if pd.isna(val) or val == "—":
         return "color: #4a5568"
@@ -5411,14 +5428,16 @@ with tab_idx:
 # ── Tab 2: Sectors ──────────────────────────────────────────────────────────
 with tab_sec:
     _page_header("Sector Views", selected_date, desc_key="sectors")
-    sub_tabs2 = st.tabs([label for _, label in SECTOR_TABS] + ["Analysis", "Breadth"])
+    sub_tabs2 = st.tabs([label for _, label in SECTOR_TABS] + ["Analysis", "Breadth", "Valuation"])
     for tab, (key, _) in zip(sub_tabs2[:len(SECTOR_TABS)], SECTOR_TABS):
         with tab:
             _frag_universe_view(key, selected_date)
-    with sub_tabs2[-2]:
+    with sub_tabs2[-3]:
         _frag_analysis_tab(selected_date, SECTOR_TABS, "sectors")
-    with sub_tabs2[-1]:
+    with sub_tabs2[-2]:
         _frag_breadth_tab(selected_date, SECTOR_TABS, "sectors")
+    with sub_tabs2[-1]:
+        _frag_valuation()
 
 # ── Tab 3: Sector Performance ────────────────────────────────────────────────
 with tab_analysis:

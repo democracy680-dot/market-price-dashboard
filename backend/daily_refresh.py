@@ -482,6 +482,14 @@ def run():
     except Exception as order_err:
         logger.error(f"  BSE order fetch failed (non-fatal): {order_err}", exc_info=True)
 
+    # ── 5h. NSE index valuation (P/E, P/B, div yield) — Sectors ▸ Valuation ──
+    logger.info("Fetching NSE index valuations (P/E, P/B, div yield)...")
+    try:
+        from fetch_index_valuation import run as run_index_valuation
+        run_index_valuation()
+    except Exception as val_err:
+        logger.error(f"  Index valuation fetch failed (non-fatal): {val_err}", exc_info=True)
+
     # ── 6. Log the run ───────────────────────────────────────────────────────
     status = "success" if failed == 0 else "partial"
     with engine.begin() as conn:
