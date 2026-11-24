@@ -19,7 +19,7 @@ import sys
 import uuid
 import math
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from psycopg2.extras import execute_values
@@ -38,6 +38,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+# Days of already-stored history re-fetched each run so split_repair can compare
+# them with Yahoo (fetch_prices subtracts another 5 days of buffer).
+SPLIT_CHECK_OVERLAP_DAYS = 15
 
 
 def mark_inactive_stocks(engine) -> int:
@@ -282,7 +286,10 @@ def run():
         logger.info("prices_daily is empty — fetching full 2-year history (first seed)")
 
     logger.info("Fetching prices from yfinance...")
-    prices_df = fetch_prices(yahoo_symbols, start_date=last_db_date)
+    # Fetch an extra ~2 weeks of overlap with what's already stored, so the split
+    # check below can see Yahoo re-adjusting history (it lags a split by 3-9 days).
+    fetch_from = last_db_date - timedelta(days=SPLIT_CHECK_OVERLAP_DAYS) if last_db_date else None
+    prices_df = fetch_prices(yahoo_symbols, start_date=fetch_from)
 
     success = prices_df["yahoo_symbol"].nunique() if not prices_df.empty else 0
     failed = total - success
@@ -294,6 +301,24 @@ def run():
                     "yfinance returned no data")
         logger.error("No data fetched — aborting.")
         sys.exit(1)
+
+    # ── 2b. Split / bonus check: our stored closes vs Yahoo's adjusted ones ──
+    if last_db_date:
+        try:
+            from split_repair import find_stale_symbols, repair_symbols
+            conn = get_psycopg2_conn()
+            try:
+                stale = find_stale_symbols(prices_df, symbol_map, conn)
+                if not stale.empty:
+                    logger.info(f"  Split/bonus check: {len(stale)} stocks need history repair: "
+                                + ", ".join(stale['symbol'].tolist()))
+                    repair_symbols(stale["symbol"].tolist(), conn)
+                else:
+                    logger.info("  Split/bonus check: all stored history matches Yahoo")
+            finally:
+                conn.close()
+        except Exception as split_err:
+            logger.error(f"  Split check failed (non-fatal): {split_err}", exc_info=True)
 
     # ── 3. Upsert prices_daily ───────────────────────────────────────────────
     logger.info("Upserting prices_daily...")

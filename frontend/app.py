@@ -144,6 +144,17 @@ except Exception as _mood_err:  # noqa: BLE001
     _MOOD_AVAILABLE = False
     _MOOD_ERROR = str(_mood_err)
 
+# Themes tab: theme list + theme index chart (reads pre-computed theme_index_daily)
+try:
+    from theme_index_chart import render_theme_list as _render_theme_list
+    from theme_index_chart import render_theme_chart as _render_theme_chart
+    from theme_index_chart import load_theme_index as _load_theme_index
+    from theme_index_chart import returns_table as _theme_returns_table
+    _TIX_AVAILABLE = True
+except Exception as _tix_err:  # noqa: BLE001
+    _TIX_AVAILABLE = False
+    _TIX_ERROR = str(_tix_err)
+
 # ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
@@ -1453,24 +1464,6 @@ def load_themes() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def load_theme_averages() -> pd.DataFrame:
-    sql = text("""
-        SELECT
-            tm.theme_slug,
-            AVG(snap.ret_1w)    AS avg_ret_1w,
-            AVG(snap.ret_30d)   AS avg_ret_30d,
-            AVG(snap.ret_365d)  AS avg_ret_365d
-        FROM theme_membership tm
-        JOIN snapshots_daily snap
-            ON snap.symbol = tm.symbol
-            AND snap.date = (SELECT MAX(date) FROM snapshots_daily)
-        GROUP BY tm.theme_slug
-    """)
-    with engine.connect() as conn:
-        return pd.read_sql(sql, conn)
-
-
-@st.cache_data(ttl=300, show_spinner=False)
 def load_theme_stocks(theme_slug: str) -> pd.DataFrame:
     sql = text("""
         SELECT
@@ -2069,7 +2062,7 @@ THEME_DISPLAY_COLS = {
     "ret_1d":        "1D %",
     "ret_1w":        "1W %",
     "ret_30d":       "1M %",
-    "ret_60d":       "3M %",
+    "ret_60d":       "2M %",
     "ret_180d":      "6M %",
     "ret_365d":      "1Y %",
     "market_cap_cr": "Market Cap (₹ Cr)",
@@ -2103,185 +2096,53 @@ def _prepare_theme_display(df: pd.DataFrame) -> pd.DataFrame:
     return d
 
 
-_THEME_SORT_OPTIONS = {
-    "1W":  ("avg_ret_1w",   "1W Avg"),
-    "1M":  ("avg_ret_30d",  "1M Avg"),
-    "1Y":  ("avg_ret_365d", "1Y Avg"),
-}
+def _default_theme_slug(themes_df: pd.DataFrame) -> str:
+    """Open on the best 1M performer (theme index), else the first theme."""
+    if _TIX_AVAILABLE:
+        try:
+            r = _theme_returns_table(_load_theme_index(engine), "theme_slug", "index_ew", ["1M"])
+            r = r[r["theme_slug"].isin(themes_df["theme_slug"])].dropna(subset=["1M"])
+            if not r.empty:
+                return r.sort_values("1M", ascending=False).iloc[0]["theme_slug"]
+        except Exception:  # noqa: BLE001 — never block the tab on the default pick
+            pass
+    return themes_df.iloc[0]["theme_slug"]
 
 
 def render_themes_view():
-    # Anchor at the very top — JS scrolls here after theme selection
-    st.markdown('<div id="themes-top"></div>', unsafe_allow_html=True)
-    if st.session_state.pop("_theme_scroll_top", False):
-        components.html("""
-<script>
-(function() {
-    var anchor = window.parent.document.getElementById('themes-top');
-    if (anchor) {
-        anchor.scrollIntoView({behavior: 'instant', block: 'start'});
-        return;
-    }
-    // fallback: scroll any known Streamlit container
-    var selectors = [
-        '[data-testid="stAppViewContainer"]',
-        '[data-testid="stMain"]',
-        'section.main',
-        '.main'
-    ];
-    for (var i = 0; i < selectors.length; i++) {
-        var el = window.parent.document.querySelector(selectors[i]);
-        if (el) { el.scrollTop = 0; break; }
-    }
-})();
-</script>
-""", height=0)
-
     themes_df = load_themes()
     if themes_df.empty:
         st.info("No themes found. Run `python backend/seed_themes.py` to populate.")
         return
 
-    # Load and merge average returns
-    avgs_df = load_theme_averages()
-    themes_df = themes_df.merge(avgs_df, on="theme_slug", how="left")
+    if st.session_state.get("selected_theme_slug") not in set(themes_df["theme_slug"]):
+        st.session_state["selected_theme_slug"] = _default_theme_slug(themes_df)
 
-    # Initialise selected theme to the top performer under the current sort period
-    if "selected_theme_slug" not in st.session_state:
-        _default_sort_col = _THEME_SORT_OPTIONS.get(
-            st.session_state.get("theme_sort_period", "1M"), ("avg_ret_30d", "")
-        )[0]
-        _sorted_init = themes_df.sort_values(_default_sort_col, ascending=False, na_position="last")
-        st.session_state["selected_theme_slug"] = _sorted_init.iloc[0]["theme_slug"]
+    left_col, right_col = st.columns([1.15, 2.6], gap="medium")
 
-    left_col, right_col = st.columns([1, 3])
-
-    # ── Left: theme picker ───────────────────────────────────────────────────
+    # ── Left: theme list (1D + chosen period; selected theme expands to its stocks) ──
     with left_col:
-        # Duration pill selector
-        if "theme_sort_period" not in st.session_state:
-            st.session_state["theme_sort_period"] = "1M"
+        if _TIX_AVAILABLE:
+            with measure("themes_list"):
+                _render_theme_list(engine, themes_df, st.session_state["selected_theme_slug"], _dark)
+        else:
+            st.error(f"Theme list unavailable: {_TIX_ERROR}")
 
-        st.markdown(
-            f"<div style='font-size:10px;font-weight:700;letter-spacing:0.12em;"
-            f"text-transform:uppercase;color:{_T['text_label']};margin-bottom:6px;'>"
-            "Return Period</div>",
-            unsafe_allow_html=True,
-        )
-        dur_cols = st.columns(len(_THEME_SORT_OPTIONS))
-        for i, dur_label in enumerate(_THEME_SORT_OPTIONS):
-            with dur_cols[i]:
-                if st.button(
-                    dur_label,
-                    key=f"theme_dur_{dur_label}",
-                    use_container_width=True,
-                ):
-                    st.session_state["theme_sort_period"] = dur_label
-                    st.rerun()
-
-        _active_dur = st.session_state["theme_sort_period"]
-
-        sort_col, sort_label = _THEME_SORT_OPTIONS[st.session_state["theme_sort_period"]]
-
-        search = st.text_input("Search themes", placeholder="Type to filter…", label_visibility="collapsed")
-        filtered = themes_df.sort_values(sort_col, ascending=False, na_position="last")
-        if search.strip():
-            filtered = filtered[
-                filtered["theme_name"].str.contains(search.strip(), case=False, na=False)
-            ]
-
-        for _, row in filtered.iterrows():
-            avg_val = row.get(sort_col)
-            avg_str = f"{avg_val * 100:+.1f}%" if pd.notna(avg_val) else "—"
-            label = f"{row['theme_name']} ({int(row['actual_stock_count'])})  {avg_str}"
-            if st.button(
-                label,
-                key=f"theme_btn_{row['theme_slug']}",
-                use_container_width=True,
-            ):
-                st.session_state["selected_theme_slug"] = row["theme_slug"]
-                st.session_state["_theme_scroll_top"] = True
-                st.rerun()
-
-        # Highlight selected buttons via JS — CSS selectors can't reach them in Streamlit 1.53
-        # (button kind/type is a React prop, not an HTML attribute; data-testid has no key)
-        _active_slug = st.session_state["selected_theme_slug"]
-        _active_theme_row = themes_df[themes_df["theme_slug"] == _active_slug]
-        _active_theme_name = _active_theme_row.iloc[0]["theme_name"] if not _active_theme_row.empty else ""
-        _sel_bg  = "#1d3461" if _dark else "#1d4ed8"
-        _sel_bd  = "#2d4f8e" if _dark else "#3b82f6"
-        _sel_txt = "#e2e8f0"
-        if _COMPONENTS_HTML_SAFE:
-         components.html(f"""
-<script>
-(function() {{
-  var activeDur   = {repr(_active_dur)};
-  var activeTheme = {repr(_active_theme_name)};
-  var durLabels   = ['1W', '1M', '1Y'];
-  var selBg  = '{_sel_bg}';
-  var selBd  = '{_sel_bd}';
-  var selTxt = '{_sel_txt}';
-
-  function applyHighlights() {{
-    var doc = window.parent.document;
-    var buttons = doc.querySelectorAll('.stButton button');
-    var durDone = false, themeDone = false;
-    buttons.forEach(function(btn) {{
-      var text = btn.innerText.trim();
-      if (durLabels.indexOf(text) !== -1) {{
-        if (text === activeDur) {{
-          btn.style.setProperty('background', selBg, 'important');
-          btn.style.setProperty('border', '1px solid ' + selBd, 'important');
-          btn.style.setProperty('color', selTxt, 'important');
-          btn.style.setProperty('font-weight', '700', 'important');
-          durDone = true;
-        }} else {{
-          btn.style.removeProperty('background');
-          btn.style.removeProperty('border');
-          btn.style.removeProperty('color');
-          btn.style.removeProperty('font-weight');
-        }}
-      }}
-      if (activeTheme && text.startsWith(activeTheme)) {{
-        btn.style.setProperty('background', selBg, 'important');
-        btn.style.setProperty('border-left', '3px solid #3b82f6', 'important');
-        btn.style.setProperty('color', selTxt, 'important');
-        btn.style.setProperty('font-weight', '600', 'important');
-        themeDone = true;
-      }}
-    }});
-    return durDone && themeDone;
-  }}
-
-  var attempts = 0;
-  function tryHighlight() {{
-    if (!applyHighlights() && attempts < 30) {{
-      attempts++;
-      setTimeout(tryHighlight, 100);
-    }}
-  }}
-  tryHighlight();
-
-  var observer = new MutationObserver(function() {{ applyHighlights(); }});
-  observer.observe(window.parent.document.body, {{subtree: true, childList: true, attributes: true}});
-  setTimeout(function() {{ observer.disconnect(); }}, 8000);
-}})();
-</script>
-""", height=0)
-
-    # ── Right: stock table for selected theme ────────────────────────────────
+    # ── Right: theme index chart + detailed stock table ──────────────────────
     with right_col:
         selected_slug = st.session_state["selected_theme_slug"]
         theme_row = themes_df[themes_df["theme_slug"] == selected_slug]
-        if theme_row.empty:
-            # Fallback if selection no longer exists (e.g. after search filters it out).
-            # Sync session state so the sidebar buttons reflect the actual displayed theme.
-            selected_slug = themes_df.iloc[0]["theme_slug"]
-            theme_row = themes_df.iloc[[0]]
-            st.session_state["selected_theme_slug"] = selected_slug
-
         theme_name  = theme_row.iloc[0]["theme_name"]
         stock_count = int(theme_row.iloc[0]["actual_stock_count"])
+
+        if _TIX_AVAILABLE:
+            try:
+                with measure(f"theme_index_chart__{selected_slug}"):
+                    _render_theme_chart(engine, selected_slug, theme_name, stock_count, _dark)
+            except Exception as _chart_err:  # noqa: BLE001 — a chart error must not hide the table
+                st.warning(f"Theme chart unavailable: {_chart_err}")
+        else:
+            st.subheader(theme_name)
 
         stocks_df = load_theme_stocks(selected_slug)
 
@@ -2289,7 +2150,7 @@ def render_themes_view():
         dates = load_available_dates()
         latest_date = pd.Timestamp(dates[0]).strftime("%d %b %Y") if dates else "—"
 
-        st.subheader(theme_name)
+        st.markdown(f"##### Stocks in {theme_name.removesuffix(' Index')}")
         st.caption(f"{stock_count} companies • Data as of {latest_date}")
 
         # Warn if >10% of stocks have no price data yet

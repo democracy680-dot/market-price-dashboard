@@ -13,9 +13,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import text
 
-from db import get_engine
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -110,117 +108,62 @@ def validate(themes: list[dict]) -> None:
 # Database operations
 # ---------------------------------------------------------------------------
 def seed(themes: list[dict]) -> None:
-    engine = get_engine()
+    """Write themes + theme_membership in ONE transaction (psycopg2), so a dropped
+    connection can never leave theme_membership half-empty on the live site."""
+    from psycopg2.extras import execute_values
+    from db import get_psycopg2_conn
 
-    # --- Collect all unique tickers ---
     all_tickers: dict[str, str] = {}  # symbol -> company_name
     for t in themes:
         for ticker, name in t["stocks"]:
             all_tickers.setdefault(ticker, name)
-
     print(f"\nTotal unique tickers in Excel: {len(all_tickers)}")
 
-    # --- Add missing stocks to master ---
-    with engine.begin() as conn:
-        existing = {
-            row[0]
-            for row in conn.execute(text("SELECT symbol FROM stocks")).fetchall()
-        }
+    conn = get_psycopg2_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT symbol FROM stocks")
+            existing = {r[0] for r in cur.fetchall()}
+            new_tickers = {s: n for s, n in all_tickers.items() if s not in existing}
+            print(f"{len(all_tickers) - len(new_tickers)} tickers already in master, "
+                  f"{len(new_tickers)} tickers newly added.")
+            if new_tickers:
+                execute_values(cur, """
+                    INSERT INTO stocks (symbol, name, yahoo_symbol, screener_url, tradingview_url, is_active, added_at)
+                    VALUES %s ON CONFLICT (symbol) DO NOTHING""",
+                    [(s, n or s, s + ".NS", f"https://www.screener.in/company/{s}/consolidated/",
+                      f"https://www.tradingview.com/chart/?symbol=NSE%3A{s}") for s, n in new_tickers.items()],
+                    template="(%s,%s,%s,%s,%s,TRUE,NOW())")
 
-    new_tickers = {sym: name for sym, name in all_tickers.items() if sym not in existing}
-    already_count = len(all_tickers) - len(new_tickers)
-    print(f"{already_count} tickers already in master, {len(new_tickers)} tickers newly added.")
+            execute_values(cur, """
+                INSERT INTO themes (theme_slug, theme_name, theme_order, stock_count) VALUES %s
+                ON CONFLICT (theme_slug) DO UPDATE SET
+                    theme_name = EXCLUDED.theme_name, theme_order = EXCLUDED.theme_order,
+                    stock_count = EXCLUDED.stock_count""",
+                [(t["theme_slug"], t["theme_name"], t["theme_order"], t["stock_count"]) for t in themes])
+            print(f"Upserted {len(themes)} themes.")
 
-    if new_tickers:
-        new_rows = [
-            {
-                "symbol": sym,
-                "name": name if name else sym,
-                "yahoo_symbol": sym + ".NS",
-                "screener_url": f"https://www.screener.in/company/{sym}/consolidated/",
-                "tradingview_url": f"https://www.tradingview.com/chart/?symbol=NSE%3A{sym}",
-            }
-            for sym, name in new_tickers.items()
-        ]
-        BATCH = 50
-        inserted = 0
-        for i in range(0, len(new_rows), BATCH):
-            batch = new_rows[i : i + BATCH]
-            with engine.begin() as conn:
-                conn.execute(
-                    text("""
-                        INSERT INTO stocks (symbol, name, yahoo_symbol, screener_url, tradingview_url, is_active, added_at)
-                        VALUES (:symbol, :name, :yahoo_symbol, :screener_url, :tradingview_url, TRUE, NOW())
-                        ON CONFLICT (symbol) DO NOTHING
-                    """),
-                    batch,
-                )
-            inserted += len(batch)
-        print(f"Inserted {inserted} new stocks into master.")
+            cur.execute("DELETE FROM theme_membership")
+            rows = [(t["theme_slug"], ticker) for t in themes for ticker, _ in t["stocks"]]
+            execute_values(cur, "INSERT INTO theme_membership (theme_slug, symbol) VALUES %s ON CONFLICT DO NOTHING", rows)
+            print(f"Inserted {len(rows)} rows into theme_membership.")
+        conn.commit()
 
-    # --- Upsert themes ---
-    theme_rows = [
-        {
-            "theme_slug": t["theme_slug"],
-            "theme_name": t["theme_name"],
-            "theme_order": t["theme_order"],
-            "stock_count": t["stock_count"],
-        }
-        for t in themes
-    ]
-    BATCH = 50
-    with engine.begin() as conn:
-        for i in range(0, len(theme_rows), BATCH):
-            conn.execute(
-                text("""
-                    INSERT INTO themes (theme_slug, theme_name, theme_order, stock_count)
-                    VALUES (:theme_slug, :theme_name, :theme_order, :stock_count)
-                    ON CONFLICT (theme_slug) DO UPDATE SET
-                        theme_name  = EXCLUDED.theme_name,
-                        theme_order = EXCLUDED.theme_order,
-                        stock_count = EXCLUDED.stock_count
-                """),
-                theme_rows[i : i + BATCH],
-            )
-    print(f"Upserted {len(theme_rows)} themes.")
-
-    # --- Rebuild theme_membership (truncate + re-insert = idempotent) ---
-    with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE theme_membership"))
-
-    membership_rows = [
-        {"theme_slug": t["theme_slug"], "symbol": ticker}
-        for t in themes
-        for ticker, _ in t["stocks"]
-    ]
-    total_memberships = 0
-    for i in range(0, len(membership_rows), BATCH):
-        batch = membership_rows[i : i + BATCH]
-        with engine.begin() as conn:
-            conn.execute(
-                text("""
-                    INSERT INTO theme_membership (theme_slug, symbol)
-                    VALUES (:theme_slug, :symbol)
-                    ON CONFLICT DO NOTHING
-                """),
-                batch,
-            )
-        total_memberships += len(batch)
-    print(f"Inserted {total_memberships} rows into theme_membership.")
-
-    # --- Final summary ---
-    with engine.connect() as conn:
-        theme_count = conn.execute(text("SELECT COUNT(*) FROM themes")).fetchone()[0]
-        member_count = conn.execute(text("SELECT COUNT(*) FROM theme_membership")).fetchone()[0]
-        drift_count = conn.execute(
-            text("SELECT COUNT(*) FROM themes_with_counts WHERE actual_stock_count != stock_count")
-        ).fetchone()[0]
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM themes"); theme_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM theme_membership"); member_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM themes_with_counts WHERE actual_stock_count != stock_count")
+            drift_count = cur.fetchone()[0]
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
     print(f"\n--- Final Summary ---")
     print(f"Themes in DB        : {theme_count}")
     print(f"Total memberships   : {member_count}")
     print(f"Count-drift rows    : {drift_count}  (should be 0)")
-
     if drift_count > 0:
         print("WARNING: Some themes have a mismatch between stock_count and actual membership.")
     else:
