@@ -56,4 +56,4 @@ def test_figure_builds_with_bands():
     g = pd.DataFrame({"date": d, "pe": np.linspace(15, 25, 30)})
     b = band_stats(pd.Series(g["pe"].values, index=d))
     fig = build_valuation_figure(g, "pe", "P/E", b, dark=True)
-    assert len(fig.layout.shapes) >= 4            # avg + ±1σ + ±2σ lines
+    assert len(fig.layout.shapes) == 1            # average line only

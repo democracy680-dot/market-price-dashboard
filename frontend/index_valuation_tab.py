@@ -1,6 +1,6 @@
 """
 index_valuation_tab.py — Sectors ▸ Valuation: historical P/E, P/B and dividend
-yield of NSE indices with average and ±1σ/±2σ bands.
+yield of NSE indices with their average over the selected period.
 
 Data: index_valuation_daily (backend/fetch_index_valuation.py, from niftyindices.com).
 One cached query loads all indices (daily for the last ~13 months, weekly before),
@@ -89,28 +89,15 @@ def build_valuation_figure(g: pd.DataFrame, metric: str, label: str, stats: dict
     C = _palette(dark)
     x = pd.to_datetime(g["date"])
     y = g[metric].astype(float)
-    m, sd = stats["mean"], stats["std"]
+    m = stats["mean"]
     fig = go.Figure()
-    # ±1σ band
-    fig.add_trace(go.Scatter(x=[x.min(), x.max()], y=[m + sd, m + sd], mode="lines", line=dict(width=0),
-                             hoverinfo="skip", showlegend=False))
-    fig.add_trace(go.Scatter(x=[x.min(), x.max()], y=[m - sd, m - sd], mode="lines", line=dict(width=0),
-                             fill="tonexty", fillcolor=C["amb_fill"], hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color=C["line"], width=2), name=label,
                               hovertemplate=f"{label} %{{y:.2f}}<extra></extra>"))
-    lines = [(m, "Avg", C["nifty"], "solid"), (m + sd, "+1σ", C["amber"], "dash"), (m - sd, "−1σ", C["amber"], "dash"),
-             (m + 2 * sd, "+2σ", C["red"], "dot"), (m - 2 * sd, "−2σ", C["green"], "dot")]
-    if metric == "div_yield":   # high yield = cheap: swap the ±2σ colours
-        lines[3], lines[4] = (m + 2 * sd, "+2σ", C["green"], "dot"), (m - 2 * sd, "−2σ", C["red"], "dot")
-    for val, name, col, dash in lines:
-        if val <= 0:
-            continue
-        fig.add_hline(y=val, line=dict(color=col, width=1.2, dash=dash),
-                      annotation_text=f"{name} {val:.1f}", annotation_position="right",
-                      annotation_font=dict(size=10, color=col))
-    lo = min(float(y.min()), m - 2 * sd)
-    hi = max(float(y.max()), m + 2 * sd)
-    pad = (hi - lo) * 0.05
+    fig.add_hline(y=m, line=dict(color=C["nifty"], width=1.2),
+                  annotation_text=f"Avg {m:.1f}", annotation_position="right",
+                  annotation_font=dict(size=10, color=C["nifty"]))
+    lo, hi = min(float(y.min()), m), max(float(y.max()), m)
+    pad = (hi - lo) * 0.06 or 1.0
     fig.update_layout(**_base_layout(
         C, height=height, showlegend=False, margin=dict(l=52, r=92, t=12, b=32),
         xaxis=dict(showgrid=True, gridcolor=C["grid"], hoverformat="%d %b %Y"),
@@ -209,8 +196,8 @@ def render_valuation_tab(engine, dark: bool) -> None:
             unsafe_allow_html=True)
         st.plotly_chart(build_valuation_figure(g, metric, metric_label, stats, dark), width="stretch",
                         config=CHART_CONFIG, theme=None, key=f"val_{api}_{metric}_{period}")
-        st.caption(f"Average and ±1σ / ±2σ bands are over the selected period ({period}), on weekly values. "
-                   f"Cheap / Expensive = more than 1σ below / above the average"
+        st.caption(f"Average is over the selected period ({period}), on weekly values. "
+                   f"Cheap / Expensive = well below / above that average (more than one standard deviation)"
                    f"{' (reversed for dividend yield: a high yield is cheap)' if metric == 'div_yield' else ''}. "
                    f"Source: NSE Indices · as of {pd.Timestamp(g['date'].max()):%d %b %Y}.")
 
