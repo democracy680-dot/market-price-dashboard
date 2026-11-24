@@ -131,3 +131,17 @@ def test_calendar_drops_ghost_holiday_rows_and_turnover():
     assert out["n_members"].tolist() == [2, 2, 2, 2]
     # turnover on d0 = (100*1e7 + 50*2e7) / 1e7 = 200 cr
     assert abs(out["turnover_cr"].iloc[0] - 200.0) < 1e-9
+
+
+def test_member_returns_table_periods_and_ghost_rows():
+    from compute_theme_index import member_returns_table
+    dates = pd.date_range("2026-01-01", periods=40, freq="D")
+    closes = [100.0 + i for i in range(40)]                 # last = 139 on 2026-02-09
+    long = pd.DataFrame({"symbol": "A", "date": dates, "close": closes})
+    # ghost holiday row on the last-but-one date: excluded via calendar
+    cal = [d for d in dates if d != dates[-2]]
+    t = member_returns_table(long, calendar=cal).set_index("symbol")
+    assert abs(t.loc["A", "ret_1d"] - (139 / 137 - 1) * 100) < 1e-9   # vs previous *session*
+    assert abs(t.loc["A", "ret_1w"] - (139 / 132 - 1) * 100) < 1e-9   # base 2026-02-02 = 132
+    assert abs(t.loc["A", "ret_1m"] - (139 / 109 - 1) * 100) < 1e-9   # base 2026-01-10 = 109
+    assert pd.isna(t.loc["A", "ret_1y"])                               # not enough history

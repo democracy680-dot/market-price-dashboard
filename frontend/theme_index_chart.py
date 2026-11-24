@@ -8,7 +8,8 @@ This module only reads them.
 Pure helpers (unit-tested in frontend/tests/test_theme_index_chart.py):
     window_start, period_return, returns_table, chart_window, rangebreaks,
     build_index_figure
-Loaders (cached):  load_theme_index, load_member_closes
+Loaders (cached, ~2 queries/hour; theme clicks never hit the DB):
+                   load_theme_index, load_theme_members, theme_returns
 Renderers:         render_theme_list, render_theme_chart
 """
 import html
@@ -137,7 +138,10 @@ def build_index_figure(win: pd.DataFrame, dark: bool, height: int = 440) -> go.F
 
 # ── Loaders ──────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=300, show_spinner=False)
+CACHE_TTL = 1800   # data changes once a day; each query costs ~2s of connection setup
+
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
 def load_theme_index(_engine) -> pd.DataFrame:
     sql = text("""SELECT theme_slug, date, index_ew, turnover_cr, n_members
                   FROM theme_index_daily ORDER BY theme_slug, date""")
@@ -149,21 +153,39 @@ def load_theme_index(_engine) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_member_closes(_engine, theme_slug: str) -> pd.DataFrame:
-    sql = text("""SELECT s.symbol, s.name, p.date, p.close
-                  FROM theme_membership tm
-                  JOIN stocks s ON s.symbol = tm.symbol
-                  JOIN prices_daily p ON p.symbol = tm.symbol
-                  WHERE tm.theme_slug = :slug AND p.date >= CURRENT_DATE - 400
-                  ORDER BY s.symbol, p.date""")
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def load_theme_members(_engine) -> pd.DataFrame:
+    """Every theme membership with the stock's latest snapshot, P/E and pre-computed
+    period returns (theme_member_returns) — one query for all 45 themes."""
+    sql = text("""
+        SELECT tm.theme_slug, s.symbol, s.name, s.screener_url, s.tradingview_url,
+               snap.cmp, snap.ret_1d, snap.ret_1w, snap.ret_30d, snap.ret_60d,
+               snap.ret_180d, snap.ret_365d, snap.market_cap_cr,
+               COALESCE(lf.pe_ttm, snap.pe_ratio) AS pe_ratio,
+               mr.ret_1d AS m_1d, mr.ret_1w AS m_1w, mr.ret_1m AS m_1m,
+               mr.ret_3m AS m_3m, mr.ret_6m AS m_6m, mr.ret_1y AS m_1y
+        FROM theme_membership tm
+        JOIN stocks s ON s.symbol = tm.symbol
+        LEFT JOIN snapshots_daily snap
+               ON snap.symbol = s.symbol AND snap.date = (SELECT MAX(date) FROM snapshots_daily)
+        LEFT JOIN latest_financials lf ON lf.symbol = s.symbol
+        LEFT JOIN theme_member_returns mr ON mr.symbol = s.symbol
+    """)
     with _engine.connect() as conn:
-        df = pd.read_sql(sql, conn, params={"slug": theme_slug})
-    df["close"] = pd.to_numeric(df["close"], errors="coerce")
+        df = pd.read_sql(sql, conn)
+    num = [c for c in df.columns if c not in ("theme_slug", "symbol", "name", "screener_url", "tradingview_url")]
+    df[num] = df[num].apply(pd.to_numeric, errors="coerce")
     return df
 
 
-# ── Renderers ────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def theme_returns(_engine) -> pd.DataFrame:
+    """Theme index returns for every list period, computed once per cache window."""
+    return returns_table(load_theme_index(_engine), "theme_slug", "index_ew", ["1D", *LIST_PERIODS])
+
+
+MEMBER_COL = {"1D": "m_1d", "1W": "m_1w", "1M": "m_1m", "3M": "m_3m", "6M": "m_6m", "1Y": "m_1y"}
+
 
 def display_name(name: str) -> str:
     """'Cements Index' -> 'Cements' (the list and chart already say it's an index)."""
@@ -226,8 +248,7 @@ def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bo
         label_visibility="collapsed",
     ) or "1W"
 
-    idx = load_theme_index(engine)
-    rets = returns_table(idx, "theme_slug", "index_ew", ["1D", period])
+    rets = theme_returns(engine)[["theme_slug", "1D", period]]
     df = themes.merge(rets, on="theme_slug", how="left")
 
     sort_col, asc = st.session_state.get("theme_list_sort", ("name", True))
@@ -260,16 +281,16 @@ def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bo
 
 
 def _render_constituents(engine, slug: str, period: str, C: dict) -> None:
-    closes = load_member_closes(engine, slug)
-    if closes.empty:
-        st.caption("No price data for this theme's stocks yet.")
+    m = load_theme_members(engine)
+    m = m[m["theme_slug"] == slug].sort_values("symbol")
+    if m.empty:
+        st.caption("No stocks in this theme yet.")
         return
-    names = closes.groupby("symbol")["name"].first()
-    r = returns_table(closes, "symbol", "close", ["1D", period]).sort_values("symbol")
+    c1, cp = MEMBER_COL["1D"], MEMBER_COL[period]
     rows = "".join(
-        f"<tr><td title='{html.escape(str(names.get(t.symbol, '')))}'>{html.escape(t.symbol)}</td>"
-        f"<td class='n'>{_pct_html(t[1], C)}</td><td class='n'>{_pct_html(t[2], C)}</td></tr>"
-        for t in r.itertuples(index=False)
+        f"<tr><td title='{html.escape(str(r['name']))}'>{html.escape(r['symbol'])}</td>"
+        f"<td class='n'>{_pct_html(r[c1], C)}</td><td class='n'>{_pct_html(r[cp], C)}</td></tr>"
+        for r in m.to_dict("records")
     )
     st.markdown(f"<table class='tl-cons'><colgroup><col style='width:56%'><col style='width:22%'>"
                 f"<col style='width:22%'></colgroup>{rows}</table>", unsafe_allow_html=True)

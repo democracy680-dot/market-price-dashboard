@@ -148,8 +148,8 @@ except Exception as _mood_err:  # noqa: BLE001
 try:
     from theme_index_chart import render_theme_list as _render_theme_list
     from theme_index_chart import render_theme_chart as _render_theme_chart
-    from theme_index_chart import load_theme_index as _load_theme_index
-    from theme_index_chart import returns_table as _theme_returns_table
+    from theme_index_chart import load_theme_members as _load_theme_members
+    from theme_index_chart import theme_returns as _theme_returns
     _TIX_AVAILABLE = True
 except Exception as _tix_err:  # noqa: BLE001
     _TIX_AVAILABLE = False
@@ -2100,7 +2100,7 @@ def _default_theme_slug(themes_df: pd.DataFrame) -> str:
     """Open on the best 1M performer (theme index), else the first theme."""
     if _TIX_AVAILABLE:
         try:
-            r = _theme_returns_table(_load_theme_index(engine), "theme_slug", "index_ew", ["1M"])
+            r = _theme_returns(engine)[["theme_slug", "1M"]]
             r = r[r["theme_slug"].isin(themes_df["theme_slug"])].dropna(subset=["1M"])
             if not r.empty:
                 return r.sort_values("1M", ascending=False).iloc[0]["theme_slug"]
@@ -2144,7 +2144,14 @@ def render_themes_view():
         else:
             st.subheader(theme_name)
 
-        stocks_df = load_theme_stocks(selected_slug)
+        if _TIX_AVAILABLE:
+            # Cached once for all themes — switching themes needs no DB round trip.
+            _m = _load_theme_members(engine)
+            stocks_df = (_m[_m["theme_slug"] == selected_slug]
+                         .sort_values("market_cap_cr", ascending=False, na_position="last")
+                         .reset_index(drop=True))
+        else:
+            stocks_df = load_theme_stocks(selected_slug)
 
         # Latest snapshot date (reuse already-loaded dates list)
         dates = load_available_dates()

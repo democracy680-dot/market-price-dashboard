@@ -139,6 +139,34 @@ def compute_theme_index_frame(long: pd.DataFrame, shares: dict, calendar=None,
     })
 
 
+MEMBER_PERIODS = {"1w": 7, "1m": 30, "3m": 91, "6m": 182, "1y": 365}
+
+
+def member_returns_table(long: pd.DataFrame, calendar=None) -> pd.DataFrame:
+    """long: [symbol, date, close]. Returns one row per symbol:
+    [symbol, as_of, ret_1d, ret_1w, ret_1m, ret_3m, ret_6m, ret_1y] in percent.
+    1D = last close vs the previous session; other periods = last close vs the last
+    close on or before (last date - N calendar days). None when history is too short.
+    Rows on non-sessions (Yahoo holiday ghost rows) are dropped via `calendar`."""
+    df = long[["symbol", "date", "close"]].dropna(subset=["close"]).copy()
+    df["date"] = pd.to_datetime(df["date"])
+    if calendar is not None and len(calendar) > 0:
+        cal = pd.DatetimeIndex(pd.to_datetime(list(calendar)))
+        df = df[df["date"].isin(cal) | (df["date"] > cal.max())]
+    out = []
+    for sym, g in df.sort_values("date").groupby("symbol", sort=False):
+        d = g["date"].to_numpy(); c = g["close"].astype(float).to_numpy()
+        row = {"symbol": sym, "as_of": pd.Timestamp(d[-1]).date()}
+        last = c[-1]
+        row["ret_1d"] = (last / c[-2] - 1) * 100 if len(c) >= 2 and c[-2] else None
+        for k, days in MEMBER_PERIODS.items():
+            start = d[-1] - np.timedelta64(days, "D")
+            i = np.searchsorted(d, start, side="right") - 1
+            row[f"ret_{k}"] = (last / c[i] - 1) * 100 if i >= 0 and c[i] else None
+        out.append(row)
+    return pd.DataFrame(out, columns=["symbol", "as_of", "ret_1d", *[f"ret_{k}" for k in MEMBER_PERIODS]])
+
+
 # ── IO ────────────────────────────────────────────────────────────────────────
 
 def _load_inputs(conn):
@@ -198,6 +226,16 @@ def run_theme_index_refresh() -> int:
             return 0
 
         with conn.cursor() as cur:
+            mr = member_returns_table(prices, calendar or None)
+            cur.execute("DELETE FROM theme_member_returns")
+            execute_values(cur, """
+                INSERT INTO theme_member_returns
+                    (symbol, as_of, ret_1d, ret_1w, ret_1m, ret_3m, ret_6m, ret_1y, computed_at)
+                VALUES %s""",
+                [(r.symbol, r.as_of, *[None if pd.isna(v) else round(float(v), 4) for v in
+                  (r.ret_1d, r.ret_1w, r.ret_1m, r.ret_3m, r.ret_6m, r.ret_1y)])
+                 for r in mr.itertuples(index=False)],
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,NOW())", page_size=1000)
             cur.execute("DELETE FROM theme_index_daily")
             execute_values(cur, """
                 INSERT INTO theme_index_daily
