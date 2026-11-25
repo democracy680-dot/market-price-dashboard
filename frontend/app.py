@@ -1224,37 +1224,6 @@ def load_snapshot(snap_date, index_name: str | None = None) -> pd.DataFrame:
     return df[df["symbol"].isin(symbols)].copy()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_sector_performance(snap_date, refresh_ts=None) -> pd.DataFrame:
-    """Aggregate all sectors live from snapshots_daily so every sector is included."""
-    sql = text("""
-        SELECT
-            s.sector,
-            COUNT(*)                                                                   AS num_companies,
-            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d > 0 THEN 1 ELSE 0 END) AS advances,
-            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d < 0 THEN 1 ELSE 0 END) AS declines,
-            SUM(CASE WHEN sd.ret_1d IS NOT NULL AND sd.ret_1d = 0 THEN 1 ELSE 0 END) AS unchanged,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1d)          AS day_change_pct,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_1w)          AS week_chg_pct,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_30d)         AS month_chg_pct,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_60d)         AS qtr_chg_pct,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_180d)        AS half_yr_chg_pct,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sd.ret_365d)        AS year_chg_pct
-        FROM snapshots_daily sd
-        JOIN stocks s ON s.symbol = sd.symbol
-        WHERE sd.date = :date
-          AND s.sector IS NOT NULL
-          AND s.is_active = TRUE
-        GROUP BY s.sector
-        ORDER BY month_chg_pct DESC NULLS LAST
-    """)
-    # PERF: PERCENTILE_CONT aggregation — expensive on large tables without indexes
-    with measure("load_sector_performance__sql"):
-        with engine.connect() as conn:
-            df = pd.read_sql(sql, conn, params={"date": str(snap_date)})
-    return df
-
-
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_all_symbols() -> pd.DataFrame:
     with engine.connect() as conn:
@@ -3783,77 +3752,6 @@ def _frag_order_tracker():
         _render_orders("expansion")
 
 
-@st.fragment
-def _frag_sector_performance(snap_date, refresh_ts=None):
-    sector_df = load_sector_performance(snap_date, refresh_ts)
-    if sector_df.empty:
-        st.warning(
-            f"No sector data found for **{pd.Timestamp(snap_date).strftime('%d %b %Y')}**. "
-            "Run `daily_refresh.py` to populate, or choose a different date."
-        )
-        return
-
-    # Confirm the date that was actually queried so the user is never in doubt
-    date_label = pd.Timestamp(snap_date).strftime("%d %b %Y")
-    st.caption(f"Showing sector aggregates for **{date_label}** — advances/declines exclude stocks with no 1D data.")
-
-    keep_cols = ["sector", "num_companies", "advances", "declines"]
-    if "unchanged" in sector_df.columns:
-        keep_cols.append("unchanged")
-    keep_cols += ["day_change_pct", "week_chg_pct", "month_chg_pct",
-                  "qtr_chg_pct", "half_yr_chg_pct", "year_chg_pct"]
-
-    # Keep % columns NUMERIC so the table sorts numerically; format via Styler below.
-    disp = sector_df[keep_cols].copy()
-
-    rename_map = {
-        "sector": "Sector", "num_companies": "# Stocks",
-        "advances": "Adv", "declines": "Dec", "unchanged": "Flat",
-        "day_change_pct": "1D%", "week_chg_pct": "1W%",
-        "month_chg_pct": "30D%", "qtr_chg_pct": "60D%",
-        "half_yr_chg_pct": "180D%", "year_chg_pct": "365D%",
-    }
-    disp = disp.rename(columns={k: v for k, v in rename_map.items() if k in disp.columns})
-    _sector_pct_cols = ["1D%", "1W%", "30D%", "60D%", "180D%", "365D%"]
-    _sector_all_cols = list(disp.columns)
-    _sector_hidden = _render_col_visibility_ui("sector", _sector_all_cols)
-    _sector_visible = [c for c in disp.columns if c not in _sector_hidden]
-    disp = disp[_sector_visible]
-    styled = disp.style.format(
-        {c: _fmt_pct for c in _sector_pct_cols if c in disp.columns}
-    )
-    for c in _sector_pct_cols:
-        if c in disp.columns:
-            styled = styled.map(_color_return, subset=[c])
-    st.dataframe(styled, use_container_width=True, hide_index=True)
-    st.divider()
-
-    chart_df = sector_df.copy()
-    chart_df = chart_df.sort_values("month_chg_pct", ascending=False)
-    chart_df["pct"] = chart_df["month_chg_pct"] * 100
-    fig = px.bar(
-        chart_df,
-        x="pct", y="sector", orientation="h",
-        color="pct",
-        color_continuous_scale=["#ef4444", "#1e2535", "#22c55e"],
-        color_continuous_midpoint=0,
-        labels={"pct": "Median 30D Return (%)", "sector": ""},
-        title="Median 30-Day Return by Sector",
-    )
-    fig.update_layout(
-        coloraxis_showscale=False,
-        yaxis={"categoryorder": "total ascending"},
-        height=max(320, len(chart_df) * 32),
-        plot_bgcolor="#0f1117",
-        paper_bgcolor="#0f1117",
-        font_color="#cbd5e0",
-        title_font_size=15,
-        margin=dict(l=10, r=20, t=40, b=10),
-    )
-    fig.update_traces(marker_line_width=0)
-    st.plotly_chart(fig, use_container_width=True)
-
-
 # ---------------------------------------------------------------------------
 # Minervini Trend Template — query helpers + renderer
 # ---------------------------------------------------------------------------
@@ -5215,13 +5113,12 @@ with _tc_btn:
         st.session_state["dark_mode"] = not _dark
         st.rerun()
 
-tab_summary, tab_gm, tab_mood, tab_idx, tab_sec, tab_analysis, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
+tab_summary, tab_gm, tab_mood, tab_idx, tab_sec, tab_themes, tab_earnings, tab_orders, tab_volspike, tab_technical, tab_scanner, tab_upload, tab_news = st.tabs([
     "Market Summary",
     "Global Markets",
     "Market Mood",
     "Indexes",
     "Sectors",
-    "Sector Performance",
     "Themes",
     "Quarterly Results",
     "Order Tracker",
@@ -5290,14 +5187,6 @@ _TAB_DESCRIPTIONS = {
             "**Breadth sub-tab** — 50/200 DMA participation donuts per sector with session-over-session changes",
         ],
         "how": "Sector rotation is one of the most reliable tools in an active investor's toolkit. This tab lets you compare every stock within a sector on any timeframe — useful for spotting which names are driving the sector move and which are quietly lagging. The breadth view shows whether an entire sector is in a structural uptrend (most stocks above 200 DMA) or entering distribution. Together, Analysis and Breadth give you both the signal and the context.",
-    },
-    "sector_performance": {
-        "what": [
-            "**Sector Summary Table** — all sectors side-by-side with stock count, advance/decline/flat count, and median returns for 1D, 1W, 30D, 60D, 180D, and 365D",
-            "**Horizontal Bar Chart** — median 30-day return by sector, colour-coded from red (negative) to green (positive)",
-            "**Column Visibility Toggle** — show or hide any column to tailor the view",
-        ],
-        "how": "The fastest way to read sector rotation at a glance. Which sectors have led over the past month? Which have been in a multi-month downtrend? Use this view to tilt your portfolio toward structurally strong sectors and reduce exposure to weakening ones. The advance/decline breakdown within each sector tells you whether a move is broad — most stocks participating — or concentrated in just a few names, which changes how much conviction you should place in the signal.",
     },
     "themes": {
         "what": [
@@ -5438,11 +5327,6 @@ with tab_sec:
         _frag_breadth_tab(selected_date, SECTOR_TABS, "sectors")
     with sub_tabs2[-1]:
         _frag_valuation()
-
-# ── Tab 3: Sector Performance ────────────────────────────────────────────────
-with tab_analysis:
-    _page_header("Sector Performance", selected_date, desc_key="sector_performance")
-    _frag_sector_performance(selected_date, _refresh_ts_key)
 
 # ── Tab 4: Themes ────────────────────────────────────────────────────────────
 with tab_themes:
