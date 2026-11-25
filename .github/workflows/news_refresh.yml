@@ -2,7 +2,9 @@ name: News Refresh
 
 on:
   schedule:
-    # Every 2 hours, every day (news runs 7 days a week)
+    # Every 30 min during Indian market hours (03:00-10:30 UTC = 08:30-16:00 IST), Mon-Fri
+    - cron: "*/30 3-10 * * 1-5"
+    # Every 2 hours otherwise (news runs 7 days a week)
     - cron: "0 */2 * * *"
   workflow_dispatch:
     # Manual trigger via GitHub UI for testing
