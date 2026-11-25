@@ -80,8 +80,8 @@ def test_figure_colour_follows_return():
                        "turnover_cr": [10, 20, 30.0]})
     down = up.assign(index_ew=[100, 99, 97.0])
     f_up, f_down = build_index_figure(up, dark=False), build_index_figure(down, dark=False)
-    line_up = [t for t in f_up.data if t.type == "scatter"][0].line.color
-    line_down = [t for t in f_down.data if t.type == "scatter"][0].line.color
+    line_up = [t for t in f_up.data if t.name == "Theme"][0].line.color
+    line_down = [t for t in f_down.data if t.name == "Theme"][0].line.color
     assert line_up != line_down
     assert any(t.type == "bar" for t in f_up.data)          # turnover bars present
 
@@ -91,3 +91,24 @@ def test_display_name_drops_index_suffix():
     assert display_name("Cements Index") == "Cements"
     assert display_name("Cables - Power Index") == "Cables - Power"
     assert display_name("Indexed Things") == "Indexed Things"
+
+
+def test_rebase_benchmark_starts_at_theme_value_and_aligns_dates():
+    from theme_index_chart import rebase_benchmark
+    win = pd.DataFrame({"date": pd.to_datetime(["2026-01-05", "2026-01-06", "2026-01-08"]),
+                        "index_ew": [80.0, 82.0, 84.0]})
+    bench = pd.DataFrame({"date": pd.to_datetime(["2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07"]),
+                          "close": [990.0, 1000.0, 1010.0, 1020.0]})
+    r = rebase_benchmark(win, bench)
+    assert list(r["rebased"].round(6)) == [80.0, 80.8, 81.6]     # 1000->80, 1010 -> +1%, 01-08 uses 01-07 close
+    assert list(r["close"]) == [1000.0, 1010.0, 1020.0]
+
+
+def test_figure_with_benchmark_has_dotted_nifty_and_no_gridlines():
+    win = pd.DataFrame({"date": pd.date_range("2026-01-05", periods=4, freq="B"),
+                        "index_ew": [100, 101, 99, 103.0], "turnover_cr": [5, 6, 7, 8.0]})
+    bench = pd.DataFrame({"date": win["date"], "close": [20000, 20100, 20050, 20300.0]})
+    fig = build_index_figure(win, dark=False, bench=bench, label="Cements")
+    nifty = [t for t in fig.data if t.name == "Nifty 50"][0]
+    assert nifty.line.dash == "dot"
+    assert fig.layout.xaxis.showgrid is False and fig.layout.yaxis.showgrid is False

@@ -95,43 +95,97 @@ def rangebreaks(dates) -> list:
     return out
 
 
-def build_index_figure(win: pd.DataFrame, dark: bool, height: int = 440) -> go.Figure:
-    """Area line of the theme index, coloured by the window's return, with
-    turnover bars along the bottom (secondary axis)."""
+def rebase_benchmark(win: pd.DataFrame, bench: pd.DataFrame) -> pd.DataFrame:
+    """Benchmark closes aligned to the theme window's dates and rebased so both
+    lines start at the theme's first value — the gap between them is relative
+    strength. bench: [date, close]. Returns [date, close, rebased]."""
+    if bench is None or bench.empty or win.empty:
+        return pd.DataFrame(columns=["date", "close", "rebased"])
+    w = win[["date", "index_ew"]].sort_values("date").copy()
+    w["date"] = pd.to_datetime(w["date"])
+    b = bench[["date", "close"]].dropna().sort_values("date").copy()
+    b["date"] = pd.to_datetime(b["date"])
+    m = pd.merge_asof(w, b, on="date", direction="backward").dropna(subset=["close"])
+    if m.empty:
+        return pd.DataFrame(columns=["date", "close", "rebased"])
+    base_theme = float(w["index_ew"].iloc[0])
+    m["rebased"] = m["close"] / float(m["close"].iloc[0]) * base_theme
+    return m[["date", "close", "rebased"]].reset_index(drop=True)
+
+
+def build_index_figure(win: pd.DataFrame, dark: bool, height: int = 460,
+                       bench: pd.DataFrame | None = None, label: str = "Theme",
+                       bench_label: str = "Nifty 50") -> go.Figure:
+    """Theme index as a gradient area line (green/red by the window's return),
+    Nifty 50 rebased to the same start as a dotted line, turnover bars along the
+    bottom, a price tag on the latest value. No gridlines."""
     C = _palette(dark)
     win = win.sort_values("date")
     x = pd.to_datetime(win["date"])
     y = win["index_ew"].astype(float)
     up = y.iloc[-1] >= y.iloc[0]
     line = C["green"] if up else C["red"]
-    area = C["grn_fill"] if up else C["red_fill"]
-    bar = ("rgba(34,197,94,0.40)" if dark else "rgba(22,163,74,0.35)") if up else \
-          ("rgba(239,68,68,0.40)" if dark else "rgba(220,38,38,0.35)")
+    rgb = "34,197,94" if (up and dark) else "22,163,74" if up else "239,68,68" if dark else "220,38,38"
+    axis_col = "#334155" if dark else "#cbd5e1"
+    muted = C["muted"]
 
-    lo, hi = float(y.min()), float(y.max())
+    rb = rebase_benchmark(win, bench) if bench is not None else pd.DataFrame()
+    turnover = pd.to_numeric(win["turnover_cr"], errors="coerce") if "turnover_cr" in win else None
+
+    vals = [y] + ([rb["rebased"]] if not rb.empty else [])
+    lo = min(float(v.min()) for v in vals)
+    hi = max(float(v.max()) for v in vals)
     span = (hi - lo) or max(abs(hi) * 0.02, 1.0)
-    turnover = pd.to_numeric(win.get("turnover_cr"), errors="coerce") if "turnover_cr" in win else None
+    y_lo, y_hi = lo - span * 0.30, hi + span * 0.06
+    vmax = float(turnover.max()) if turnover is not None and turnover.notna().any() else 1.0
 
     fig = go.Figure()
     if turnover is not None and turnover.notna().any():
         fig.add_trace(go.Bar(
-            x=x, y=turnover, yaxis="y2", marker_color=bar, marker_line_width=0,
-            name="Turnover", hovertemplate="Turnover ₹%{y:,.0f} cr<extra></extra>",
-        ))
+            x=x, y=turnover, yaxis="y2", marker_color=f"rgba({rgb},0.22)", marker_line_width=0,
+            name="Turnover", showlegend=False, hovertemplate="Turnover ₹%{y:,.0f} cr<extra></extra>"))
+    # invisible baseline at the bottom of the visible range, so the gradient fill
+    # fades across what you actually see (filling to zero made it look flat)
+    fig.add_trace(go.Scatter(x=x, y=[y_lo] * len(x), mode="lines", line=dict(width=0),
+                             hoverinfo="skip", showlegend=False))
     fig.add_trace(go.Scatter(
-        x=x, y=y, mode="lines", line=dict(color=line, width=2),
-        fill="tozeroy", fillcolor=area, name="Index",
-        hovertemplate="Index %{y:,.2f}<extra></extra>",
-    ))
-    vmax = float(turnover.max()) if turnover is not None and turnover.notna().any() else 1.0
+        x=x, y=y, mode="lines", name=label, legendrank=1, line=dict(color=line, width=2.2),
+        fill="tonexty",
+        fillgradient=dict(type="vertical",
+                          colorscale=[[0.0, f"rgba({rgb},0.0)"], [1.0, f"rgba({rgb},0.30)"]]),
+        hovertemplate=f"{label} %{{y:,.2f}}<extra></extra>"))
+    if not rb.empty:
+        fig.add_trace(go.Scatter(
+            x=rb["date"], y=rb["rebased"], mode="lines", name=bench_label, legendrank=2,
+            line=dict(color="#94a3b8" if dark else "#64748b", width=1.6, dash="dot"),
+            customdata=rb["close"],
+            hovertemplate=f"{bench_label} %{{customdata:,.0f}}<extra></extra>"))
+    # latest-value marker + price tag on the right axis
+    fig.add_trace(go.Scatter(x=[x.iloc[-1]], y=[y.iloc[-1]], mode="markers", hoverinfo="skip",
+                             marker=dict(size=7, color=line, line=dict(width=2, color=C["plot_bg"])),
+                             showlegend=False))
+    fig.add_annotation(x=1, xref="paper", y=float(y.iloc[-1]), yref="y", text=f"<b>{y.iloc[-1]:,.2f}</b>",
+                       showarrow=False, xanchor="left", xshift=4, font=dict(size=11, color="#ffffff"),
+                       bgcolor=line, borderpad=3)
+
     fig.update_layout(**_base_layout(
-        C, height=height, showlegend=False, bargap=0.25,
-        margin=dict(l=8, r=60, t=12, b=32),
-        xaxis=dict(showgrid=True, gridcolor=C["grid"], tickfont=dict(size=11),
-                   rangebreaks=rangebreaks(x), hoverformat="%d %b %Y"),
-        yaxis=dict(side="right", gridcolor=C["grid"], tickformat=",.2f", zeroline=False,
-                   range=[lo - span * 0.35, hi + span * 0.08], tickfont=dict(size=11)),
-        yaxis2=dict(overlaying="y", range=[0, vmax * 4.5], visible=False, fixedrange=True),
+        C, height=height, bargap=0.35,
+        margin=dict(l=8, r=64, t=30, b=28),
+        hovermode="x unified",
+        showlegend=True,
+        legend=dict(orientation="h", x=0, xanchor="left", y=1.0, yanchor="bottom",
+                    font=dict(size=12, color=C["tick"]), bgcolor="rgba(0,0,0,0)",
+                    itemclick=False, itemdoubleclick=False),
+        xaxis=dict(showgrid=False, zeroline=False, showline=True, linecolor=axis_col, linewidth=1,
+                   ticks="outside", tickcolor=axis_col, ticklen=4, tickfont=dict(size=11, color=muted),
+                   rangebreaks=rangebreaks(x), hoverformat="%d %b %Y",
+                   range=[x.iloc[0], x.iloc[-1] + pd.Timedelta(hours=12)],
+                   showspikes=True, spikemode="across", spikesnap="cursor", spikethickness=1,
+                   spikedash="dot", spikecolor=muted),
+        yaxis=dict(side="right", showgrid=False, zeroline=False, showline=False,
+                   tickformat=",.0f", tickfont=dict(size=11, color=muted), ticks="",
+                   range=[y_lo, y_hi], nticks=6),
+        yaxis2=dict(overlaying="y", range=[0, vmax * 5.0], visible=False, fixedrange=True),
     ))
     return finalize_chart(fig, C)
 
@@ -141,16 +195,30 @@ def build_index_figure(win: pd.DataFrame, dark: bool, height: int = 440) -> go.F
 CACHE_TTL = 1800   # data changes once a day; each query costs ~2s of connection setup
 
 
+BENCHMARK_SYMBOL = "^NSEI"   # Nifty 50 — dotted comparison line on the chart
+
+
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
-def load_theme_index(_engine) -> pd.DataFrame:
-    sql = text("""SELECT theme_slug, date, index_ew, turnover_cr, n_members
-                  FROM theme_index_daily ORDER BY theme_slug, date""")
+def _load_theme_tables(_engine):
+    """Theme index series + Nifty 50 closes, read over ONE connection (~2s each to open)."""
     with _engine.connect() as conn:
-        df = pd.read_sql(sql, conn)
-    df["date"] = pd.to_datetime(df["date"])
-    for c in ("index_ew", "turnover_cr"):
-        df[c] = pd.to_numeric(df[c], errors="coerce")
-    return df
+        idx = pd.read_sql(text("""SELECT theme_slug, date, index_ew::float8 AS index_ew,
+                                         turnover_cr::float8 AS turnover_cr, n_members
+                                  FROM theme_index_daily ORDER BY theme_slug, date"""), conn)
+        bench = pd.read_sql(text("""SELECT date, close::float8 AS close FROM prices_daily
+                                    WHERE symbol = :s ORDER BY date"""), conn,
+                            params={"s": BENCHMARK_SYMBOL})
+    idx["date"] = pd.to_datetime(idx["date"])
+    bench["date"] = pd.to_datetime(bench["date"])
+    return idx, bench
+
+
+def load_theme_index(_engine) -> pd.DataFrame:
+    return _load_theme_tables(_engine)[0]
+
+
+def load_benchmark(_engine) -> pd.DataFrame:
+    return _load_theme_tables(_engine)[1]
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
@@ -316,16 +384,25 @@ def render_theme_chart(engine, slug: str, theme_name: str, n_stocks: int, dark: 
         ) or "6M"
     win = chart_window(s, period)
     ret = period_return(pd.Series(s["index_ew"].values, index=s["date"]), period)
+    bench = load_benchmark(engine)
+    b_ret = None
+    if not bench.empty:
+        b = bench[bench["date"] <= last]
+        b_ret = period_return(pd.Series(b["close"].values, index=b["date"]), period)
+    rel = (ret - b_ret) if (ret is not None and b_ret is not None) else None
     with c2:
         st.markdown(
-            f"<div style='text-align:right;font-size:14px;color:{C['muted']}'>Returns "
-            f"<b>{_pct_html(ret, C)}</b></div>", unsafe_allow_html=True)
+            f"<div style='display:flex;justify-content:flex-end;gap:18px;font-size:13.5px;color:{C['muted']}'>"
+            f"<span>Returns <b>{_pct_html(ret, C)}</b></span>"
+            f"<span>Nifty 50 <b>{_pct_html(b_ret, C)}</b></span>"
+            f"<span>vs Nifty <b>{_pct_html(rel, C)}</b></span></div>", unsafe_allow_html=True)
 
-    st.plotly_chart(build_index_figure(win, dark), width="stretch", config=CHART_CONFIG,
-                    theme=None, key=f"tix_{slug}_{period}")
+    st.plotly_chart(build_index_figure(win, dark, bench=bench, label=display_name(theme_name)),
+                    width="stretch", config=CHART_CONFIG, theme=None, key=f"tix_{slug}_{period}")
     n_priced = int(s["n_members"].iloc[-1]) if pd.notna(s["n_members"].iloc[-1]) else 0
     st.caption(
         f"Equal-weight index of {n_stocks} stocks, starting at 100 on "
-        f"{s['date'].min():%d %b %Y} · bars = ₹ crore traded · "
+        f"{s['date'].min():%d %b %Y} · dotted line = Nifty 50 rebased to the same start · "
+        f"bars = ₹ crore traded · "
         f"{n_priced} of {n_stocks} stocks priced on {last:%d %b %Y}. "
         "Past values use today's stocks.")
