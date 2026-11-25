@@ -112,3 +112,13 @@ def test_figure_with_benchmark_has_dotted_nifty_and_no_gridlines():
     nifty = [t for t in fig.data if t.name == "Nifty 50"][0]
     assert nifty.line.dash == "dot"
     assert fig.layout.xaxis.showgrid is False and fig.layout.yaxis.showgrid is False
+
+
+def test_constituents_html_lists_theme_stocks_only():
+    from theme_index_chart import constituents_html
+    from market_mood_tab import _palette
+    m = pd.DataFrame({"theme_slug": ["a", "a", "b"], "symbol": ["ZED", "ACC", "XYZ"], "name": ["Zed", "Acc", "Xyz"],
+                      "m_1d": [1.0, -2.0, 3.0], "m_1w": [0.5, None, 1.0]})
+    h = constituents_html(m, "a", "1W", _palette(False))
+    assert h.index("ACC") < h.index("ZED") and "XYZ" not in h      # sorted, only theme 'a'
+    assert "+1.00%" in h and "—" in h                                 # missing value shown as dash

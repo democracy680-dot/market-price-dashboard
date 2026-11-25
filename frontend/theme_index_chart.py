@@ -283,8 +283,6 @@ def _css(C, dark: bool) -> str:
 .st-key-theme_list_box .stButton button p {{ font-size: 14px; text-align: left; }}
 [class*="st-key-tl_hdr"] .stButton button p {{ font-size: 12px; color: {C['muted']}; }}
 [class*="st-key-tl_row_"] {{ border-bottom: 1px solid {C['row_bd']}; }}
-[class*="st-key-tl_row_sel_"] {{ background: {sel_bg}; border-radius: 6px; }}
-[class*="st-key-tl_row_sel_"] .stButton button p {{ color: {sel_txt} !important; font-weight: 600; }}
 .st-key-theme_list_box [data-testid="stMarkdownContainer"],
 .st-key-theme_list_box [data-testid="stMarkdownContainer"] div {{ margin: 0 !important; }}
 .st-key-theme_list_box [data-testid="stElementContainer"] {{ margin: 0 !important; }}
@@ -293,12 +291,15 @@ def _css(C, dark: bool) -> str:
 .tl-cons td {{ padding: 7px 4px 7px 14px; font-size: 13px; color: {C['text']};
   border: none !important; border-bottom: 1px solid {C['row_bd']} !important; }}
 .tl-cons td.n {{ text-align: right; padding-right: 2px; font-variant-numeric: tabular-nums; }}
-[class*="st-key-tl_exp_"] button {{ justify-content: center !important; padding: 4px 0 !important;
-  border-radius: 6px !important; }}
-[class*="st-key-tl_exp_"] button div {{ justify-content: center !important; }}
-[class*="st-key-tl_exp_"] button p {{ color: {C['muted']} !important; font-size: 15px !important;
-  font-weight: 600 !important; text-align: center !important; }}
-[class*="st-key-tl_exp_"] button:hover {{ background: {C['row_bd']} !important; }}
+.tl-tog {{ display: flex; justify-content: center; align-items: center; margin: 0; cursor: pointer;
+  border-radius: 6px; padding: 4px 0; user-select: none; }}
+.tl-tog:hover {{ background: {C['row_bd']}; }}
+.tl-tog input {{ display: none; }}
+.tl-tog span::before {{ content: "⌄"; color: {C['muted']}; font-size: 15px; font-weight: 600; }}
+.tl-tog input:checked + span::before {{ content: "⌃"; }}
+/* stock lists: pre-rendered, collapsed; opened in the browser (no server round trip) */
+.tl-cons-wrap {{ display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease; }}
+.tl-cons-wrap > div {{ overflow: hidden; }}
 </style>"""
 
 
@@ -309,13 +310,6 @@ def _set_sort(col: str):
 
 def _select_theme(slug: str):
     st.session_state["selected_theme_slug"] = slug
-
-
-def _toggle_expand(slug: str):
-    """Open/close one theme's stock list. Independent of which theme is charted."""
-    opened = set(st.session_state.get("theme_list_open", set()))
-    opened.symmetric_difference_update({slug})
-    st.session_state["theme_list_open"] = opened
 
 
 def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bool) -> None:
@@ -346,12 +340,12 @@ def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bo
         h3.button(f"{period}{arrow('period')}", key="tl_sort_period", on_click=_set_sort, args=("period",))
 
     with st.container(height=620, key="theme_list_box", border=False):
-        opened = st.session_state.get("theme_list_open", set())   # all closed by default
+        members = load_theme_members(engine)
+        open_rules = []
         for row in df.to_dict("records"):
             slug = row["theme_slug"]
             sel = slug == selected_slug
-            is_open = slug in opened
-            with st.container(key=f"tl_row_{'sel_' if sel else ''}{slug}"):
+            with st.container(key=f"tl_row_{slug}"):   # fixed key: keeps the toggle's state
                 c1, c2, c3, c4 = st.columns([5, 2, 2, 1], vertical_alignment="center")
                 c1.button(display_name(row["theme_name"]), key=f"tl_btn_{slug}",
                           on_click=_select_theme, args=(slug,), use_container_width=True)
@@ -359,27 +353,33 @@ def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bo
                             unsafe_allow_html=True)
                 c3.markdown(f"<div class='tl-num'>{_pct_html(row.get(period), C)}</div>",
                             unsafe_allow_html=True)
-                c4.button("⌃" if is_open else "⌄", key=f"tl_exp_{slug}",
-                          on_click=_toggle_expand, args=(slug,), use_container_width=True)
-            if is_open:
-                _render_constituents(engine, slug, period, C)
+                c4.markdown(f"<label class='tl-tog' title=''><input type='checkbox' id='tog_{slug}'>"
+                            f"<span></span></label>", unsafe_allow_html=True)
+            st.markdown(f"<div class='tl-cons-wrap tc-{slug}'><div>"
+                        f"{constituents_html(members, slug, period, C)}</div></div>",
+                        unsafe_allow_html=True)
+            open_rules.append(f".st-key-theme_list_box:has(#tog_{slug}:checked) .tc-{slug} "
+                              "{ grid-template-rows: 1fr; }")
+        sel_bg = "#16213a" if dark else "#eef2ff"
+        sel_txt = "#60a5fa" if dark else "#1d4ed8"
+        open_rules.append(f".st-key-tl_row_{selected_slug} {{ background: {sel_bg}; border-radius: 6px; }}")
+        open_rules.append(f".st-key-tl_row_{selected_slug} .stButton button p "
+                          f"{{ color: {sel_txt} !important; font-weight: 600; }}")
+        st.markdown("<style>" + " ".join(open_rules) + "</style>", unsafe_allow_html=True)
 
 
-def _render_constituents(engine, slug: str, period: str, C: dict) -> None:
-    m = load_theme_members(engine)
-    m = m[m["theme_slug"] == slug].sort_values("symbol")
+def constituents_html(members: pd.DataFrame, slug: str, period: str, C: dict) -> str:
+    """Stock table for one theme (symbol, 1D, period), aligned to the list's 4 columns."""
+    m = members[members["theme_slug"] == slug].sort_values("symbol")
     if m.empty:
-        st.caption("No stocks in this theme yet.")
-        return
+        return f"<div style='padding:6px 14px;color:{C['muted']};font-size:13px'>No stocks yet.</div>"
     c1, cp = MEMBER_COL["1D"], MEMBER_COL[period]
     rows = "".join(
         f"<tr><td title='{html.escape(str(r['name']))}'>{html.escape(r['symbol'])}</td>"
         f"<td class='n'>{_pct_html(r[c1], C)}</td><td class='n'>{_pct_html(r[cp], C)}</td><td></td></tr>"
-        for r in m.to_dict("records")
-    )
-    st.markdown(f"<table class='tl-cons'><colgroup><col style='width:50%'><col style='width:20%'>"
-                f"<col style='width:20%'><col style='width:10%'></colgroup>{rows}</table>",
-                unsafe_allow_html=True)
+        for r in m.to_dict("records"))
+    return (f"<table class='tl-cons'><colgroup><col style='width:50%'><col style='width:20%'>"
+            f"<col style='width:20%'><col style='width:10%'></colgroup>{rows}</table>")
 
 
 def render_theme_chart(engine, slug: str, theme_name: str, n_stocks: int, dark: bool) -> None:
