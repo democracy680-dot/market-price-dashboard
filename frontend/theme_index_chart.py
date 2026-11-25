@@ -293,6 +293,12 @@ def _css(C, dark: bool) -> str:
 .tl-cons td {{ padding: 7px 4px 7px 14px; font-size: 13px; color: {C['text']};
   border: none !important; border-bottom: 1px solid {C['row_bd']} !important; }}
 .tl-cons td.n {{ text-align: right; padding-right: 2px; font-variant-numeric: tabular-nums; }}
+[class*="st-key-tl_exp_"] button {{ justify-content: center !important; padding: 4px 0 !important;
+  border-radius: 6px !important; }}
+[class*="st-key-tl_exp_"] button div {{ justify-content: center !important; }}
+[class*="st-key-tl_exp_"] button p {{ color: {C['muted']} !important; font-size: 15px !important;
+  font-weight: 600 !important; text-align: center !important; }}
+[class*="st-key-tl_exp_"] button:hover {{ background: {C['row_bd']} !important; }}
 </style>"""
 
 
@@ -303,6 +309,13 @@ def _set_sort(col: str):
 
 def _select_theme(slug: str):
     st.session_state["selected_theme_slug"] = slug
+
+
+def _toggle_expand(slug: str):
+    """Open/close one theme's stock list. Independent of which theme is charted."""
+    opened = set(st.session_state.get("theme_list_open", set()))
+    opened.symmetric_difference_update({slug})
+    st.session_state["theme_list_open"] = opened
 
 
 def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bool) -> None:
@@ -327,24 +340,28 @@ def render_theme_list(engine, themes: pd.DataFrame, selected_slug: str, dark: bo
 
     arrow = lambda c: (" ↑" if asc else " ↓") if sort_col == c else " ⇅"
     with st.container(key="tl_hdr"):
-        h1, h2, h3 = st.columns([5, 2, 2], vertical_alignment="center")
+        h1, h2, h3, _h4 = st.columns([5, 2, 2, 1], vertical_alignment="center")
         h1.button(f"Name{arrow('name')}", key="tl_sort_name", on_click=_set_sort, args=("name",))
         h2.button(f"1D{arrow('1d')}", key="tl_sort_1d", on_click=_set_sort, args=("1d",))
         h3.button(f"{period}{arrow('period')}", key="tl_sort_period", on_click=_set_sort, args=("period",))
 
     with st.container(height=620, key="theme_list_box", border=False):
+        opened = st.session_state.get("theme_list_open", set())   # all closed by default
         for row in df.to_dict("records"):
             slug = row["theme_slug"]
             sel = slug == selected_slug
+            is_open = slug in opened
             with st.container(key=f"tl_row_{'sel_' if sel else ''}{slug}"):
-                c1, c2, c3 = st.columns([5, 2, 2], vertical_alignment="center")
-                c1.button(f"{display_name(row['theme_name'])}{'  ⌄' if sel else ''}", key=f"tl_btn_{slug}",
+                c1, c2, c3, c4 = st.columns([5, 2, 2, 1], vertical_alignment="center")
+                c1.button(display_name(row["theme_name"]), key=f"tl_btn_{slug}",
                           on_click=_select_theme, args=(slug,), use_container_width=True)
                 c2.markdown(f"<div class='tl-num'>{_pct_html(row.get('1D'), C)}</div>",
                             unsafe_allow_html=True)
                 c3.markdown(f"<div class='tl-num'>{_pct_html(row.get(period), C)}</div>",
                             unsafe_allow_html=True)
-            if sel:
+                c4.button("⌃" if is_open else "⌄", key=f"tl_exp_{slug}",
+                          on_click=_toggle_expand, args=(slug,), use_container_width=True)
+            if is_open:
                 _render_constituents(engine, slug, period, C)
 
 
@@ -357,11 +374,12 @@ def _render_constituents(engine, slug: str, period: str, C: dict) -> None:
     c1, cp = MEMBER_COL["1D"], MEMBER_COL[period]
     rows = "".join(
         f"<tr><td title='{html.escape(str(r['name']))}'>{html.escape(r['symbol'])}</td>"
-        f"<td class='n'>{_pct_html(r[c1], C)}</td><td class='n'>{_pct_html(r[cp], C)}</td></tr>"
+        f"<td class='n'>{_pct_html(r[c1], C)}</td><td class='n'>{_pct_html(r[cp], C)}</td><td></td></tr>"
         for r in m.to_dict("records")
     )
-    st.markdown(f"<table class='tl-cons'><colgroup><col style='width:56%'><col style='width:22%'>"
-                f"<col style='width:22%'></colgroup>{rows}</table>", unsafe_allow_html=True)
+    st.markdown(f"<table class='tl-cons'><colgroup><col style='width:50%'><col style='width:20%'>"
+                f"<col style='width:20%'><col style='width:10%'></colgroup>{rows}</table>",
+                unsafe_allow_html=True)
 
 
 def render_theme_chart(engine, slug: str, theme_name: str, n_stocks: int, dark: bool) -> None:
