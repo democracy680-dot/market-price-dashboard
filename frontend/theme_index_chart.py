@@ -272,7 +272,8 @@ def _css(C, dark: bool) -> str:
     sel_bg = "#16213a" if dark else "#eef2ff"
     sel_txt = "#60a5fa" if dark else "#1d4ed8"
     return f"""<style>
-.st-key-theme_list_box [data-testid="stVerticalBlock"] {{ gap: 0 !important; }}
+.st-key-theme_list_box, .st-key-theme_list_box [data-testid="stVerticalBlock"] {{ gap: 0 !important; }}
+[class*="st-key-tl_row_"] {{ padding: 4px 0; }}
 .st-key-theme_list_box [data-testid="stHorizontalBlock"] {{ gap: 0.4rem !important; }}
 .st-key-theme_list_box .stButton button, [class*="st-key-tl_hdr"] .stButton button {{
   background: transparent !important; border: none !important; box-shadow: none !important;
