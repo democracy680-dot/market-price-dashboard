@@ -266,7 +266,7 @@ def render_news_tab(engine, T: dict, dark: bool, sector_tabs) -> None:
     sub_all, sub_company, sub_source = st.tabs(["All News", "By Company", "By Source"])
 
     with sub_all:
-        c1, c2, c3, c4, c5 = st.columns([2.6, 1.8, 2.2, 2.0, 1.4], vertical_alignment="bottom")
+        c1, c2, c3, c4, c5 = st.columns([2.2, 1.6, 2.0, 1.8, 1.9], vertical_alignment="bottom")
         query = c1.text_input("Search", placeholder="RBI, results, order win, SEBI…",
                               label_visibility="collapsed", key="news_search")
         sel_sources = c2.multiselect("Sources", sources, placeholder="All sources", key="news_sources",
@@ -285,7 +285,7 @@ def render_news_tab(engine, T: dict, dark: bool, sector_tabs) -> None:
                         f"No recent news for {what}." if what else "No articles found — check back soon.")
 
     with sub_company:
-        cc1, cc2 = st.columns([4, 1.4], vertical_alignment="bottom")
+        cc1, cc2 = st.columns([4, 1.9], vertical_alignment="bottom")
         sym2 = cc1.selectbox("Select company", sym_opts, key="news_company_sym",
                              format_func=lambda x: label.get(x, x) if x else "Choose a company…")
         with cc2:
@@ -310,7 +310,7 @@ def render_news_tab(engine, T: dict, dark: bool, sector_tabs) -> None:
                               yaxis=dict(showgrid=False))
             fig.update_traces(textposition="outside", textfont_size=11)
             st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
-        sc1, sc2 = st.columns([4, 1.4], vertical_alignment="bottom")
+        sc1, sc2 = st.columns([4, 1.9], vertical_alignment="bottom")
         src = sc1.selectbox("Filter by source", ["All"] + sources, key="news_src_only")
         with sc2:
             view3 = st.segmented_control("View  ", ["Cards", "Headlines"], default="Headlines",
